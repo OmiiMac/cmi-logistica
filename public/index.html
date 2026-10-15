@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ObraControl CMI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Orbitron:wght@500;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+<style>
+:root {
+  --c-primary:#9B1B30; --c-primary-h:#7A1526; --c-primary-lt:#FDF0F2;
+  --c-accent:#C8960C;  --c-accent-h:#A67A08;  --c-accent-lt:#FDF6E3;
+  --c-bg:#F0EEE9; --c-card:#FFFFFF; --c-text:#1B1B20; --c-muted:#6B6B78;
+  --c-border:#E2E1DE; --c-side:#140C10; --c-side2:#221620;
+  --c-ok:#16A34A; --c-warn:#D97706; --c-err:#DC2626;
+  --c-ok-lt:#DCFCE7; --c-warn-lt:#FEF3C7; --c-err-lt:#FEE2E2;
+  --font:'DM Sans',system-ui,-apple-system,sans-serif;
+  --font-num:'Orbitron','DM Sans',sans-serif;
+  --r:12px; --r-sm:7px;
+  --shadow:0 2px 8px rgba(0,0,0,.08);
+  --shadow-md:0 4px 20px rgba(0,0,0,.1);
+  color-scheme: light;
+}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --c-bg:#0F0D10; --c-card:#1C1820; --c-text:#E8E6EA; --c-muted:#8B8896;
+  --c-border:#2E2B35; --c-primary-lt:#2A0C14; --c-accent-lt:#2A2008;
+  --c-ok-lt:#0F2419; --c-warn-lt:#271E09; --c-err-lt:#27090C;
+}}
+:root[data-theme=dark]{
+  --c-bg:#0F0D10; --c-card:#1C1820; --c-text:#E8E6EA; --c-muted:#8B8896;
+  --c-border:#2E2B35; --c-primary-lt:#2A0C14; --c-accent-lt:#2A2008;
+  --c-ok-lt:#0F2419; --c-warn-lt:#271E09; --c-err-lt:#27090C;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none!important}
+body{font-family:var(--font);background:var(--c-bg);color:var(--c-text);font-size:14px;line-height:1.5;display:flex;height:100%;overflow:hidden}
+html{height:100%}
+
+/* ── LOGIN SCREEN ── */
+#loginWrap{
+  position:fixed;inset:0;z-index:300;padding:16px;
+  display:flex;align-items:center;justify-content:center;
+  background:#0D0810;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 40%, rgba(155,27,48,.25) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 80% 70%, rgba(100,14,26,.2) 0%, transparent 60%);
+}
+.login-card{
+  background:rgba(30,20,26,.95);
+  backdrop-filter:blur(20px);
+  border:1px solid rgba(155,27,48,.3);
+  border-radius:20px;
+  padding:44px 40px;
+  width:100%;max-width:400px;
+  box-shadow:0 32px 80px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.login-brand{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.brand-badge{
+  background:linear-gradient(135deg,#9B1B30,#C62040);
+  color:#fff;font-family:var(--font-num);font-size:16px;font-weight:700;
+  padding:8px 14px;border-radius:10px;letter-spacing:.08em;
+  box-shadow:0 4px 12px rgba(155,27,48,.4);
+}
+.brand-text{font-family:var(--font-num);font-size:24px;font-weight:700;color:#fff;letter-spacing:.06em}
+.login-sub{color:#7A6B72;font-size:13px;margin-bottom:32px;letter-spacing:.01em}
+.login-card .form-group{margin-bottom:18px}
+.login-card label{display:block;font-size:11px;font-weight:700;color:#8B7080;text-transform:uppercase;letter-spacing:.09em;margin-bottom:7px}
+.login-card input{
+  width:100%;background:rgba(255,255,255,.05);
+  border:1px solid rgba(155,27,48,.25);border-radius:10px;
+  padding:12px 16px;color:#fff;font-family:var(--font);font-size:14px;
+  outline:none;transition:border-color .2s,background .2s;
+}
+.login-card input:focus{border-color:var(--c-primary);background:rgba(155,27,48,.08)}
+.login-card input::placeholder{color:#4A3F44}
+.w-full{width:100%;margin-top:6px;padding:13px;font-size:14px;letter-spacing:.02em}
+.login-divider{height:1px;background:rgba(255,255,255,.07);margin:20px 0}
+
+/* ── APP SHELL ── */
+#app{display:flex;width:100%;height:100%;overflow:hidden}
+
+/* ── SIDEBAR ── */
+#sidebar{width:248px;min-width:248px;background:var(--c-side);display:flex;flex-direction:column;height:100%;overflow:hidden;transition:transform .25s;z-index:50}
+.sb-header{
+  padding:22px 18px 14px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  background:linear-gradient(180deg,rgba(155,27,48,.15) 0%,transparent 100%);
+  position:relative;
+}
+.sb-header::after{
+  content:'';position:absolute;bottom:0;left:18px;right:18px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(155,27,48,.3),transparent);
+}
+.sb-brand{display:flex;align-items:center;gap:11px;margin-bottom:5px}
+.sb-badge{
+  background:linear-gradient(135deg,#9B1B30,#C62040);
+  color:#fff;font-family:var(--font-num);font-size:12px;font-weight:700;
+  padding:5px 9px;border-radius:7px;letter-spacing:.06em;
+  box-shadow:0 2px 8px rgba(155,27,48,.35);
+}
+.sb-title{font-family:var(--font-num);font-size:14px;font-weight:700;color:#F0E8EC;letter-spacing:.05em}
+.sb-user{font-size:11px;color:#6A5A62;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-nav{padding:10px 10px 6px}
+.sb-nav-item{
+  display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:9px;
+  color:#8A7E88;font-size:13px;font-weight:500;cursor:pointer;
+  transition:background .15s,color .15s;margin-bottom:2px;
+  position:relative;
+}
+.sb-nav-item:hover{background:rgba(255,255,255,.07);color:#D8D0D4}
+.sb-nav-item.active{background:linear-gradient(135deg,rgba(155,27,48,.5),rgba(155,27,48,.3));color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.sb-nav-item.active::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:3px;background:var(--c-primary);border-radius:0 2px 2px 0}
+.sb-nav-item svg{flex-shrink:0;opacity:.75}
+.sb-nav-item.active svg{opacity:1}
+.sb-section{
+  padding:10px 18px 5px;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.12em;color:#3A2E32;
+}
+.sb-projects{flex:1;overflow-y:auto;padding:0 10px 10px;scrollbar-width:thin;scrollbar-color:#3A2A30 transparent}
+.sb-proj{
+  display:flex;align-items:center;gap:9px;padding:8px 10px;
+  border-radius:8px;cursor:pointer;transition:all .15s;margin-bottom:1px;
+  border-left:2px solid transparent;
+}
+.sb-proj:hover{background:rgba(255,255,255,.06);border-left-color:rgba(255,255,255,.15)}
+.sb-proj.active{background:rgba(155,27,48,.2);border-left-color:var(--c-primary)}
+.sb-proj-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;box-shadow:0 0 6px currentColor}
+.sb-proj-name{font-size:12px;color:#8A7E88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.sb-proj.active .sb-proj-name{color:#E8DFE8;font-weight:600}
+.sb-foot{padding:12px 10px;border-top:1px solid rgba(255,255,255,.05)}
+.btn-logout{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:9px;color:#6A5A62;font-size:12px;cursor:pointer;transition:color .15s,background .15s;background:none;border:none;width:100%;font-family:var(--font)}
+.btn-logout:hover{color:#D8D0D4;background:rgba(255,255,255,.06)}
+
+/* ── MAIN ── */
+#main{flex:1;display:flex;flex-direction:column;height:100%;overflow:hidden}
+.topbar{
+  display:flex;align-items:center;gap:12px;padding:14px 26px;
+  border-bottom:1px solid var(--c-border);
+  background:var(--c-card);flex-shrink:0;
+  box-shadow:0 1px 0 var(--c-border),0 2px 8px rgba(0,0,0,.04);
+}
+.topbar-title{font-size:15px;font-weight:700;flex:1;letter-spacing:-.01em}
+.topbar-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--c-primary-lt);color:var(--c-primary);letter-spacing:.02em}
+#view{flex:1;overflow-y:auto;padding:24px;scrollbar-width:thin;scrollbar-color:var(--c-border) transparent}
+.hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;color:var(--c-text)}
+
+/* ── GREETING ── */
+.greeting-bar{
+  background:linear-gradient(135deg,#9B1B30 0%,#7A1526 50%,#4A0D18 100%);
+  border-radius:16px;padding:24px 28px;margin-bottom:22px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:relative;overflow:hidden;
+  box-shadow:0 8px 32px rgba(155,27,48,.3);
+}
+.greeting-bar::before{
+  content:'CMI';
+  position:absolute;right:-10px;top:50%;transform:translateY(-50%);
+  font-family:var(--font-num);font-size:100px;font-weight:700;
+  color:rgba(255,255,255,.05);letter-spacing:.05em;pointer-events:none;
+  user-select:none;
+}
+.greeting-hi{font-family:var(--font-num);font-size:20px;font-weight:700;color:#fff;margin-bottom:4px;letter-spacing:.03em}
+.greeting-date{font-size:13px;color:rgba(255,255,255,.6);letter-spacing:.01em}
+.greeting-kpis{display:flex;gap:10px;position:relative;z-index:1}
+.greeting-kpi{
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);
+  border-radius:12px;padding:12px 18px;text-align:center;min-width:80px;
+  backdrop-filter:blur(10px);
+}
+.greeting-kpi-val{font-family:var(--font-num);font-size:22px;font-weight:700;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+.greeting-kpi-label{font-size:10px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.07em;margin-top:4px}
+
+/* ── STAT CARDS ── */
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.stat-card{
+  background:var(--c-card);
+  border:1px solid var(--c-border);
+  border-radius:var(--r);padding:20px;
+  position:relative;overflow:hidden;
+  box-shadow:var(--shadow);
+  transition:transform .15s,box-shadow .15s;cursor:default;
+}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.stat-card::after{
+  content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:var(--stat-color,var(--c-primary));border-radius:12px 12px 0 0;
+}
+.stat-icon{
+  width:42px;height:42px;border-radius:11px;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:16px;flex-shrink:0;
+}
+.stat-val{font-family:var(--font-num);font-size:30px;font-weight:700;line-height:1;margin-bottom:5px;font-variant-numeric:tabular-nums}
+.stat-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--c-muted)}
+
+/* ── TWO-COL ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.section-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.section-head{
+  padding:14px 18px;border-bottom:1px solid var(--c-border);
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--c-bg);
+}
+.section-head h3{font-size:13px;font-weight:700;display:flex;align-items:center;gap:9px}
+.section-head-bar{width:3px;height:14px;border-radius:2px;background:var(--c-primary);flex-shrink:0}
+.section-body{padding:12px 16px}
+
+/* ── ROUTE ITEMS ── */
+.ruta-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--c-border);cursor:pointer;transition:opacity .12s}
+.ruta-item:last-child{border-bottom:none}
+.ruta-item:hover{opacity:.75}
+.ruta-hora{font-family:var(--font-num);font-size:11px;font-weight:700;color:var(--c-primary);min-width:40px;font-variant-numeric:tabular-nums}
+.ruta-desc{flex:1;font-size:12px;color:var(--c-text);line-height:1.3;font-weight:500}
+.ruta-dest{font-size:11px;color:var(--c-muted)}
+.status-chip{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;white-space:nowrap;letter-spacing:.04em}
+.status-chip.pendiente{background:var(--c-warn-lt);color:var(--c-warn)}
+.status-chip.en_ruta{background:#EFF6FF;color:#2563EB}
+.status-chip.completada{background:var(--c-ok-lt);color:var(--c-ok)}
+
+/* ── PROJECT LIST (dashboard) ── */
+.proj-list-item{
+  display:flex;align-items:center;gap:12px;
+  padding:9px 0;border-bottom:1px solid var(--c-border);
+  cursor:pointer;transition:all .15s;
+}
+.proj-list-item:last-child{border-bottom:none}
+.proj-list-item:hover .proj-info-name{color:var(--c-primary)}
+.proj-color-bar{width:3px;height:32px;border-radius:2px;flex-shrink:0}
+.proj-info{flex:1;min-width:0}
+.proj-info-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .15s}
+.proj-info-sup{font-size:11px;color:var(--c-muted);margin-top:1px}
+.proj-count{font-family:var(--font-num);font-size:14px;font-weight:700;color:var(--c-muted);font-variant-numeric:tabular-nums;flex-shrink:0}
+.proj-count-badge{
+  font-family:var(--font-num);font-size:12px;font-weight:700;
+  background:var(--c-bg);border:1px solid var(--c-border);
+  padding:2px 8px;border-radius:20px;color:var(--c-muted);
+  font-variant-numeric:tabular-nums;flex-shrink:0;
+}
+
+/* ── CATEGORY CARDS ── */
+.cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.cat-card{
+  background:var(--c-card);border:1px solid var(--c-border);
+  border-radius:var(--r);padding:18px;
+  position:relative;overflow:hidden;
+  box-shadow:var(--shadow);transition:transform .15s;
+}
+.cat-card:hover{transform:translateY(-2px)}
+.cat-card::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--cat-color,var(--c-primary));border-radius:12px 0 0 12px;
+}
+.cat-icon-wrap{
+  width:38px;height:38px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:14px;
+}
+.cat-card-num{font-family:var(--font-num);font-size:28px;font-weight:700;line-height:1;margin-bottom:4px;font-variant-numeric:tabular-nums}
+.cat-card-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--c-muted);margin-bottom:12px}
+.cat-bar-bg{height:5px;background:var(--c-border);border-radius:3px;overflow:hidden}
+.cat-bar-fill{height:100%;border-radius:3px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+
+/* ── ITEMS TABLE ── */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.search-wrap{position:relative;flex:1;min-width:160px}
+.search-wrap input{width:100%;padding:9px 10px 9px 34px;border:1px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-card);color:var(--c-text);font-family:var(--font);font-size:13px;outline:none;box-shadow:var(--shadow)}
+.search-wrap input:focus{border-color:var(--c-primary)}
+.search-icon{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--c-muted);pointer-events:none}
+.filter-chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{padding:6px 11px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--c-border);background:var(--c-card);color:var(--c-muted);transition:all .15s}
+.chip.active{background:var(--c-primary);border-color:var(--c-primary);color:#fff;box-shadow:0 2px 8px rgba(155,27,48,.3)}
+
+.item-table{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.item-table table{width:100%;border-collapse:collapse}
+.item-table th{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);text-align:left;border-bottom:1px solid var(--c-border);background:var(--c-bg);white-space:nowrap}
+.item-table td{padding:11px 14px;border-bottom:1px solid var(--c-border);font-size:13px;vertical-align:middle}
+.item-table tr:last-child td{border-bottom:none}
+.item-table tr:hover td{background:var(--c-bg)}
+.qty-num{font-family:var(--font-num);font-weight:700;font-variant-numeric:tabular-nums}
+.qty-low{color:var(--c-err)}
+.estado-chip{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;letter-spacing:.04em}
+.estado-chip.OPERATIVA{background:var(--c-ok-lt);color:var(--c-ok)}
+.estado-chip.NO_OPERATIVA{background:var(--c-err-lt);color:var(--c-err)}
+.estado-chip.MANTENIMIENTO{background:var(--c-warn-lt);color:var(--c-warn)}
+.cat-chip{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background:var(--c-primary-lt);color:var(--c-primary)}
+.act-btn{background:none;border:none;cursor:pointer;padding:5px;border-radius:5px;color:var(--c-muted);transition:color .15s,background .15s;line-height:0}
+.act-btn:hover{color:var(--c-primary);background:var(--c-primary-lt)}
+.act-btn.del:hover{color:var(--c-err);background:var(--c-err-lt)}
+.empty-state{text-align:center;padding:52px 24px;color:var(--c-muted)}
+
+/* ── RUTA CALENDAR ── */
+.date-strip-wrap{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.date-strip{display:flex;gap:7px;overflow-x:auto;flex:1;scrollbar-width:none;padding:2px}
+.date-strip::-webkit-scrollbar{display:none}
+.date-tab{
+  padding:10px 14px;border-radius:10px;cursor:pointer;text-align:center;
+  border:1px solid var(--c-border);background:var(--c-card);min-width:74px;
+  transition:all .15s;flex-shrink:0;box-shadow:var(--shadow);
+}
+.date-tab.today{border-color:var(--c-primary);background:var(--c-primary-lt)}
+.date-tab.active{background:var(--c-primary);border-color:var(--c-primary);color:#fff;box-shadow:0 4px 14px rgba(155,27,48,.35)}
+.date-tab .dd{font-family:var(--font-num);font-size:18px;font-weight:700;line-height:1}
+.date-tab .dow{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;opacity:.65;margin-top:2px}
+.date-tab .cnt{font-size:10px;margin-top:3px;opacity:.65}
+.nav-arrow{background:var(--c-card);border:1px solid var(--c-border);border-radius:8px;padding:8px 11px;cursor:pointer;color:var(--c-text);transition:all .15s;font-size:14px;box-shadow:var(--shadow)}
+.nav-arrow:hover{border-color:var(--c-primary);color:var(--c-primary);background:var(--c-primary-lt)}
+
+.ruta-day-card{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r);overflow:hidden;margin-bottom:12px;box-shadow:var(--shadow)}
+.ruta-day-head{padding:12px 18px;border-bottom:1px solid var(--c-border);font-size:12px;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.07em;display:flex;align-items:center;justify-content:space-between;background:var(--c-bg)}
+.ruta-row{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--c-border);cursor:pointer;transition:background .12s}
+.ruta-row:last-child{border-bottom:none}
+.ruta-row:hover{background:var(--c-bg)}
+.ruta-time{font-family:var(--font-num);font-size:12px;font-weight:700;color:var(--c-primary);min-width:42px;font-variant-numeric:tabular-nums}
+.ruta-content{flex:1;min-width:0}
+.ruta-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ruta-meta{font-size:11px;color:var(--c-muted);margin-top:2px}
+.ruta-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.no-rutas{text-align:center;padding:36px;color:var(--c-muted);font-size:13px}
+
+/* ── TRANSFERS ── */
+.transfer-list{background:var(--c-card);border:1px solid var(--c-border);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow)}
+.transfer-row{display:flex;align-items:center;gap:14px;padding:13px 18px;border-bottom:1px solid var(--c-border)}
+.transfer-row:last-child{border-bottom:none}
+.tr-icon{width:36px;height:36px;border-radius:10px;background:var(--c-primary-lt);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tr-info{flex:1;min-width:0}
+.tr-name{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr-route{font-size:11px;color:var(--c-muted);margin-top:2px}
+.tr-qty{font-family:var(--font-num);font-size:14px;font-weight:700;color:var(--c-primary);font-variant-numeric:tabular-nums;flex-shrink:0}
+.tr-date{font-size:11px;color:var(--c-muted);flex-shrink:0}
+
+/* ── MODALS ── */
+#modalWrap{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px}
+#modalBox{background:var(--c-card);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.3)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:20px 22px 16px;border-bottom:1px solid var(--c-border)}
+.modal-head h2{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.modal-body{padding:20px 22px}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--c-border)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--c-muted);margin-bottom:6px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:10px 13px;border:1px solid var(--c-border);border-radius:var(--r-sm);background:var(--c-bg);color:var(--c-text);font-family:var(--font);font-size:13px;outline:none;transition:border-color .15s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--c-primary)}
+.form-group textarea{resize:vertical;min-height:72px}
+.qty-input{display:flex;align-items:center;gap:8px}
+.qty-input input{text-align:center;font-family:var(--font-num);font-size:16px;font-weight:700}
+.qty-btn{background:var(--c-bg);border:1px solid var(--c-border);border-radius:7px;width:34px;height:34px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--c-text);transition:all .15s}
+.qty-btn:hover{background:var(--c-primary-lt);border-color:var(--c-primary);color:var(--c-primary)}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border-radius:var(--r-sm);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;text-decoration:none;letter-spacing:.01em}
+.btn-primary{background:linear-gradient(135deg,#9B1B30,#C62040);color:#fff;box-shadow:0 2px 8px rgba(155,27,48,.3)}
+.btn-primary:hover{background:linear-gradient(135deg,#7A1526,#9B1B30);box-shadow:0 4px 14px rgba(155,27,48,.4)}
+.btn-ghost{background:transparent;color:var(--c-muted);border:1px solid var(--c-border)}
+.btn-ghost:hover{background:var(--c-bg);color:var(--c-text)}
+.btn-danger{background:var(--c-err);color:#fff}
+.btn-danger:hover{background:#B91C1C}
+.btn-sm{padding:6px 11px;font-size:12px}
+.btn-icon{padding:6px;border-radius:var(--r-sm);background:transparent;border:1px solid var(--c-border);color:var(--c-muted)}
+.btn-icon:hover{background:var(--c-primary-lt);border-color:var(--c-primary);color:var(--c-primary)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:24px;right:24px;display:flex;flex-direction:column;gap:8px;z-index:400;pointer-events:none}
+.toast-msg{background:#1D151A;color:#fff;padding:11px 17px;border-radius:11px;font-size:13px;font-weight:500;box-shadow:0 6px 20px rgba(0,0,0,.35);border-left:3px solid var(--c-primary);animation:slideUp .2s ease;pointer-events:all;max-width:300px}
+.toast-msg.err{border-left-color:var(--c-err)}
+.toast-msg.ok{border-left-color:var(--c-ok)}
+@keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── MISC ── */
+.nodata{text-align:center;padding:40px;color:var(--c-muted)}
+.divider{height:1px;background:var(--c-border);margin:16px 0}
+.overlay-close{background:none;border:none;cursor:pointer;color:var(--c-muted);padding:5px;border-radius:5px;transition:color .15s,background .15s;font-size:18px;line-height:1}
+.overlay-close:hover{color:var(--c-err);background:var(--c-err-lt)}
+.alert-bar{padding:11px 15px;border-radius:var(--r-sm);margin-bottom:14px;font-size:13px;font-weight:500;border-left:3px solid;display:flex;align-items:center;gap:8px}
+.alert-bar.warn{background:var(--c-warn-lt);border-color:var(--c-warn);color:var(--c-warn)}
+.alert-bar.err{background:var(--c-err-lt);border-color:var(--c-err);color:var(--c-err)}
+
+@media(max-width:700px){
+  #sidebar{position:fixed;left:0;top:0;height:100%;transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0);box-shadow:6px 0 24px rgba(0,0,0,.5)}
+  .hamburger{display:block}
+  .stat-grid{grid-template-columns:1fr 1fr}
+  .cat-grid{grid-template-columns:1fr 1fr;}.stat-grid{grid-template-columns:1fr 1fr}
+  .two-col{grid-template-columns:1fr}
+  #view{padding:16px}
+  .form-row{grid-template-columns:1fr}
+  .greeting-kpis{display:none}
+  .greeting-bar{padding:20px 22px}
+}
+</style>
+</head>
+<body>
+
+<!-- ─── LOGIN SCREEN ─── -->
+<div id="loginWrap">
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="brand-badge">CMI</span>
+      <span class="brand-text">ObraControl</span>
+    </div>
+    <p class="login-sub">Sistema de Inventario y Logistica</p>
+    <div class="form-group">
+      <label for="loginEmail">Email</label>
+      <input type="email" id="loginEmail" placeholder="usuario@cmi.com" autocomplete="email"
+             onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+    </div>
+    <div class="form-group">
+      <label for="loginPass">Contrasena</label>
+      <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password"
+             onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button id="loginBtn" class="btn btn-primary w-full" onclick="doLogin()">Ingresar</button>
+    <div id="loginErr" style="color:#EF4444;font-size:12px;margin-top:10px;text-align:center;display:none"></div>
+    <div style="text-align:center;margin-top:16px">
+      <span style="font-size:12px;color:#5A4F5E">¿Primera vez? </span>
+      <span style="font-size:12px;color:#9B1B30;cursor:pointer;font-weight:600" onclick="toggleSignup()">Crear cuenta</span>
+    </div>
+  </div>
+</div>
+
+<!-- ─── APP ─── -->
+<div id="app" hidden>
+  <aside id="sidebar">
+    <div class="sb-header">
+      <div class="sb-brand"><span class="sb-badge">CMI</span><span class="sb-title">ObraControl</span></div>
+      <div class="sb-user" id="sbUser"></div>
+    </div>
+    <div class="sb-nav">
+      <div class="sb-nav-item" id="nav-dashboard" onclick="nav('dashboard')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </div>
+      <div class="sb-nav-item" id="nav-rutas" onclick="nav('rutas')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        Rutas del Camion
+      </div>
+      <div class="sb-nav-item" id="nav-transfers" onclick="nav('transfers')">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
+        Transferencias
+      </div>
+    </div>
+    <div class="sb-section">Proyectos</div>
+    <div class="sb-projects" id="sbProjects"></div>
+    <div class="sb-foot">
+      <button class="btn-logout" onclick="doLogout()">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        Cerrar Sesion
+      </button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="topbar">
+      <button class="hamburger" onclick="toggleSidebar()">
+        <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <span class="topbar-title" id="topbarTitle">Dashboard</span>
+      <span class="topbar-badge" id="topbarBadge" hidden></span>
+      <div id="topbarActions"></div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+
+<!-- ─── MODAL ─── -->
+<div id="modalWrap" hidden onclick="if(event.target===this)closeModal()">
+  <div id="modalBox"></div>
+</div>
+
+<!-- ─── TOAST ─── -->
+<div id="toast"></div>
+
+<script>
+// ============================================================
+// CONFIG — Fill in after creating your Supabase project
+// Dashboard: supabase.com → Settings → API
+// ============================================================
+const SUPABASE_URL      = 'https://iwwqtroccnepbtrinexl.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_OvIegJHzJXSOK4aL4BV9jg_APwTuTKH';
+
+// ── Supabase client ──────────────────────────────────────────
+const { createClient } = window.supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ── Constants ────────────────────────────────────────────────
+const CATS = [
+  {id:'herramientas',label:'Herramientas'},
+  {id:'equipos',     label:'Equipos'},
+  {id:'pinturas',    label:'Pinturas'},
+  {id:'materiales',  label:'Materiales'}
+];
+const UNITS = ['unidades','GL','Tanque 5GL','litros','kg','metros','rollos','cajas','piezas','bolsas','galones','cubetas'];
+const ESTADOS = ['OPERATIVA','NO_OPERATIVA','MANTENIMIENTO'];
+const RUTA_ST = ['pendiente','en_ruta','completada'];
+const RUTA_ST_LABEL = {pendiente:'Pendiente',en_ruta:'En ruta',completada:'Completada'};
+const DAYS_ES = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+// ── State ────────────────────────────────────────────────────
+const state = {
+  userId: null, userName: '', isAdmin: false,
+  view: 'dashboard', projectId: null,
+  search: '', cat: 'all',
+  projects: new Map(), items: new Map(), transfers: [], rutas: [],
+  profiles: {}, sidebarOpen: false, rutaDate: todayStr()
+};
+
+// ── Normalizers (snake_case → camelCase) ─────────────────────
+function normalizeProject(r){
+  return {id:r.id,name:r.name,address:r.address||'',supervisor:r.supervisor||'',
+          engineerId:r.engineer_id||null,color:r.color||'#9B1B30',status:r.status||'active',
+          notes:r.notes||'',createdAt:r.created_at};
+}
+function normalizeItem(r){
+  return {id:r.id,name:r.name,category:r.category,unit:r.unit||'unidades',
+          quantity:r.quantity||0,minStock:r.min_stock||0,estado:r.estado||'OPERATIVA',
+          notes:r.notes||'',projectId:r.project_id,updatedBy:r.updated_by||null,
+          updatedAt:r.updated_at};
+}
+function normalizeTransfer(r){
+  return {id:r.id,itemName:r.item_name,fromProject:r.from_project,toProject:r.to_project,
+          quantity:r.quantity,unit:r.unit,byUser:r.by_user,notes:r.notes||'',date:r.date};
+}
+function normalizeRuta(r){
+  return {id:r.id,date:r.date,hora:r.hora||'',origen:r.origen||'',destino:r.destino||'',
+          conductor:r.conductor||'',descripcion:r.descripcion||'',status:r.status||'pendiente',
+          updatedBy:r.updated_by||null,updatedAt:r.updated_at};
+}
+
+// ── Auth ─────────────────────────────────────────────────────
+let _signupMode = false;
+function toggleSignup(){
+  _signupMode = !_signupMode;
+  document.getElementById('loginBtn').textContent = _signupMode ? 'Crear cuenta' : 'Ingresar';
+  document.querySelector('[onclick="toggleSignup()"]').textContent = _signupMode ? 'Ya tengo cuenta' : 'Crear cuenta';
+  document.getElementById('loginErr').style.display = 'none';
+}
+
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  const btn   = document.getElementById('loginBtn');
+  const err   = document.getElementById('loginErr');
+  err.style.display = 'none';
+  if(!email||!pass){showLoginErr('Ingresa email y contrasena');return;}
+  btn.disabled = true;
+  if(_signupMode){
+    btn.textContent = 'Creando cuenta...';
+    const {error} = await sb.auth.signUp({email,password:pass});
+    btn.disabled = false; btn.textContent = 'Crear cuenta';
+    if(error){showLoginErr(error.message);}
+    else{showLoginErr('✅ Cuenta creada. Ahora inicia sesion.');_signupMode=false;document.getElementById('loginBtn').textContent='Ingresar';}
+  } else {
+    btn.textContent = 'Ingresando...';
+    const {error} = await sb.auth.signInWithPassword({email,password:pass});
+    btn.disabled = false; btn.textContent = 'Ingresar';
+    if(error){showLoginErr(error.message==='Invalid login credentials'?'Email o contrasena incorrectos':error.message);}
+  }
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+}
+
+function showLoginErr(msg){
+  const el = document.getElementById('loginErr');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+function showLogin(){
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('app').hidden = true;
+}
+
+function showApp(){
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').hidden = false;
+}
+
+// ── Data fetching ─────────────────────────────────────────────
+async function loadAll(){
+  const [pR,iR,tR,rR,prR] = await Promise.all([
+    sb.from('projects').select('*').order('name'),
+    sb.from('items').select('*').order('name'),
+    sb.from('transfers').select('*').order('date',{ascending:false}).limit(100),
+    sb.from('rutas').select('*').order('date').order('hora'),
+    sb.from('profiles').select('id, name')
+  ]);
+  state.projects.clear();
+  (pR.data||[]).forEach(r=>state.projects.set(r.id,normalizeProject(r)));
+  state.items.clear();
+  (iR.data||[]).forEach(r=>state.items.set(r.id,normalizeItem(r)));
+  state.transfers = (tR.data||[]).map(normalizeTransfer);
+  state.rutas     = (rR.data||[]).map(normalizeRuta);
+  state.profiles  = {};
+  (prR.data||[]).forEach(p=>{state.profiles[p.id]=p.name||p.id.slice(0,8);});
+
+  // Ensure bodega exists (admin only)
+  if(state.isAdmin && !state.projects.has('bodega')){
+    await sb.from('projects').insert({id:'bodega',name:'PATIO (Base Central)',address:'Almacen principal',supervisor:'GABRIEL',color:'#9B1B30',status:'active'});
+    const {data} = await sb.from('projects').select('*').eq('id','bodega');
+    if(data&&data[0]) state.projects.set('bodega',normalizeProject(data[0]));
+  }
+}
+
+// ── Real-time subscriptions ───────────────────────────────────
+function setupRealtime(){
+  sb.channel('db-changes')
+    .on('postgres_changes',{event:'*',schema:'public',table:'projects'},(p)=>{
+      if(p.eventType==='DELETE') state.projects.delete(p.old.id);
+      else state.projects.set(p.new.id,normalizeProject(p.new));
+      render();
+    })
+    .on('postgres_changes',{event:'*',schema:'public',table:'items'},(p)=>{
+      if(p.eventType==='DELETE') state.items.delete(p.old.id);
+      else state.items.set(p.new.id,normalizeItem(p.new));
+      render();
+    })
+    .on('postgres_changes',{event:'*',schema:'public',table:'transfers'},(p)=>{
+      if(p.eventType==='INSERT') state.transfers.unshift(normalizeTransfer(p.new));
+      render();
+    })
+    .on('postgres_changes',{event:'*',schema:'public',table:'rutas'},async()=>{
+      const {data}=await sb.from('rutas').select('*').order('date').order('hora');
+      state.rutas=(data||[]).map(normalizeRuta);
+      render();
+    })
+    .subscribe();
+}
+
+// ── Navigation ────────────────────────────────────────────────
+function nav(view, projectId){
+  state.view = view;
+  state.projectId = projectId||null;
+  state.search = ''; state.cat = 'all';
+  closeSidebar(); render();
+}
+
+function render(){
+  renderSidebar();
+  if(state.view==='dashboard') renderDashboard();
+  else if(state.view==='project') renderProject();
+  else if(state.view==='rutas') renderRutas();
+  else if(state.view==='transfers') renderTransfers();
+}
+
+// ── Sidebar ───────────────────────────────────────────────────
+function renderSidebar(){
+  document.getElementById('sbUser').textContent =
+    state.userName + (state.isAdmin?' (Admin)':'');
+
+  // Nav active states
+  ['dashboard','rutas','transfers'].forEach(v=>{
+    const el = document.getElementById('nav-'+v);
+    if(el) el.classList.toggle('active', state.view===v);
+  });
+
+  // Projects list
+  const projects = sortedProjects();
+  document.getElementById('sbProjects').innerHTML = projects.map(p=>`
+    <div class="sb-proj ${state.view==='project'&&state.projectId===p.id?'active':''}"
+         onclick="nav('project','${p.id}')">
+      <span class="sb-proj-dot" style="background:${p.color}"></span>
+      <span class="sb-proj-name">${esc(p.name)}</span>
+    </div>`).join('');
+}
+
+function sortedProjects(){
+  const all = [...state.projects.values()].filter(p=>p.status!=='archived');
+  const bodega = all.find(p=>p.id==='bodega');
+  const rest   = all.filter(p=>p.id!=='bodega').sort((a,b)=>a.name.localeCompare(b.name));
+  return bodega ? [bodega,...rest] : rest;
+}
+
+// ── Dashboard ─────────────────────────────────────────────────
+const CAT_META = {
+  herramientas:{color:'#9B1B30',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'},
+  equipos:     {color:'#1D4ED8',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>'},
+  pinturas:    {color:'#7C3AED',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M2 13.5V18a2 2 0 002 2h3a2 2 0 002-2v-1a2 2 0 012-2h2a2 2 0 012 2v1a2 2 0 002 2h3a2 2 0 002-2v-4.5"/><path d="M2 13.5L12 4l10 9.5"/></svg>'},
+  materiales:  {color:'#0F766E',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>'}
+};
+
+function renderDashboard(){
+  setTopbar('Dashboard');
+  const items     = [...state.items.values()];
+  const projects  = sortedProjects();
+  const todayRutas= state.rutas.filter(r=>r.date===state.rutaDate);
+  const totalItems= items.length;
+  const noOp      = items.filter(i=>i.estado==='NO_OPERATIVA').length;
+  const lowStock  = items.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length;
+  const activeProj= projects.filter(p=>p.id!=='bodega').length;
+  const catCounts = {};
+  CATS.forEach(c=>{catCounts[c.id]=items.filter(i=>i.category===c.id).length;});
+  const maxCat = Math.max(1,...Object.values(catCounts));
+
+  const hr = new Date().getHours();
+  const greet = hr<12?'Buenos días':hr<18?'Buenas tardes':'Buenas noches';
+
+  let alerts = '';
+  if(noOp>0)    alerts += `<div class="alert-bar err"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>${noOp} artículo(s) marcado(s) como NO OPERATIVA</div>`;
+  if(lowStock>0) alerts += `<div class="alert-bar warn"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>${lowStock} artículo(s) con stock bajo el mínimo</div>`;
+
+  document.getElementById('view').innerHTML = `
+  <div class="greeting-bar">
+    <div style="position:relative;z-index:1">
+      <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
+      <div class="greeting-date">${fmtDateLong(state.rutaDate)} · CMI Construction Corp</div>
+    </div>
+    <div class="greeting-kpis">
+      <div class="greeting-kpi">
+        <div class="greeting-kpi-val">${todayRutas.length}</div>
+        <div class="greeting-kpi-label">Rutas hoy</div>
+      </div>
+      <div class="greeting-kpi">
+        <div class="greeting-kpi-val">${totalItems}</div>
+        <div class="greeting-kpi-label">Artículos</div>
+      </div>
+    </div>
+  </div>
+  ${alerts}
+  <div class="stat-grid">
+    <div class="stat-card" style="--stat-color:#9B1B30">
+      <div class="stat-icon" style="background:rgba(155,27,48,.12);color:#9B1B30"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/></svg></div>
+      <div class="stat-val" style="color:#9B1B30">${totalItems}</div>
+      <div class="stat-label">Total Artículos</div>
+    </div>
+    <div class="stat-card" style="--stat-color:#1D4ED8">
+      <div class="stat-icon" style="background:rgba(29,78,216,.12);color:#1D4ED8"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+      <div class="stat-val" style="color:#1D4ED8">${activeProj}</div>
+      <div class="stat-label">Proyectos Activos</div>
+    </div>
+    <div class="stat-card" style="--stat-color:#DC2626">
+      <div class="stat-icon" style="background:rgba(220,38,38,.12);color:#DC2626"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+      <div class="stat-val" style="color:#DC2626">${noOp}</div>
+      <div class="stat-label">No Operativa</div>
+    </div>
+    <div class="stat-card" style="--stat-color:#D97706">
+      <div class="stat-icon" style="background:rgba(217,119,6,.12);color:#D97706"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
+      <div class="stat-val" style="color:#D97706">${lowStock}</div>
+      <div class="stat-label">Stock Bajo</div>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="section-card">
+      <div class="section-head">
+        <h3><span class="section-head-bar"></span>Rutas de Hoy</h3>
+        <span style="font-size:11px;font-weight:600;color:var(--c-muted);background:var(--c-border);padding:2px 8px;border-radius:20px">${todayRutas.length} viaje(s)</span>
+      </div>
+      <div class="section-body">
+        ${todayRutas.length===0
+          ?'<div class="nodata" style="padding:24px">Sin rutas programadas hoy</div>'
+          :todayRutas.map(r=>`
+          <div class="ruta-item" onclick="nav('rutas')">
+            <span class="ruta-hora">${r.hora||'--:--'}</span>
+            <div style="flex:1;min-width:0">
+              <div class="ruta-desc">${esc(r.descripcion)}</div>
+              <div class="ruta-dest">${projName(r.destino)||r.destino}</div>
+            </div>
+            <span class="status-chip ${r.status}">${RUTA_ST_LABEL[r.status]||r.status}</span>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-head">
+        <h3><span class="section-head-bar"></span>Proyectos</h3>
+        ${state.isAdmin?`<button class="btn btn-sm btn-primary" onclick="showProjectModal()">+ Proyecto</button>`:''}
+      </div>
+      <div class="section-body">
+        ${projects.map(p=>{
+          const cnt = [...state.items.values()].filter(i=>i.projectId===p.id).length;
+          return `<div class="proj-list-item" onclick="nav('project','${p.id}')">
+            <span class="proj-color-bar" style="background:${p.color}"></span>
+            <div class="proj-info">
+              <div class="proj-info-name">${esc(p.name)}</div>
+              <div class="proj-info-sup">${esc(p.supervisor)}</div>
+            </div>
+            <span class="proj-count-badge">${cnt}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  </div>
+
+  <div class="cat-grid">
+    ${CATS.map(c=>{
+      const m   = CAT_META[c.id]||{color:'#9B1B30',icon:''};
+      const pct = Math.round(catCounts[c.id]/maxCat*100);
+      return `
+      <div class="cat-card" style="--cat-color:${m.color}">
+        <div class="cat-icon-wrap" style="background:${m.color}18;color:${m.color}">${m.icon}</div>
+        <div class="cat-card-num" style="color:${m.color}">${catCounts[c.id]}</div>
+        <div class="cat-card-label">${c.label}</div>
+        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${m.color}"></div></div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ── Project view ──────────────────────────────────────────────
+function renderProject(){
+  const proj = state.projects.get(state.projectId);
+  if(!proj){setTopbar('Proyecto no encontrado');document.getElementById('view').innerHTML='<div class="nodata">Proyecto no encontrado</div>';return;}
+
+  setTopbar(proj.name, proj.supervisor);
+
+  const items = [...state.items.values()]
+    .filter(i=>i.projectId===state.projectId)
+    .filter(i=>state.cat==='all'||i.category===state.cat)
+    .filter(i=>!state.search||i.name.toLowerCase().includes(state.search.toLowerCase()))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+
+  const engineerName = proj.engineerId ? (state.profiles[proj.engineerId]||'Asignado') : '';
+
+  document.getElementById('topbarActions').innerHTML = state.isAdmin
+    ?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'';
+
+  document.getElementById('view').innerHTML = `
+  ${engineerName?`<div style="font-size:12px;color:var(--c-muted);margin-bottom:14px">Ingeniero asignado: <b>${esc(engineerName)}</b></div>`:''}
+  <div class="toolbar">
+    <div class="search-wrap">
+      <span class="search-icon"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
+      <input type="text" placeholder="Buscar articulo..." value="${esc(state.search)}"
+             oninput="state.search=this.value;renderProject()">
+    </div>
+    <div class="filter-chips">
+      <span class="chip ${state.cat==='all'?'active':''}" onclick="state.cat='all';renderProject()">Todos</span>
+      ${CATS.map(c=>`<span class="chip ${state.cat===c.id?'active':''}" onclick="state.cat='${c.id}';renderProject()">${c.label}</span>`).join('')}
+    </div>
+    <button class="btn btn-sm btn-primary" onclick="showItemModal()">+ Articulo</button>
+    ${state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showTransferModal()">Transferir</button>`:''}
+  </div>
+  <div class="item-table">
+    <table>
+      <thead><tr>
+        <th>Articulo</th><th>Categoria</th><th>Cantidad</th><th>Unidad</th><th>Estado</th><th>Notas</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${items.length===0
+          ?`<tr><td colspan="7"><div class="empty-state">Sin articulos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
+          :items.map(item=>`
+          <tr>
+            <td><b style="font-size:13px">${esc(item.name)}</b></td>
+            <td><span class="cat-chip">${CATS.find(c=>c.id===item.category)?.label||item.category}</span></td>
+            <td><span class="qty-num ${item.minStock>0&&item.quantity<=item.minStock?'qty-low':''}">${item.quantity}</span></td>
+            <td style="color:var(--c-muted);font-size:12px">${esc(item.unit)}</td>
+            <td><span class="estado-chip ${item.estado}">${item.estado.replace('_',' ')}</span></td>
+            <td style="font-size:12px;color:var(--c-muted);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(item.notes)}</td>
+            <td style="white-space:nowrap">
+              <button class="act-btn" onclick="showItemModal('${item.id}')" title="Editar">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </button>
+              ${state.isAdmin?`<button class="act-btn del" onclick="showDeleteItem('${item.id}')" title="Eliminar">
+                <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+              </button>`:''}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+// ── Rutas ─────────────────────────────────────────────────────
+function renderRutas(){
+  setTopbar('Rutas del Camion');
+  document.getElementById('topbarActions').innerHTML = state.isAdmin
+    ?`<button class="btn btn-sm btn-primary" onclick="showRutaModal()">+ Ruta</button>`:'';
+
+  const today = todayStr();
+  const dates = [];
+  for(let i=-1;i<=5;i++){
+    const d = new Date(); d.setDate(d.getDate()+i);
+    dates.push(ymd(d));
+  }
+
+  const dateStrip = dates.map(d=>{
+    const parts  = d.split('-');
+    const dt     = new Date(+parts[0],+parts[1]-1,+parts[2]);
+    const cnt    = state.rutas.filter(r=>r.date===d).length;
+    return `<div class="date-tab ${d===today?'today':''} ${d===state.rutaDate?'active':''}"
+              onclick="state.rutaDate='${d}';renderRutas()">
+      <div class="dd">${dt.getDate()}</div>
+      <div class="dow">${DAYS_ES[dt.getDay()]}</div>
+      <div class="cnt">${cnt?cnt+' ruta':'—'}</div>
+    </div>`;
+  }).join('');
+
+  const selRutas = state.rutas.filter(r=>r.date===state.rutaDate)
+                              .sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+
+  document.getElementById('view').innerHTML = `
+  <div class="date-strip-wrap">
+    <button class="nav-arrow" onclick="shiftRutaDate(-7)">‹‹</button>
+    <div class="date-strip">${dateStrip}</div>
+    <button class="nav-arrow" onclick="shiftRutaDate(7)">>>></button>
+  </div>
+  ${selRutas.length===0
+    ?`<div class="ruta-day-card"><div class="no-rutas">Sin rutas para ${fmtDateLong(state.rutaDate)}</div></div>`
+    :`<div class="ruta-day-card">
+      <div class="ruta-day-head">
+        <span>${fmtDateLong(state.rutaDate)}</span>
+        <span style="font-size:11px">${selRutas.length} ruta(s)</span>
+      </div>
+      ${selRutas.map(r=>`
+      <div class="ruta-row">
+        <span class="ruta-time">${r.hora||'--'}</span>
+        <div class="ruta-content">
+          <div class="ruta-title">${esc(r.descripcion)}</div>
+          <div class="ruta-meta">
+            ${r.origen?projName(r.origen)+' → ':''}${r.destino?projName(r.destino):''}
+            ${r.conductor?' • '+esc(r.conductor):''}
+          </div>
+        </div>
+        <div class="ruta-actions">
+          <span class="status-chip ${r.status}" style="cursor:pointer" onclick="cycleRutaStatus('${r.id}')">${RUTA_ST_LABEL[r.status]}</span>
+          ${state.isAdmin?`
+          <button class="act-btn" onclick="showRutaModal('${r.id}')" title="Editar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="act-btn del" onclick="deleteRuta('${r.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button>`:''}
+        </div>
+      </div>`).join('')}
+    </div>`}`;
+}
+
+function shiftRutaDate(days){
+  const parts = state.rutaDate.split('-');
+  const d = new Date(+parts[0],+parts[1]-1,+parts[2]);
+  d.setDate(d.getDate()+days);
+  state.rutaDate = ymd(d);
+  renderRutas();
+}
+
+async function cycleRutaStatus(id){
+  const ruta = state.rutas.find(r=>r.id===id);
+  if(!ruta) return;
+  const next = RUTA_ST[(RUTA_ST.indexOf(ruta.status)+1)%RUTA_ST.length];
+  const {error} = await sb.from('rutas').update({status:next,updated_by:state.userId,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Error al actualizar','err');return;}
+  ruta.status = next;
+  renderRutas();
+}
+
+async function deleteRuta(id){
+  if(!confirm('Eliminar esta ruta?')) return;
+  await sb.from('rutas').delete().eq('id',id);
+  state.rutas = state.rutas.filter(r=>r.id!==id);
+  renderRutas();
+  toast('Ruta eliminada');
+}
+
+// ── Transfers ─────────────────────────────────────────────────
+function renderTransfers(){
+  setTopbar('Historial de Transferencias');
+  document.getElementById('topbarActions').innerHTML = '';
+  const transfers = state.transfers.slice(0,80);
+  document.getElementById('view').innerHTML = transfers.length===0
+    ?'<div class="nodata">Sin transferencias registradas</div>'
+    :`<div class="transfer-list">
+      ${transfers.map(t=>{
+        const fromName = projName(t.fromProject)||t.fromProject||'?';
+        const toName   = projName(t.toProject)||t.toProject||'?';
+        return `<div class="transfer-row">
+          <div class="tr-icon"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#9B1B30" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg></div>
+          <div class="tr-info">
+            <div class="tr-name">${esc(t.itemName)}</div>
+            <div class="tr-route">${esc(fromName)} → ${esc(toName)}${t.notes?' • '+esc(t.notes):''}</div>
+          </div>
+          <span class="tr-qty">+${t.quantity} ${esc(t.unit||'')}</span>
+          <span class="tr-date">${fmtDate(t.date)}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+// ── Modals ────────────────────────────────────────────────────
+function openModal(html){ document.getElementById('modalBox').innerHTML=html; document.getElementById('modalWrap').hidden=false; }
+function closeModal(){ document.getElementById('modalWrap').hidden=true; }
+
+// Project modal
+function showProjectModal(id){
+  const p = id ? state.projects.get(id) : null;
+  const projs = [...state.projects.values()].filter(pr=>pr.status!=='archived');
+  openModal(`
+  <div class="modal-head"><h2>${p?'Editar Proyecto':'Nuevo Proyecto'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-row">
+      <div class="form-group"><label>Nombre</label><input id="pName" value="${esc(p?.name||'')}" placeholder="Nombre del proyecto"></div>
+      <div class="form-group"><label>Supervisor</label><input id="pSup" value="${esc(p?.supervisor||'')}" placeholder="GABRIEL"></div>
+    </div>
+    <div class="form-group"><label>Direccion / Ubicacion</label><input id="pAddr" value="${esc(p?.address||'')}" placeholder="ACP - Sector"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Color</label><input type="color" id="pColor" value="${p?.color||'#9B1B30'}"></div>
+      <div class="form-group"><label>Estado</label>
+        <select id="pStatus"><option value="active" ${!p||p.status==='active'?'selected':''}>Activo</option><option value="archived" ${p?.status==='archived'?'selected':''}>Archivado</option></select>
+      </div>
+    </div>
+    <div class="form-group"><label>Notas</label><textarea id="pNotes" rows="2">${esc(p?.notes||'')}</textarea></div>
+    ${p&&p.id!=='bodega'?`<div style="margin-top:8px"><label style="font-size:11px;color:var(--c-muted)">ID del proyecto: <code>${p.id}</code></label></div>`:''}
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveProject(${p?`'${p.id}'`:'null'})">Guardar</button>
+  </div>`);
+}
+
+async function saveProject(id){
+  const name   = document.getElementById('pName').value.trim();
+  const sup    = document.getElementById('pSup').value.trim();
+  const addr   = document.getElementById('pAddr').value.trim();
+  const color  = document.getElementById('pColor').value;
+  const status = document.getElementById('pStatus').value;
+  const notes  = document.getElementById('pNotes').value.trim();
+  if(!name){toast('Ingresa el nombre del proyecto','err');return;}
+  const row = {name,supervisor:sup,address:addr,color,status,notes,updated_at:new Date().toISOString()};
+  if(id){
+    const {error}=await sb.from('projects').update(row).eq('id',id);
+    if(error){toast('Error al guardar','err');return;}
+  } else {
+    const pid = name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'').slice(0,30)+'_'+Date.now().toString(36);
+    const {error}=await sb.from('projects').insert({id:pid,...row,created_at:new Date().toISOString()});
+    if(error){toast('Error al crear','err');return;}
+  }
+  closeModal(); toast('Proyecto guardado','ok');
+}
+
+// Item modal
+function showItemModal(id){
+  const item = id ? state.items.get(id) : null;
+  const isNew = !item;
+  openModal(`
+  <div class="modal-head"><h2>${isNew?'Nuevo Articulo':'Editar Articulo'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Nombre</label><input id="iName" value="${esc(item?.name||'')}" placeholder="Nombre del articulo"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Categoria</label>
+        <select id="iCat">${CATS.map(c=>`<option value="${c.id}" ${item?.category===c.id?'selected':''}>${c.label}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Unidad</label>
+        <select id="iUnit">${UNITS.map(u=>`<option ${item?.unit===u?'selected':''}>${u}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Cantidad</label>
+        <div class="qty-input">
+          <button class="qty-btn" onclick="adjQty(-1)">-</button>
+          <input id="iQty" type="number" min="0" value="${item?.quantity||0}">
+          <button class="qty-btn" onclick="adjQty(1)">+</button>
+        </div>
+      </div>
+      <div class="form-group"><label>Stock Minimo</label><input id="iMin" type="number" min="0" value="${item?.minStock||0}"></div>
+    </div>
+    <div class="form-group"><label>Estado</label>
+      <select id="iEstado">${ESTADOS.map(e=>`<option ${item?.estado===e?'selected':''}>${e}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label>Notas</label><textarea id="iNotes" rows="2">${esc(item?.notes||'')}</textarea></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveItem(${id?`'${id}'`:'null'})">Guardar</button>
+  </div>`);
+}
+
+function adjQty(delta){
+  const inp = document.getElementById('iQty');
+  inp.value = Math.max(0,(+inp.value||0)+delta);
+}
+
+async function saveItem(id){
+  const name   = document.getElementById('iName').value.trim();
+  const cat    = document.getElementById('iCat').value;
+  const unit   = document.getElementById('iUnit').value;
+  const qty    = parseInt(document.getElementById('iQty').value)||0;
+  const min    = parseInt(document.getElementById('iMin').value)||0;
+  const estado = document.getElementById('iEstado').value;
+  const notes  = document.getElementById('iNotes').value.trim();
+  if(!name){toast('Ingresa el nombre','err');return;}
+  const row = {name,category:cat,unit,quantity:qty,min_stock:min,estado,notes,updated_by:state.userId,updated_at:new Date().toISOString()};
+  if(id){
+    const {error}=await sb.from('items').update(row).eq('id',id);
+    if(error){toast('Error al guardar','err');return;}
+  } else {
+    const {error}=await sb.from('items').insert({...row,project_id:state.projectId,created_at:new Date().toISOString()});
+    if(error){toast('Error al crear','err');return;}
+  }
+  closeModal(); toast('Articulo guardado','ok');
+}
+
+// Delete item
+function showDeleteItem(id){
+  const item = state.items.get(id);
+  if(!item) return;
+  openModal(`
+  <div class="modal-head"><h2>Eliminar Articulo</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <p>¿Eliminar <b>${esc(item.name)}</b> permanentemente?</p>
+    <p style="color:var(--c-muted);font-size:13px;margin-top:8px">Esta accion no se puede deshacer.</p>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-danger" onclick="deleteItem('${id}')">Eliminar</button>
+  </div>`);
+}
+
+async function deleteItem(id){
+  const {error} = await sb.from('items').delete().eq('id',id);
+  if(error){toast('Error al eliminar','err');return;}
+  closeModal(); toast('Articulo eliminado');
+}
+
+// Transfer modal
+function showTransferModal(itemId){
+  const item = itemId ? state.items.get(itemId) : null;
+  const projects = sortedProjects().filter(p=>p.id!==state.projectId);
+  const items = [...state.items.values()].filter(i=>i.projectId===state.projectId);
+  openModal(`
+  <div class="modal-head"><h2>Transferir Articulo</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Articulo</label>
+      <select id="tItem">
+        ${items.map(i=>`<option value="${i.id}" ${item?.id===i.id?'selected':''}>${esc(i.name)} (${i.quantity} ${i.unit})</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group"><label>Destino</label>
+      <select id="tDest">${projects.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label>Cantidad</label>
+      <div class="qty-input">
+        <button class="qty-btn" onclick="adjTransferQty(-1)">-</button>
+        <input id="tQty" type="number" min="1" value="1">
+        <button class="qty-btn" onclick="adjTransferQty(1)">+</button>
+      </div>
+    </div>
+    <div class="form-group"><label>Notas</label><textarea id="tNotes" rows="2" placeholder="Motivo de la transferencia..."></textarea></div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="doTransfer()">Transferir</button>
+  </div>`);
+}
+
+function adjTransferQty(d){const i=document.getElementById('tQty');i.value=Math.max(1,(+i.value||1)+d);}
+
+async function doTransfer(){
+  const itemId = document.getElementById('tItem').value;
+  const destId = document.getElementById('tDest').value;
+  const qty    = parseInt(document.getElementById('tQty').value)||1;
+  const notes  = document.getElementById('tNotes').value.trim();
+  const item   = state.items.get(itemId);
+  if(!item){toast('Selecciona un articulo','err');return;}
+  if(qty>item.quantity){toast(`Solo hay ${item.quantity} ${item.unit} disponibles`,'err');return;}
+  if(!destId){toast('Selecciona un destino','err');return;}
+
+  // Deduct from source
+  const {error:e1}=await sb.from('items').update({quantity:item.quantity-qty,updated_by:state.userId,updated_at:new Date().toISOString()}).eq('id',item.id);
+  if(e1){toast('Error al transferir','err');return;}
+
+  // Add to destination (merge if exists)
+  const {data:dest}=await sb.from('items').select('*').eq('name',item.name).eq('project_id',destId);
+  if(dest&&dest.length>0){
+    await sb.from('items').update({quantity:dest[0].quantity+qty,updated_by:state.userId,updated_at:new Date().toISOString()}).eq('id',dest[0].id);
+  } else {
+    await sb.from('items').insert({name:item.name,category:item.category,unit:item.unit,quantity:qty,min_stock:0,estado:'OPERATIVA',project_id:destId,updated_by:state.userId,updated_at:new Date().toISOString(),created_at:new Date().toISOString()});
+  }
+
+  // Log
+  await sb.from('transfers').insert({item_name:item.name,from_project:item.projectId,to_project:destId,quantity:qty,unit:item.unit,by_user:state.userId,notes,date:new Date().toISOString()});
+
+  closeModal(); toast('Transferencia completada','ok');
+}
+
+// Ruta modal
+function showRutaModal(id){
+  const r = id ? state.rutas.find(rt=>rt.id===id) : null;
+  const projs = sortedProjects();
+  openModal(`
+  <div class="modal-head"><h2>${r?'Editar Ruta':'Nueva Ruta'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-row">
+      <div class="form-group"><label>Fecha</label><input type="date" id="rDate" value="${r?.date||state.rutaDate}"></div>
+      <div class="form-group"><label>Hora</label><input type="time" id="rHora" value="${r?.hora||'07:30'}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Origen</label>
+        <select id="rOrigen">${projs.map(p=>`<option value="${p.id}" ${r?.origen===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
+      </div>
+      <div class="form-group"><label>Destino</label>
+        <select id="rDestino">${projs.map(p=>`<option value="${p.id}" ${r?.destino===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="form-group"><label>Conductor</label><input id="rConductor" value="${esc(r?.conductor||'Gabriel / Martin')}" placeholder="Nombre del conductor"></div>
+    <div class="form-group"><label>Descripcion</label><textarea id="rDesc" rows="2">${esc(r?.descripcion||'')}</textarea></div>
+    <div class="form-group"><label>Estado</label>
+      <select id="rStatus">${RUTA_ST.map(s=>`<option value="${s}" ${r?.status===s?'selected':''}>${RUTA_ST_LABEL[s]}</option>`).join('')}</select>
+    </div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveRuta(${r?`'${r.id}'`:'null'})">Guardar</button>
+  </div>`);
+}
+
+async function saveRuta(id){
+  const date      = document.getElementById('rDate').value;
+  const hora      = document.getElementById('rHora').value;
+  const origen    = document.getElementById('rOrigen').value;
+  const destino   = document.getElementById('rDestino').value;
+  const conductor = document.getElementById('rConductor').value.trim();
+  const desc      = document.getElementById('rDesc').value.trim();
+  const status    = document.getElementById('rStatus').value;
+  if(!date||!desc){toast('Completa fecha y descripcion','err');return;}
+  const row = {date,hora,origen,destino,conductor,descripcion:desc,status,updated_by:state.userId,updated_at:new Date().toISOString()};
+  if(id){
+    const {error}=await sb.from('rutas').update(row).eq('id',id);
+    if(error){toast('Error al guardar','err');return;}
+  } else {
+    const {error}=await sb.from('rutas').insert({...row,created_at:new Date().toISOString()});
+    if(error){toast('Error al crear','err');return;}
+  }
+  closeModal(); toast('Ruta guardada','ok');
+}
+
+// ── Utilities ─────────────────────────────────────────────────
+function setTopbar(title, badge){
+  document.getElementById('topbarTitle').textContent = title;
+  const b = document.getElementById('topbarBadge');
+  if(badge){b.textContent=badge;b.hidden=false;}else{b.hidden=true;}
+  document.getElementById('topbarActions').innerHTML='';
+}
+
+function projName(id){ return id ? (state.projects.get(id)?.name||id) : ''; }
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function todayStr(){ return ymd(new Date()); }
+function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+
+function fmtDate(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return `${d.getDate()} ${MONTHS_ES[d.getMonth()].slice(0,3)} ${d.getFullYear()}`;
+}
+
+function fmtDateLong(dateStr){
+  if(!dateStr) return '';
+  const parts = dateStr.split('-');
+  const d = new Date(+parts[0],+parts[1]-1,+parts[2]);
+  return `${DAYS_ES[d.getDay()]}, ${d.getDate()} ${MONTHS_ES[d.getMonth()]}`;
+}
+
+function toggleSidebar(){
+  state.sidebarOpen = !state.sidebarOpen;
+  document.getElementById('sidebar').classList.toggle('open', state.sidebarOpen);
+}
+function closeSidebar(){
+  state.sidebarOpen = false;
+  document.getElementById('sidebar').classList.remove('open');
+}
+
+function toast(msg, type){
+  const div = document.createElement('div');
+  div.className = 'toast-msg' + (type==='err'?' err':type==='ok'?' ok':'');
+  div.textContent = msg;
+  document.getElementById('toast').appendChild(div);
+  setTimeout(()=>div.remove(), 3500);
+}
+
+// ── App initialization ────────────────────────────────────────
+sb.auth.onAuthStateChange(async (event, session) => {
+  if(event==='SIGNED_IN' && session){
+    state.userId = session.user.id;
+    // Load profile
+    const {data:profile} = await sb.from('profiles').select('name,role').eq('id',session.user.id).single();
+    state.isAdmin  = profile?.role === 'admin';
+    state.userName = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
+    showApp();
+    await loadAll();
+    setupRealtime();
+    render();
+  } else if(event==='SIGNED_OUT'){
+    state.userId=null; state.userName=''; state.isAdmin=false;
+    state.projects.clear(); state.items.clear(); state.transfers=[]; state.rutas=[];
+    showLogin();
+  }
+});
+
+// Check if Supabase is configured
+if(SUPABASE_URL.includes('YOUR_PROJECT')){
+  document.getElementById('loginErr').style.display='block';
+  document.getElementById('loginErr').textContent='⚠ Configura SUPABASE_URL y SUPABASE_ANON_KEY en index.html';
+}
+</script>
+</body>
+</html>
