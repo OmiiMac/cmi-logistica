@@ -391,6 +391,36 @@ html{height:100%}
   .greeting-kpis{display:none}
   .greeting-bar{padding:20px 22px}
 }
+
+/* ── PENDING / REJECTED SCREEN ── */
+#pendingWrap{
+  position:fixed;inset:0;z-index:300;padding:16px;
+  display:flex;align-items:center;justify-content:center;
+  background:#0D0810;
+  background-image:
+    radial-gradient(ellipse 80% 60% at 20% 40%, rgba(155,27,48,.25) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 80% at 80% 70%, rgba(100,14,26,.2) 0%, transparent 60%);
+}
+.pending-icon{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+.pending-title{font-size:18px;font-weight:700;color:#E8E6EA;margin-bottom:8px;text-align:center}
+.pending-sub{font-size:13px;color:#6A5A62;text-align:center;line-height:1.6}
+
+/* ── USERS PANEL ── */
+.user-row{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--c-border)}
+.user-row:last-child{border-bottom:none}
+.user-avatar{width:36px;height:36px;border-radius:50%;background:var(--c-primary-lt);color:var(--c-primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+.user-info{flex:1;min-width:0}
+.user-name{font-size:13px;font-weight:600;color:var(--c-text)}
+.user-email{font-size:11px;color:var(--c-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.user-actions{display:flex;gap:6px;flex-shrink:0}
+.btn-approve{background:var(--c-ok-lt);color:var(--c-ok);border:1px solid var(--c-ok);border-radius:var(--r-sm);padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-approve:hover{background:var(--c-ok);color:#fff}
+.btn-reject{background:var(--c-err-lt);color:var(--c-err);border:1px solid var(--c-err);border-radius:var(--r-sm);padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-reject:hover{background:var(--c-err);color:#fff}
+.status-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.05em}
+.status-badge.pending{background:var(--c-warn-lt);color:var(--c-warn)}
+.status-badge.active{background:var(--c-ok-lt);color:var(--c-ok)}
+.status-badge.rejected{background:var(--c-err-lt);color:var(--c-err)}
 </style>
 </head>
 <body>
@@ -422,6 +452,24 @@ html{height:100%}
   </div>
 </div>
 
+<!-- ─── PENDING SCREEN ─── -->
+<div id="pendingWrap" hidden>
+  <div class="login-card" style="text-align:center;max-width:380px">
+    <div class="login-brand" style="justify-content:center">
+      <span class="brand-badge">CMI</span>
+      <span class="brand-text">ObraControl</span>
+    </div>
+    <div id="pendingContent">
+      <div class="pending-icon" style="background:rgba(217,119,6,.15)">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="pending-title">Solicitud Pendiente</div>
+      <div class="pending-sub">Tu cuenta está siendo revisada.<br>El administrador aprobará tu acceso pronto.</div>
+    </div>
+    <button class="btn btn-primary w-full" style="margin-top:24px" onclick="doLogout()">Cerrar Sesión</button>
+  </div>
+</div>
+
 <!-- ─── APP ─── -->
 <div id="app" hidden>
   <aside id="sidebar">
@@ -441,6 +489,10 @@ html{height:100%}
       <div class="sb-nav-item" id="nav-transfers" onclick="nav('transfers')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
         Transferencias
+      </div>
+      <div class="sb-nav-item" id="nav-users" onclick="nav('users')" style="display:none">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+        Usuarios
       </div>
     </div>
     <div class="sb-section">Proyectos</div>
@@ -573,11 +625,28 @@ function showLoginErr(msg){
 
 function showLogin(){
   document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('pendingWrap').hidden = true;
   document.getElementById('app').hidden = true;
+}
+
+function showPending(rejected){
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').hidden = true;
+  const wrap = document.getElementById('pendingWrap');
+  wrap.hidden = false;
+  if(rejected){
+    document.getElementById('pendingContent').innerHTML = `
+      <div class="pending-icon" style="background:rgba(220,38,38,.15)">
+        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="#DC2626" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      </div>
+      <div class="pending-title">Acceso Denegado</div>
+      <div class="pending-sub">Tu solicitud de acceso fue rechazada.<br>Contacta al administrador.</div>`;
+  }
 }
 
 function showApp(){
   document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('pendingWrap').hidden = true;
   document.getElementById('app').hidden = false;
 }
 
@@ -646,6 +715,7 @@ function render(){
   else if(state.view==='project') renderProject();
   else if(state.view==='rutas') renderRutas();
   else if(state.view==='transfers') renderTransfers();
+  else if(state.view==='users') renderUsers();
 }
 
 // ── Sidebar ───────────────────────────────────────────────────
@@ -654,10 +724,12 @@ function renderSidebar(){
     state.userName + (state.isAdmin?' (Admin)':'');
 
   // Nav active states
-  ['dashboard','rutas','transfers'].forEach(v=>{
+  ['dashboard','rutas','transfers','users'].forEach(v=>{
     const el = document.getElementById('nav-'+v);
     if(el) el.classList.toggle('active', state.view===v);
   });
+  const usersNav = document.getElementById('nav-users');
+  if(usersNav) usersNav.style.display = state.isAdmin ? 'flex' : 'none';
 
   // Projects list
   const projects = sortedProjects();
@@ -1267,12 +1339,81 @@ function toast(msg, type){
   setTimeout(()=>div.remove(), 3500);
 }
 
+// ── Users Panel (Admin Only) ─────────────────────────────────
+async function renderUsers(){
+  if(!state.isAdmin){ nav('dashboard'); return; }
+  setTopbar('Usuarios','Gestión de Acceso');
+  document.getElementById('view').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;padding:40px"><div class="nodata">Cargando usuarios...</div></div>`;
+  const {data:profiles} = await sb.from('profiles').select('*').order('created_at',{ascending:false});
+  const all = profiles || [];
+  const pending  = all.filter(p=>p.status==='pending');
+  const active   = all.filter(p=>p.status==='active');
+  const rejected = all.filter(p=>p.status==='rejected');
+
+  function userRow(p, showActions){
+    const initials = (p.name||'?').slice(0,2).toUpperCase();
+    const email = p.email || p.name || p.id.slice(0,8);
+    return `<div class="user-row">
+      <div class="user-avatar">${esc(initials)}</div>
+      <div class="user-info">
+        <div class="user-name">${esc(p.name||'Sin nombre')}</div>
+        <div class="user-email">${esc(email)}</div>
+      </div>
+      ${showActions && p.status==='pending' ? `
+        <div class="user-actions">
+          <button class="btn-approve" onclick="approveUser('${p.id}')">Aprobar</button>
+          <button class="btn-reject"  onclick="rejectUser('${p.id}')">Rechazar</button>
+        </div>` : `<span class="status-badge ${p.status||'active'}">${p.status==='active'?'Activo':p.status==='pending'?'Pendiente':'Rechazado'}</span>`}
+    </div>`;
+  }
+
+  document.getElementById('view').innerHTML = `
+  <div style="padding:24px 28px;max-width:700px">
+    ${pending.length>0?`
+    <div class="section-card" style="margin-bottom:20px">
+      <div class="section-head">
+        <h3><span class="section-head-bar"></span>Solicitudes Pendientes</h3>
+        <span style="font-size:11px;font-weight:700;background:var(--c-warn-lt);color:var(--c-warn);padding:3px 10px;border-radius:20px">${pending.length}</span>
+      </div>
+      ${pending.map(p=>userRow(p,true)).join('')}
+    </div>`:''}
+    <div class="section-card" style="margin-bottom:20px">
+      <div class="section-head">
+        <h3><span class="section-head-bar"></span>Usuarios Activos</h3>
+        <span style="font-size:11px;font-weight:600;color:var(--c-muted);background:var(--c-border);padding:2px 8px;border-radius:20px">${active.length}</span>
+      </div>
+      ${active.length===0?'<div class="nodata" style="padding:20px">Sin usuarios activos</div>':active.map(p=>userRow(p,false)).join('')}
+    </div>
+    ${rejected.length>0?`
+    <div class="section-card">
+      <div class="section-head">
+        <h3><span class="section-head-bar"></span>Rechazados</h3>
+      </div>
+      ${rejected.map(p=>userRow(p,false)).join('')}
+    </div>`:''}
+  </div>`;
+}
+
+async function approveUser(id){
+  const {error} = await sb.from('profiles').update({status:'active'}).eq('id',id);
+  if(error){showToast('Error al aprobar: '+error.message,'err');}
+  else{showToast('Usuario aprobado','ok'); renderUsers();}
+}
+
+async function rejectUser(id){
+  const {error} = await sb.from('profiles').update({status:'rejected'}).eq('id',id);
+  if(error){showToast('Error al rechazar: '+error.message,'err');}
+  else{showToast('Usuario rechazado','warn'); renderUsers();}
+}
+
 // ── App initialization ────────────────────────────────────────
 sb.auth.onAuthStateChange(async (event, session) => {
   if(event==='SIGNED_IN' && session){
     state.userId = session.user.id;
-    // Load profile
-    const {data:profile} = await sb.from('profiles').select('name,role').eq('id',session.user.id).single();
+    const {data:profile} = await sb.from('profiles').select('name,role,status').eq('id',session.user.id).single();
+    const status = profile?.status || 'active';
+    if(status === 'pending'){ showPending(false); return; }
+    if(status === 'rejected'){ showPending(true); await sb.auth.signOut(); return; }
     state.isAdmin  = profile?.role === 'admin';
     state.userName = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
     showApp();
