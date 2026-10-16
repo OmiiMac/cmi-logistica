@@ -132,6 +132,8 @@ html{height:100%}
 .sb-proj-name{font-size:12px;color:#8A7E88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
 .sb-proj.active .sb-proj-name{color:#E8DFE8;font-weight:600}
 .sb-foot{padding:12px 10px;border-top:1px solid rgba(255,255,255,.05)}
+.btn-danger{background:var(--c-err-lt);color:var(--c-err);border:1.5px solid var(--c-err);border-radius:var(--r-sm);padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:var(--font);transition:background .15s}
+.btn-danger:hover{background:var(--c-err);color:#fff}
 .btn-logout{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:9px;color:#6A5A62;font-size:12px;cursor:pointer;transition:color .15s,background .15s;background:none;border:none;width:100%;font-family:var(--font)}
 .btn-logout:hover{color:#D8D0D4;background:rgba(255,255,255,.06)}
 
@@ -1108,10 +1110,26 @@ function showProjectModal(id){
     <div class="form-group"><label>Notas</label><textarea id="pNotes" rows="2">${esc(p?.notes||'')}</textarea></div>
     ${p&&p.id!=='bodega'?`<div style="margin-top:8px"><label style="font-size:11px;color:var(--c-muted)">ID del proyecto: <code>${p.id}</code></label></div>`:''}
   </div>
-  <div class="modal-foot">
-    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
-    <button class="btn btn-primary" onclick="saveProject(${p?`'${p.id}'`:'null'})">Guardar</button>
+  <div class="modal-foot" style="justify-content:space-between">
+    <div>
+      ${p&&p.id!=='bodega'?`<button class="btn btn-danger" onclick="deleteProject('${p.id}')">Eliminar</button>`:''}
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveProject(${p?`'${p.id}'`:'null'})">Guardar</button>
+    </div>
   </div>`);
+}
+
+async function deleteProject(id){
+  const proj = state.projects.get(id);
+  if(!proj) return;
+  if(!confirm(`¿Eliminar el proyecto "${proj.name}"? Esto también eliminará todos sus artículos.`)) return;
+  const {error} = await sb.from('projects').delete().eq('id', id);
+  if(error){ showToast('Error al eliminar: '+error.message, 'err'); return; }
+  state.projects.delete(id);
+  closeModal(); showToast('Proyecto eliminado', 'ok');
+  nav('dashboard');
 }
 
 async function saveProject(id){
