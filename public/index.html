@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Orbitron:wght@500;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <style>
 :root {
@@ -584,7 +585,7 @@ const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Ago
 
 // ── State ────────────────────────────────────────────────────
 const state = {
-  userId: null, userName: '', isAdmin: false,
+  userId: null, userName: '', isAdmin: false, isSupervisor: false,
   view: 'dashboard', projectId: null,
   search: '', cat: 'all',
   projects: new Map(), items: new Map(), transfers: [], rutas: [],
@@ -752,7 +753,7 @@ function render(){
 // ── Sidebar ───────────────────────────────────────────────────
 function renderSidebar(){
   document.getElementById('sbUser').textContent =
-    state.userName + (state.isAdmin?' (Admin)':'');
+    state.userName + (state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':'');
 
   // Nav active states
   ['dashboard','rutas','transfers','chat','users'].forEach(v=>{
@@ -901,7 +902,60 @@ function renderDashboard(){
         <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${m.color}"></div></div>
       </div>`;
     }).join('')}
+  </div>
+
+  <div class="two-col" style="margin-top:20px">
+    <div class="section-card">
+      <div class="section-head">
+        <h3><span class="section-head-bar" style="background:#1D4ED8"></span>Inventario por Proyecto</h3>
+      </div>
+      <div style="padding:16px 20px">
+        <canvas id="projChart" height="200"></canvas>
+      </div>
+    </div>
+    <div class="section-card">
+      <div class="section-head">
+        <h3><span class="section-head-bar" style="background:#D97706"></span>Alertas de Stock Bajo</h3>
+        <span style="font-size:11px;font-weight:700;background:#FEF3C7;color:#D97706;padding:3px 10px;border-radius:20px">${items.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length}</span>
+      </div>
+      <div class="section-body" style="max-height:220px;overflow-y:auto">
+        ${items.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length===0
+          ?'<div class="nodata" style="padding:20px">Sin alertas de stock</div>'
+          :items.filter(i=>i.minStock>0&&i.quantity<=i.minStock).map(i=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--c-border)">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;color:var(--c-text)">${esc(i.name)}</div>
+              <div style="font-size:11px;color:var(--c-muted)">${projName(i.projectId)||i.projectId}</div>
+            </div>
+            <span class="qty-num qty-low" style="font-size:15px;font-weight:700">${i.quantity}</span>
+            <span style="font-size:11px;color:var(--c-muted)">/ mín ${i.minStock}</span>
+          </div>`).join('')}
+      </div>
+    </div>
   </div>`;
+
+  // Gráfica de barras — items por proyecto
+  requestAnimationFrame(()=>{
+    const canvas = document.getElementById('projChart');
+    if(!canvas) return;
+    const projs  = [...state.projects.values()].filter(p=>p.id!=='bodega');
+    const labels = projs.map(p=>p.name.length>12?p.name.slice(0,12)+'…':p.name);
+    const data   = projs.map(p=>[...state.items.values()].filter(i=>i.projectId===p.id).length);
+    const colors = projs.map(p=>p.color||'#9B1B30');
+    if(window._projChart) window._projChart.destroy();
+    window._projChart = new Chart(canvas, {
+      type:'bar',
+      data:{ labels, datasets:[{ data, backgroundColor: colors.map(c=>c+'CC'), borderColor: colors, borderWidth:2, borderRadius:6 }] },
+      options:{
+        responsive:true, maintainAspectRatio:true,
+        plugins:{ legend:{display:false} },
+        scales:{
+          x:{ grid:{display:false}, ticks:{color:'#6B6B78',font:{size:10}} },
+          y:{ grid:{color:'rgba(0,0,0,.06)'}, ticks:{color:'#6B6B78',font:{size:10},stepSize:1} }
+        }
+      }
+    });
+  });
 }
 
 // ── Project view ──────────────────────────────────────────────
@@ -1412,6 +1466,8 @@ function toast(msg, type){
 async function renderUsers(){
   if(!state.isAdmin){ nav('dashboard'); return; }
   setTopbar('Panel Admin','Gestión de Acceso');
+  document.getElementById('topbarActions').innerHTML =
+    `<button class="btn btn-sm btn-primary" onclick="sendInventoryReport()">📧 Enviar Reporte</button>`;
   document.getElementById('view').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;padding:40px"><div class="nodata">Cargando usuarios...</div></div>`;
   const {data:profiles} = await sb.from('profiles').select('*').order('created_at',{ascending:false});
   const all = profiles || [];
@@ -1424,9 +1480,9 @@ async function renderUsers(){
     const email = p.email || p.name || p.id.slice(0,8);
     const isSelf = p.id === state.userId;
     return `<div class="user-row">
-      <div class="user-avatar" style="background:${p.role==='admin'?'rgba(155,27,48,.15)':'rgba(29,78,216,.1)'};color:${p.role==='admin'?'var(--c-primary)':'#1D4ED8'}">${esc(initials)}</div>
+      <div class="user-avatar" style="background:${p.role==='admin'?'rgba(155,27,48,.15)':p.role==='supervisor'?'rgba(217,119,6,.12)':'rgba(29,78,216,.1)'};color:${p.role==='admin'?'var(--c-primary)':p.role==='supervisor'?'#D97706':'#1D4ED8'}">${esc(initials)}</div>
       <div class="user-info">
-        <div class="user-name">${esc(p.name||'Sin nombre')} ${p.role==='admin'?'<span style="font-size:10px;background:var(--c-primary-lt);color:var(--c-primary);padding:1px 6px;border-radius:4px;font-weight:700">ADMIN</span>':''}</div>
+        <div class="user-name">${esc(p.name||'Sin nombre')} ${p.role==='admin'?'<span style="font-size:10px;background:var(--c-primary-lt);color:var(--c-primary);padding:1px 6px;border-radius:4px;font-weight:700">ADMIN</span>':p.role==='supervisor'?'<span style="font-size:10px;background:#FEF3C7;color:#D97706;padding:1px 6px;border-radius:4px;font-weight:700">SUPERVISOR</span>':''}</div>
         <div class="user-email">${esc(email)}</div>
       </div>
       <div class="user-actions">
@@ -1436,7 +1492,7 @@ async function renderUsers(){
           `<span class="status-badge ${p.status||'active'}">${p.status==='active'?'Activo':p.status==='pending'?'Pendiente':'Rechazado'}</span>`}
         ${!isSelf && p.status==='active' ? `
           <button onclick="toggleRole('${p.id}','${p.role}')" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">
-            ${p.role==='admin'?'→ Usuario':'→ Admin'}
+            → ${({engineer:'Supervisor',supervisor:'Admin',admin:'Ingeniero'})[p.role]||'Ingeniero'}
           </button>` : ''}
       </div>
     </div>`;
@@ -1469,6 +1525,33 @@ async function renderUsers(){
   </div>`;
 }
 
+async function sendInventoryReport(){
+  showToast('Generando reporte...','ok');
+  const items    = [...state.items.values()];
+  const projects = [...state.projects.values()];
+  const lowStock = items.filter(i=>i.minStock>0&&i.quantity<=i.minStock);
+  const noOp     = items.filter(i=>i.estado==='NO_OPERATIVA');
+  const summary  = projects.map(p=>({
+    name: p.name,
+    count: items.filter(i=>i.projectId===p.id).length
+  }));
+  try {
+    const r = await fetch('/api/send-report', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        to: 'omarhumbertolopez.tirone@gmail.com',
+        fecha: new Date().toLocaleDateString('es-PA',{weekday:'long',year:'numeric',month:'long',day:'numeric'}),
+        totalItems: items.length,
+        totalProjects: projects.length,
+        lowStock, noOp, summary
+      })
+    });
+    if(r.ok) showToast('Reporte enviado a tu correo','ok');
+    else showToast('Error enviando reporte','err');
+  } catch(e){ showToast('Error de conexión','err'); }
+}
+
 async function approveUser(id){
   const {error} = await sb.from('profiles').update({status:'active'}).eq('id',id);
   if(error){showToast('Error al aprobar: '+error.message,'err');}
@@ -1481,12 +1564,14 @@ async function rejectUser(id){
   else{showToast('Usuario rechazado','warn'); renderUsers();}
 }
 
-// ── Role toggle ───────────────────────────────────────────────
+// ── Role toggle (cicla engineer → supervisor → admin → engineer) ──
+const ROLE_CYCLE = { engineer:'supervisor', supervisor:'admin', admin:'engineer' };
+const ROLE_LABEL = { engineer:'Ingeniero', supervisor:'Supervisor', admin:'Admin' };
 async function toggleRole(id, currentRole){
-  const newRole = currentRole === 'admin' ? 'engineer' : 'admin';
+  const newRole = ROLE_CYCLE[currentRole] || 'engineer';
   const {error} = await sb.from('profiles').update({role: newRole}).eq('id', id);
   if(error) showToast('Error al cambiar rol: '+error.message, 'err');
-  else { showToast(newRole==='admin'?'Usuario promovido a Admin':'Usuario cambiado a Engineer', 'ok'); renderUsers(); }
+  else { showToast(`Rol cambiado a ${ROLE_LABEL[newRole]}`, 'ok'); renderUsers(); }
 }
 
 // ── Profile modal ─────────────────────────────────────────────
@@ -1512,7 +1597,7 @@ async function saveProfile(){
   const {error} = await sb.from('profiles').update({name}).eq('id', state.userId);
   if(error){ showToast('Error al guardar','err'); return; }
   state.userName = name;
-  document.getElementById('sbUser').textContent = name + (state.isAdmin?' (Admin)':'');
+  document.getElementById('sbUser').textContent = name + (state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':'');
   closeModal(); showToast('Nombre actualizado','ok');
 }
 
@@ -1606,8 +1691,9 @@ sb.auth.onAuthStateChange(async (event, session) => {
     const status = profile?.status || 'active';
     if(status === 'pending'){ showPending(false); return; }
     if(status === 'rejected'){ showPending(true); await sb.auth.signOut(); return; }
-    state.isAdmin  = profile?.role === 'admin';
-    state.userName = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
+    state.isAdmin      = profile?.role === 'admin';
+    state.isSupervisor = profile?.role === 'supervisor';
+    state.userName     = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
     showApp();
     await loadAll();
     setupRealtime();
