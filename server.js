@@ -471,7 +471,7 @@ app.post('/api/auth/signup', (req, res) => {
   // ¿Hay un perfil migrado con este email y todavía sin login? -> lo reclama,
   // conservando su id original (y con él, su rol, estado e historial).
   const migrated = db.prepare(
-    'SELECT id FROM profiles WHERE lower(email) = ? AND id NOT IN (SELECT id FROM auth_users)'
+    'SELECT id FROM profiles WHERE lower(trim(email)) = ? AND id NOT IN (SELECT id FROM auth_users)'
   ).get(em);
   if (migrated) {
     db.prepare('INSERT INTO auth_users (id, email, password_hash) VALUES (?,?,?)').run(migrated.id, em, hash);
@@ -511,6 +511,29 @@ app.post('/api/auth/me', (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => res.json({ ok: true }));
+
+// Admin fija/resetea la contraseña de un usuario (p. ej. usuarios migrados que
+// no lograron "engancharse"). Deja el login listo, limpia duplicados y activa.
+app.post('/api/admin/set-password', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Solo admin' } });
+  const { userId, password } = req.body || {};
+  if (!userId || !password) return res.json({ error: { message: 'Falta usuario o contraseña' } });
+  if (String(password).length < 6) return res.json({ error: { message: 'La contraseña debe tener al menos 6 caracteres' } });
+  const prof = db.prepare('SELECT * FROM profiles WHERE id = ?').get(userId);
+  if (!prof) return res.json({ error: { message: 'Usuario no encontrado' } });
+  const email = String(prof.email || '').trim().toLowerCase();
+  if (!email) return res.json({ error: { message: 'El usuario no tiene email registrado' } });
+  const hash = bcrypt.hashSync(String(password), 10);
+  tx(() => {
+    db.prepare('DELETE FROM auth_users WHERE lower(trim(email)) = ?').run(email);        // limpia logins previos con ese email
+    db.prepare('DELETE FROM profiles WHERE lower(trim(email)) = ? AND id != ?').run(email, prof.id); // limpia perfiles duplicados
+    db.prepare('INSERT INTO auth_users (id, email, password_hash) VALUES (?,?,?)').run(prof.id, email, hash);
+    db.prepare("UPDATE profiles SET status = 'active' WHERE id = ?").run(prof.id);
+  });
+  res.json({ data: { id: prof.id, email }, error: null });
+});
 
 // ============================================================
 // PERMISOS DE ESCRITURA (equivalente a las políticas RLS)

@@ -1599,6 +1599,7 @@ async function renderUsers(){
             <option value="licitaciones" ${p.role==='licitaciones'?'selected':''}>Licitaciones</option>
             <option value="admin"      ${p.role==='admin'?'selected':''}>Admin</option>
           </select>` : ''}
+        ${!isSelf ? `<button onclick="setUserPassword('${p.id}')" title="Fijar/resetear contraseña" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">Clave</button>` : ''}
       </div>
     </div>`;
   }
@@ -1686,6 +1687,16 @@ async function setUserRole(id, newRole){
   const {error} = await sb.from('profiles').update({role:newRole}).eq('id', id);
   if(error) showToast('Error al cambiar rol: '+error.message, 'err');
   else { showToast(`Rol cambiado a ${ROLE_LABEL[newRole]||newRole}`, 'ok'); renderUsers(); }
+}
+
+async function setUserPassword(id){
+  const pwd = prompt('Nueva contraseña para este usuario (mínimo 6 caracteres).\nCompártela con la persona para que inicie sesión con su email:');
+  if(pwd===null) return;
+  if(pwd.trim().length < 6){ showToast('Mínimo 6 caracteres', 'err'); return; }
+  const r = await apiPost('/api/admin/set-password', { userId: id, password: pwd.trim() });
+  if(r.error){ showToast(r.error.message, 'err'); return; }
+  showToast('Clave fijada. La persona ya puede iniciar sesión.', 'ok');
+  renderUsers();
 }
 
 // ── Profile modal ─────────────────────────────────────────────
