@@ -201,6 +201,13 @@ CREATE TABLE IF NOT EXISTS mercadeo_tareas (
   created_at  TEXT,
   updated_at  TEXT
 );
+
+-- Tokens de recuperación de contraseña (autoservicio por email)
+CREATE TABLE IF NOT EXISTS password_resets (
+  token   TEXT PRIMARY KEY,
+  user_id TEXT,
+  expires INTEGER
+);
 `);
 
 // Migraciones ligeras: agrega columnas que falten en bases ya creadas.
@@ -511,6 +518,60 @@ app.post('/api/auth/me', (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => res.json({ ok: true }));
+
+// Autoservicio: el usuario pide un enlace para recuperar su contraseña.
+app.post('/api/auth/forgot', async (req, res) => {
+  const em = String((req.body && req.body.email) || '').trim().toLowerCase();
+  const u = em && db.prepare('SELECT * FROM auth_users WHERE lower(trim(email)) = ?').get(em);
+  if (u) {
+    const token = crypto.randomBytes(24).toString('hex');
+    const expires = Date.now() + 3600 * 1000; // 1 hora
+    db.prepare('DELETE FROM password_resets WHERE user_id = ?').run(u.id);
+    db.prepare('INSERT INTO password_resets (token, user_id, expires) VALUES (?,?,?)').run(token, u.id, expires);
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const link = `${proto}://${req.get('host')}/?reset=${token}`;
+    const KEY = process.env.RESEND_API_KEY;
+    if (KEY) {
+      const html = `
+        <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto">
+          <div style="background:#9B1B30;padding:20px 24px;border-radius:12px 12px 0 0">
+            <div style="color:#fff;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.75">CMI Construction Corp</div>
+            <div style="color:#fff;font-size:20px;font-weight:700;margin-top:4px">Recuperar contraseña</div>
+          </div>
+          <div style="background:#fff;border:1px solid #E2E1DE;border-top:none;padding:24px;border-radius:0 0 12px 12px;color:#1B1B20;font-size:14px;line-height:1.6">
+            <p>Recibimos una solicitud para restablecer tu contraseña. El enlace es válido por 1 hora:</p>
+            <p style="text-align:center;margin:24px 0"><a href="${link}" style="background:#9B1B30;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;display:inline-block">Definir nueva contraseña</a></p>
+            <p style="font-size:12px;color:#6B6B78">Si el botón no funciona, copiá este enlace: <br>${link}</p>
+            <p style="font-size:12px;color:#6B6B78">Si no fuiste vos, ignorá este correo.</p>
+          </div>
+        </div>`;
+      try {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: 'ObraControl CMI <onboarding@resend.dev>', to: [u.email], subject: 'Recuperar contraseña — ObraControl CMI', html })
+        });
+      } catch (e) { /* el correo puede fallar; no revelamos nada */ }
+    }
+  }
+  res.json({ ok: true }); // respuesta neutra: no revela si el email existe
+});
+
+// Define la nueva contraseña a partir de un token válido.
+app.post('/api/auth/reset', (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password) return res.json({ error: { message: 'Datos incompletos' } });
+  if (String(password).length < 6) return res.json({ error: { message: 'La contraseña debe tener al menos 6 caracteres' } });
+  const row = db.prepare('SELECT * FROM password_resets WHERE token = ?').get(token);
+  if (!row || row.expires < Date.now()) {
+    if (row) db.prepare('DELETE FROM password_resets WHERE token = ?').run(token);
+    return res.json({ error: { message: 'El enlace venció o no es válido. Pedí uno nuevo.' } });
+  }
+  const hash = bcrypt.hashSync(String(password), 10);
+  db.prepare('UPDATE auth_users SET password_hash = ? WHERE id = ?').run(hash, row.user_id);
+  db.prepare('DELETE FROM password_resets WHERE token = ?').run(token);
+  res.json({ ok: true });
+});
 
 // Admin fija/resetea la contraseña de un usuario (p. ej. usuarios migrados que
 // no lograron "engancharse"). Deja el login listo, limpia duplicados y activa.

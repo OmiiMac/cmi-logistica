@@ -472,10 +472,35 @@ html{height:100%}
     </div>
     <button id="loginBtn" class="btn btn-primary w-full" onclick="doLogin()">Ingresar</button>
     <div id="loginErr" style="color:#EF4444;font-size:12px;margin-top:10px;text-align:center;display:none"></div>
-    <div style="text-align:center;margin-top:16px">
+    <div style="text-align:center;margin-top:12px">
+      <span style="font-size:12px;color:#9B1B30;cursor:pointer" onclick="forgotPassword()">¿Olvidaste tu contraseña?</span>
+    </div>
+    <div style="text-align:center;margin-top:14px">
       <span style="font-size:12px;color:#5A4F5E">¿Primera vez? </span>
       <span style="font-size:12px;color:#9B1B30;cursor:pointer;font-weight:600" onclick="toggleSignup()">Crear cuenta</span>
     </div>
+  </div>
+</div>
+
+<!-- ─── RESET PASSWORD SCREEN ─── -->
+<div id="resetWrap" hidden>
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="brand-badge">CMI</span>
+      <span class="brand-text">CONSTRUCTIONS CORP</span>
+    </div>
+    <p class="login-sub">Definí tu nueva contraseña</p>
+    <div class="form-group">
+      <label for="resetPass">Nueva contraseña</label>
+      <input type="password" id="resetPass" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <div class="form-group">
+      <label for="resetPass2">Repetir contraseña</label>
+      <input type="password" id="resetPass2" placeholder="••••••••" autocomplete="new-password"
+             onkeydown="if(event.key==='Enter')doReset()">
+    </div>
+    <button class="btn btn-primary w-full" onclick="doReset()">Guardar contraseña</button>
+    <div id="resetErr" style="color:#EF4444;font-size:12px;margin-top:10px;text-align:center;display:none"></div>
   </div>
 </div>
 
@@ -671,9 +696,43 @@ function showLoginErr(msg){
 }
 
 function showLogin(){
+  if(window._resetToken){ showReset(); return; }   // si hay un enlace de reseteo activo, priorizarlo
   document.getElementById('loginWrap').style.display = 'flex';
   document.getElementById('pendingWrap').hidden = true;
   document.getElementById('app').hidden = true;
+  const rw = document.getElementById('resetWrap'); if(rw) rw.hidden = true;
+}
+
+function showReset(){
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('pendingWrap').hidden = true;
+  document.getElementById('app').hidden = true;
+  document.getElementById('resetWrap').hidden = false;
+}
+
+async function forgotPassword(){
+  const email = (document.getElementById('loginEmail').value||'').trim() || (prompt('Ingresá tu email para recuperar la contraseña:')||'').trim();
+  if(!email){ return; }
+  await apiPost('/api/auth/forgot', { email });
+  showLoginErr('Si el email está registrado, te enviamos un enlace para recuperar la contraseña. Revisá tu correo.');
+}
+
+function showResetErr(msg){
+  const el = document.getElementById('resetErr'); el.textContent = msg; el.style.display = 'block';
+}
+
+async function doReset(){
+  const p1 = document.getElementById('resetPass').value;
+  const p2 = document.getElementById('resetPass2').value;
+  if(p1.length < 6){ showResetErr('Mínimo 6 caracteres'); return; }
+  if(p1 !== p2){ showResetErr('Las contraseñas no coinciden'); return; }
+  const r = await apiPost('/api/auth/reset', { token: window._resetToken, password: p1 });
+  if(r.error){ showResetErr(r.error.message); return; }
+  window._resetToken = null;
+  try{ history.replaceState(null, '', location.pathname); }catch(e){}
+  document.getElementById('resetWrap').hidden = true;
+  showLogin();
+  showLoginErr('✅ Contraseña actualizada. Ya podés iniciar sesión.');
 }
 
 function showPending(rejected){
@@ -1880,6 +1939,14 @@ sb.auth.onAuthStateChange(async (event, session) => {
     showLogin();
   }
 });
+
+// Enlace de recuperación de contraseña (?reset=token en la URL)
+(function(){
+  try{
+    const t = new URLSearchParams(location.search).get('reset');
+    if(t){ window._resetToken = t; showReset(); }
+  }catch(e){}
+})();
 
 // Check if Supabase is configured
 if(SUPABASE_URL.includes('YOUR_PROJECT')){
