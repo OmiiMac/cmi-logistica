@@ -210,6 +210,7 @@ function ensureColumn(table, col, decl) {
 }
 ensureColumn('messages', 'project_id', 'TEXT');
 ensureColumn('messages', 'room', 'TEXT');
+ensureColumn('messages', 'file_id', 'TEXT');
 // Backfill idempotente: mensajes previos quedan en su sala correcta.
 db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
 db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
@@ -221,7 +222,7 @@ const SCHEMA = {
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
-  messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'created_at'],
+  messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'file_id', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
@@ -249,6 +250,12 @@ const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt' };
 // (general, inventario, rutas, proyecto:*) son abiertas a todo usuario activo.
 const CHAT_ROOM_MODULE = { contabilidad: 'conta', licitaciones: 'licit', mercadeo: 'mkt' };
 function chatRoomModule(room) { return CHAT_ROOM_MODULE[room] || null; }
+// Módulo que protege un archivo: por scope del documento, o —para fotos de
+// chat (scope 'chat')— por la sala del chat, que viaja en ref_id.
+function fileModule(scope, refId) {
+  if (scope === 'chat') return chatRoomModule(refId);
+  return SCOPE_MODULE[scope] || null;
+}
 
 function roleCan(module, user) {
   if (!module) return true;               // tabla no restringida
@@ -707,7 +714,7 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
   if (u.status !== 'active') { cleanup(); return res.status(403).json({ error: { message: 'Cuenta no activa' } }); }
   if (!req.file) return res.status(400).json({ error: { message: 'No se recibió archivo' } });
   const scope = req.body.scope;
-  const module = SCOPE_MODULE[scope] || null;
+  const module = fileModule(scope, req.body.ref_id);
   if (!roleCan(module, u)) { cleanup(); return res.status(403).json({ error: { message: 'No autorizado' } }); }
   const id = crypto.randomUUID();
   const name = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
@@ -724,7 +731,7 @@ app.get('/api/files/:id', (req, res) => {
   if (!u) return res.status(401).end();
   const f = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
   if (!f) return res.status(404).end();
-  if (!roleCan(SCOPE_MODULE[f.scope] || null, u)) return res.status(403).end();
+  if (!roleCan(fileModule(f.scope, f.ref_id), u)) return res.status(403).end();
   const full = path.join(UPLOAD_DIR, f.path);
   if (!fs.existsSync(full)) return res.status(404).end();
   if (f.mime) res.type(f.mime);
@@ -738,7 +745,7 @@ app.delete('/api/files/:id', (req, res) => {
   if (!u || u.status !== 'active') return res.status(401).json({ error: { message: 'No autenticado' } });
   const f = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
   if (!f) return res.status(404).json({ error: { message: 'No existe' } });
-  const module = SCOPE_MODULE[f.scope] || null;
+  const module = fileModule(f.scope, f.ref_id);
   if (!(u.role === 'admin' || (roleCan(module, u) && f.uploaded_by === u.id)))
     return res.status(403).json({ error: { message: 'No autorizado' } });
   try { fs.unlinkSync(path.join(UPLOAD_DIR, f.path)); } catch (e) {}
