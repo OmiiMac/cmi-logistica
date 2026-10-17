@@ -209,6 +209,10 @@ function ensureColumn(table, col, decl) {
   if (!cols.some(c => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
 ensureColumn('messages', 'project_id', 'TEXT');
+ensureColumn('messages', 'room', 'TEXT');
+// Backfill idempotente: mensajes previos quedan en su sala correcta.
+db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
+db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
 
 // Columnas permitidas por tabla (whitelist anti-inyección e integridad)
 const SCHEMA = {
@@ -217,7 +221,7 @@ const SCHEMA = {
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
-  messages:  ['id', 'user_id', 'content', 'project_id', 'created_at'],
+  messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
@@ -241,6 +245,10 @@ const TABLE_MODULE = {
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt'
 };
 const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt' };
+// Salas de chat restringidas (heredan el permiso del módulo). Las demás
+// (general, inventario, rutas, proyecto:*) son abiertas a todo usuario activo.
+const CHAT_ROOM_MODULE = { contabilidad: 'conta', licitaciones: 'licit', mercadeo: 'mkt' };
+function chatRoomModule(room) { return CHAT_ROOM_MODULE[room] || null; }
 
 function roleCan(module, user) {
   if (!module) return true;               // tabla no restringida
@@ -255,6 +263,10 @@ function moduleFor(table, reqBody) {
       || (reqBody && reqBody.filters || []).find?.(f => f.col === 'scope')?.val
       || (reqBody && reqBody.scope);
     return SCOPE_MODULE[scope] || null;   // files sin scope reconocido: sin módulo restringido
+  }
+  if (table === 'messages') {
+    const rf = ((reqBody && reqBody.filters) || []).find(f => f.col === 'room');
+    return chatRoomModule(rf && rf.val);  // sala de chat → módulo (o null si abierta)
   }
   return TABLE_MODULE[table] || null;
 }
@@ -507,7 +519,8 @@ function canWrite(table, op, user, values, filters) {
     case 'transfers':
       return op === 'insert';
     case 'messages':
-      return op === 'insert';
+      if (op !== 'insert') return false;
+      return roleCan(chatRoomModule(values && values.room), user); // sala restringida → rol del módulo
     case 'profiles': {
       if (op !== 'update') return false;
       const keys = Object.keys(values || {});
@@ -640,6 +653,8 @@ app.post('/api/select', (req, res) => {
   if (!SCHEMA[table]) return res.json({ data: null, error: { message: 'Tabla inválida' } });
   const module = moduleFor(table, req.body);
   if (table === 'files' && !module) return res.status(403).json({ data: null, error: { message: 'Falta scope' } });
+  if (table === 'messages' && !((req.body.filters || []).some(f => f.col === 'room')))
+    return res.status(400).json({ data: null, error: { message: 'Falta la sala del chat' } });
   if (!roleCan(module, u)) return res.status(403).json({ data: null, error: { message: 'No autorizado' } });
   try { res.json({ data: runSelect(table, req.body), error: null }); }
   catch (e) { res.json({ data: null, error: { message: e.message } }); }

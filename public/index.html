@@ -767,7 +767,7 @@ function render(){
   else if(state.view==='transfers') renderTransfers();
   else if(state.view==='users') renderUsers();
   else if(state.view==='chat') renderChat();
-  else if(state.view==='pchat') renderProjectChat();
+  else if(state.view==='roomchat') renderRoomChat();
   else if(state.view==='contabilidad') renderContabilidad();
   else if(state.view==='licitaciones') renderLicitaciones();
   else if(state.view==='mercadeo') renderMercadeo();
@@ -806,7 +806,7 @@ function renderSidebar(){
   // Projects list
   const projects = sortedProjects();
   document.getElementById('sbProjects').innerHTML = projects.map(p=>`
-    <div class="sb-proj ${(state.view==='project'||state.view==='pchat')&&state.projectId===p.id?'active':''}"
+    <div class="sb-proj ${(state.view==='project'&&state.projectId===p.id)||(state.view==='roomchat'&&state.chatRoom==='proyecto:'+p.id)?'active':''}"
          onclick="nav('project','${p.id}')">
       <span class="sb-proj-dot" style="background:${p.color}"></span>
       <span class="sb-proj-name">${esc(p.name)}</span>
@@ -830,6 +830,7 @@ const CAT_META = {
 
 function renderDashboard(){
   setTopbar('Dashboard');
+  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('inventario','dashboard')">💬 Chat inventario</button>`;
   const items     = [...state.items.values()];
   const projects  = sortedProjects();
   const todayRutas= state.rutas.filter(r=>r.date===state.rutaDate);
@@ -1014,7 +1015,7 @@ function renderProject(){
   const engineerName = proj.engineerId ? (state.profiles[proj.engineerId]||'Asignado') : '';
 
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-sm btn-ghost" onclick="nav('pchat','${proj.id}')">💬 Chat</button>`
+    `<button class="btn btn-sm btn-ghost" onclick="goChat('proyecto:${proj.id}','project','${proj.id}')">💬 Chat</button>`
     + (state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'');
 
   document.getElementById('view').innerHTML = `
@@ -1065,8 +1066,9 @@ function renderProject(){
 // ── Rutas ─────────────────────────────────────────────────────
 function renderRutas(){
   setTopbar('Rutas del Camion');
-  document.getElementById('topbarActions').innerHTML = state.isAdmin
-    ?`<button class="btn btn-sm btn-primary" onclick="showRutaModal()">+ Ruta</button>`:'';
+  document.getElementById('topbarActions').innerHTML =
+    `<button class="btn btn-sm btn-ghost" onclick="goChat('rutas','rutas')">💬 Chat</button>`
+    + (state.isAdmin?`<button class="btn btn-sm btn-primary" onclick="showRutaModal()">+ Ruta</button>`:'');
 
   const today = todayStr();
   const dates = [];
@@ -1674,30 +1676,40 @@ function chatUIHtml(){
   </div>`;
 }
 
+function chatTitle(room){
+  const fixed = { general:'Chat general', inventario:'Chat · Inventario', rutas:'Chat · Rutas', contabilidad:'Chat · Contabilidad', licitaciones:'Chat · Licitaciones', mercadeo:'Chat · Mercadeo' };
+  if(fixed[room]) return fixed[room];
+  if(room && room.indexOf('proyecto:')===0){ const p=state.projects.get(room.slice(9)); return (p?p.name:'Proyecto')+' · Chat'; }
+  return 'Chat';
+}
+// Abre la sala de chat `room`, con botón de volver a backView[/backProjectId].
+function goChat(room, backView, backProjectId){
+  state.chatRoom = room; state.chatBack = { view: backView||'dashboard', projectId: backProjectId||null };
+  nav('roomchat');
+}
+
+// Chat general (ítem del menú lateral)
 function renderChat(){
-  state_chat.scope = null;
-  setTopbar('Chat general');
-  document.getElementById('topbarActions').innerHTML = '';
-  document.getElementById('view').innerHTML = chatUIHtml();
-  loadChatMessages();
+  state.chatRoom = 'general'; state.chatBack = null;
+  renderRoomChat();
   const badge = document.getElementById('chatUnread');
   if(badge) badge.hidden = true;
 }
 
-function renderProjectChat(){
-  const proj = state.projects.get(state.projectId);
-  if(!proj){ nav('dashboard'); return; }
-  state_chat.scope = state.projectId;
-  setTopbar(proj.name, 'Chat');
-  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="nav('project','${proj.id}')">← Inventario</button>`;
+function renderRoomChat(){
+  const room = state.chatRoom || 'general';
+  state_chat.scope = room;
+  setTopbar(chatTitle(room), room==='general'?null:'Chat');
+  const b = state.chatBack;
+  document.getElementById('topbarActions').innerHTML = b
+    ? `<button class="btn btn-sm btn-ghost" onclick="nav('${b.view}'${b.projectId?",'"+b.projectId+"'":''})">← Volver</button>`
+    : '';
   document.getElementById('view').innerHTML = chatUIHtml();
   loadChatMessages();
 }
 
 async function loadChatMessages(){
-  let q = sb.from('messages').select('*');
-  q = state_chat.scope ? q.eq('project_id', state_chat.scope) : q.eq('project_id', null);
-  const {data} = await q.order('created_at', {ascending:true}).limit(200);
+  const {data} = await sb.from('messages').select('*').eq('room', state_chat.scope).order('created_at', {ascending:true}).limit(200);
   state_chat.messages = data || [];
   state_chat.loaded = true;
   drawMessages();
@@ -1739,22 +1751,19 @@ async function sendChatMessage(){
   const content = input.value.trim();
   if(!content) return;
   input.value = '';
-  const row = { content };
-  if(state_chat.scope) row.project_id = state_chat.scope;
-  const {error} = await sb.from('messages').insert(row);
+  const {error} = await sb.from('messages').insert({ content, room: state_chat.scope });
   if(error) showToast('Error al enviar','err');
 }
 
 function setupChatRealtime(){
   sb.channel('chat-messages')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, (p) => {
-      const msgScope = p.new.project_id || null;
-      const curScope = state_chat.scope || null;
-      const viewingChat = (state.view === 'chat' || state.view === 'pchat');
-      if(viewingChat && msgScope === curScope){
+      const msgRoom = p.new.room || 'general';
+      const viewingChat = (state.view === 'chat' || state.view === 'roomchat');
+      if(viewingChat && msgRoom === state_chat.scope){
         state_chat.messages.push(p.new);
         drawMessages();
-      } else if(msgScope === null && state.view !== 'chat'){
+      } else if(msgRoom === 'general' && state.view !== 'chat'){
         const badge = document.getElementById('chatUnread');   // badge solo para el chat general
         if(badge) badge.hidden = false;
       }
@@ -1830,7 +1839,7 @@ function chartOpts(extra){ return Object.assign({responsive:true,maintainAspectR
 async function renderContabilidad(){
   if(!canModule('conta')){ nav('dashboard'); return; }
   setTopbar('Contabilidad');
-  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
+  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('contabilidad','contabilidad')">💬 Chat</button><button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
   document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:900px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
       ${[['panel','📊 Panel'],['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
@@ -1997,7 +2006,7 @@ function licBadge(e){ const c=LIC_COLOR[e]||['#eee','#555']; return `<span style
 async function renderLicitaciones(){
   if(!canModule('licit')){ nav('dashboard'); return; }
   setTopbar('Licitaciones');
-  if(state.isAdmin||state.isLicitaciones) document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`;
+  document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-ghost" onclick="goChat('licitaciones','licitaciones')">💬 Chat</button>`+((state.isAdmin||state.isLicitaciones)?`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`:'');
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:860px"><div id="licList"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
   const {data,error}=await sb.from('licitaciones').select('*').order('created_at',{ascending:false});
   const list=document.getElementById('licList'); if(!list) return;
@@ -2076,9 +2085,11 @@ async function renderMercadeo(){
   if(!canModule('mkt')){ nav('dashboard'); return; }
   setTopbar('Mercadeo');
   const tab=mstate.mktTab||'campanas';
-  document.getElementById('topbarActions').innerHTML = tab==='campanas'
-    ? `<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`
-    : `<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Pendiente</button>`;
+  document.getElementById('topbarActions').innerHTML =
+    `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`
+    + (tab==='campanas'
+      ? `<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`
+      : `<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Pendiente</button>`);
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:960px">
     <div style="display:flex;gap:8px;margin-bottom:16px">
       <button class="btn btn-sm ${tab==='campanas'?'btn-primary':'btn-ghost'}" onclick="mstate.mktTab='campanas';renderMercadeo()">Campañas</button>
