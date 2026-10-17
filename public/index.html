@@ -521,6 +521,18 @@ html{height:100%}
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         Chat <span id="chatUnread" hidden class="unread-badge">!</span>
       </div>
+      <div class="sb-nav-item" id="nav-contabilidad" onclick="nav('contabilidad')" style="display:none">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h5"/></svg>
+        Contabilidad
+      </div>
+      <div class="sb-nav-item" id="nav-licitaciones" onclick="nav('licitaciones')" style="display:none">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13l2 2 4-4"/></svg>
+        Licitaciones
+      </div>
+      <div class="sb-nav-item" id="nav-mercadeo" onclick="nav('mercadeo')" style="display:none">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg>
+        Mercadeo
+      </div>
       <div class="sb-nav-item" id="nav-users" onclick="nav('users')" style="display:none">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         Panel Admin
@@ -585,7 +597,7 @@ const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Ago
 
 // ── State ────────────────────────────────────────────────────
 const state = {
-  userId: null, userName: '', isAdmin: false, isSupervisor: false,
+  userId: null, userName: '', role: '', isAdmin: false, isSupervisor: false, isContador: false, isMercadeo: false,
   view: 'dashboard', projectId: null,
   search: '', cat: 'all',
   projects: new Map(), items: new Map(), transfers: [], rutas: [],
@@ -729,6 +741,13 @@ function setupRealtime(){
       state.rutas=(data||[]).map(normalizeRuta);
       render();
     })
+    // Módulos nuevos: re-render de la vista activa (si no hay modal abierto)
+    .on('postgres_changes',{event:'*',schema:'public',table:'asientos'},()=>modRefresh('contabilidad'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'cuentas'},()=>modRefresh('contabilidad'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'licitaciones'},()=>modRefresh('licitaciones'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'campanas'},()=>modRefresh('mercadeo'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'publicaciones'},()=>modRefresh('mercadeo'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'mercadeo_tareas'},()=>modRefresh('mercadeo'))
     .subscribe();
 }
 
@@ -748,20 +767,40 @@ function render(){
   else if(state.view==='transfers') renderTransfers();
   else if(state.view==='users') renderUsers();
   else if(state.view==='chat') renderChat();
+  else if(state.view==='contabilidad') renderContabilidad();
+  else if(state.view==='licitaciones') renderLicitaciones();
+  else if(state.view==='mercadeo') renderMercadeo();
+}
+
+// Acceso a módulos por rol (espejo de MODULE_ROLES del servidor)
+function canModule(m){
+  if(state.isAdmin) return true;
+  if(m==='conta') return state.isContador;
+  if(m==='licit') return state.isSupervisor;
+  if(m==='mkt')   return state.isMercadeo;
+  return false;
+}
+function roleLabel(){
+  return state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':state.isContador?' (Contador)':state.isMercadeo?' (Mercadeo)':'';
 }
 
 // ── Sidebar ───────────────────────────────────────────────────
 function renderSidebar(){
-  document.getElementById('sbUser').textContent =
-    state.userName + (state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':'');
+  document.getElementById('sbUser').textContent = state.userName + roleLabel();
 
   // Nav active states
-  ['dashboard','rutas','transfers','chat','users'].forEach(v=>{
+  ['dashboard','rutas','transfers','chat','users','contabilidad','licitaciones','mercadeo'].forEach(v=>{
     const el = document.getElementById('nav-'+v);
     if(el) el.classList.toggle('active', state.view===v);
   });
   const usersNav = document.getElementById('nav-users');
   if(usersNav) usersNav.style.display = state.isAdmin ? 'flex' : 'none';
+  // Módulos por rol
+  const modNav = { contabilidad:'conta', licitaciones:'licit', mercadeo:'mkt' };
+  Object.entries(modNav).forEach(([v,m])=>{
+    const el = document.getElementById('nav-'+v);
+    if(el) el.style.display = canModule(m) ? 'flex' : 'none';
+  });
 
   // Projects list
   const projects = sortedProjects();
@@ -1461,6 +1500,8 @@ function toast(msg, type){
   document.getElementById('toast').appendChild(div);
   setTimeout(()=>div.remove(), 3500);
 }
+// Alias usado en todo el código (antes no estaba definido).
+function showToast(msg, type){ return toast(msg, type==='warn'?'err':type); }
 
 // ── Users Panel (Admin Only) ─────────────────────────────────
 async function renderUsers(){
@@ -1482,7 +1523,7 @@ async function renderUsers(){
     return `<div class="user-row">
       <div class="user-avatar" style="background:${p.role==='admin'?'rgba(155,27,48,.15)':p.role==='supervisor'?'rgba(217,119,6,.12)':'rgba(29,78,216,.1)'};color:${p.role==='admin'?'var(--c-primary)':p.role==='supervisor'?'#D97706':'#1D4ED8'}">${esc(initials)}</div>
       <div class="user-info">
-        <div class="user-name">${esc(p.name||'Sin nombre')} ${p.role==='admin'?'<span style="font-size:10px;background:var(--c-primary-lt);color:var(--c-primary);padding:1px 6px;border-radius:4px;font-weight:700">ADMIN</span>':p.role==='supervisor'?'<span style="font-size:10px;background:#FEF3C7;color:#D97706;padding:1px 6px;border-radius:4px;font-weight:700">SUPERVISOR</span>':''}</div>
+        <div class="user-name">${esc(p.name||'Sin nombre')} ${roleBadge(p.role)}</div>
         <div class="user-email">${esc(email)}</div>
       </div>
       <div class="user-actions">
@@ -1491,9 +1532,13 @@ async function renderUsers(){
           <button class="btn-reject"  onclick="rejectUser('${p.id}')">Rechazar</button>` :
           `<span class="status-badge ${p.status||'active'}">${p.status==='active'?'Activo':p.status==='pending'?'Pendiente':'Rechazado'}</span>`}
         ${!isSelf && p.status==='active' ? `
-          <button onclick="toggleRole('${p.id}','${p.role}')" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">
-            → ${({engineer:'Supervisor',supervisor:'Admin',admin:'Ingeniero'})[p.role]||'Ingeniero'}
-          </button>` : ''}
+          <select onchange="setUserRole('${p.id}', this.value)" title="Cambiar rol" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">
+            <option value="engineer"   ${p.role==='engineer'?'selected':''}>Ingeniero</option>
+            <option value="supervisor" ${p.role==='supervisor'?'selected':''}>Supervisor</option>
+            <option value="contador"   ${p.role==='contador'?'selected':''}>Contador</option>
+            <option value="mercadeo"   ${p.role==='mercadeo'?'selected':''}>Mercadeo</option>
+            <option value="admin"      ${p.role==='admin'?'selected':''}>Admin</option>
+          </select>` : ''}
       </div>
     </div>`;
   }
@@ -1564,14 +1609,22 @@ async function rejectUser(id){
   else{showToast('Usuario rechazado','warn'); renderUsers();}
 }
 
-// ── Role toggle (cicla engineer → supervisor → admin → engineer) ──
-const ROLE_CYCLE = { engineer:'supervisor', supervisor:'admin', admin:'engineer' };
-const ROLE_LABEL = { engineer:'Ingeniero', supervisor:'Supervisor', admin:'Admin' };
-async function toggleRole(id, currentRole){
-  const newRole = ROLE_CYCLE[currentRole] || 'engineer';
-  const {error} = await sb.from('profiles').update({role: newRole}).eq('id', id);
+// ── Roles ─────────────────────────────────────────────────────
+const ROLE_LABEL = { engineer:'Ingeniero', supervisor:'Supervisor', contador:'Contador', mercadeo:'Mercadeo', admin:'Admin' };
+const ROLE_COLOR = {
+  admin:      ['var(--c-primary-lt)','var(--c-primary)'],
+  supervisor: ['#FEF3C7','#D97706'],
+  contador:   ['#DCFCE7','#166534'],
+  mercadeo:   ['#F3E8FF','#7C3AED']
+};
+function roleBadge(role){
+  const c = ROLE_COLOR[role]; if(!c) return '';
+  return `<span style="font-size:10px;background:${c[0]};color:${c[1]};padding:1px 6px;border-radius:4px;font-weight:700">${(ROLE_LABEL[role]||role).toUpperCase()}</span>`;
+}
+async function setUserRole(id, newRole){
+  const {error} = await sb.from('profiles').update({role:newRole}).eq('id', id);
   if(error) showToast('Error al cambiar rol: '+error.message, 'err');
-  else { showToast(`Rol cambiado a ${ROLE_LABEL[newRole]}`, 'ok'); renderUsers(); }
+  else { showToast(`Rol cambiado a ${ROLE_LABEL[newRole]||newRole}`, 'ok'); renderUsers(); }
 }
 
 // ── Profile modal ─────────────────────────────────────────────
@@ -1597,7 +1650,7 @@ async function saveProfile(){
   const {error} = await sb.from('profiles').update({name}).eq('id', state.userId);
   if(error){ showToast('Error al guardar','err'); return; }
   state.userName = name;
-  document.getElementById('sbUser').textContent = name + (state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':'');
+  document.getElementById('sbUser').textContent = name + roleLabel();
   closeModal(); showToast('Nombre actualizado','ok');
 }
 
@@ -1691,8 +1744,11 @@ sb.auth.onAuthStateChange(async (event, session) => {
     const status = profile?.status || 'active';
     if(status === 'pending'){ showPending(false); return; }
     if(status === 'rejected'){ showPending(true); await sb.auth.signOut(); return; }
+    state.role         = profile?.role || 'engineer';
     state.isAdmin      = profile?.role === 'admin';
     state.isSupervisor = profile?.role === 'supervisor';
+    state.isContador   = profile?.role === 'contador';
+    state.isMercadeo   = profile?.role === 'mercadeo';
     state.userName     = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
     showApp();
     await loadAll();
@@ -1711,6 +1767,347 @@ if(SUPABASE_URL.includes('YOUR_PROJECT')){
   document.getElementById('loginErr').style.display='block';
   document.getElementById('loginErr').textContent='⚠ Configura SUPABASE_URL y SUPABASE_ANON_KEY en index.html';
 }
+</script>
+<script>
+/* ============================================================
+   MÓDULOS NUEVOS: Contabilidad · Licitaciones · Mercadeo
+   ============================================================ */
+function _tok(){ try{ return localStorage.getItem('cmi_token')||''; }catch(e){ return ''; } }
+async function apiPost(path, body){
+  try{
+    const r = await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tok()},body:JSON.stringify(body||{})});
+    return await r.json();
+  }catch(e){ return {error:{message:'Error de conexión'}}; }
+}
+async function apiUpload(scope, refId, file){
+  const fd=new FormData(); fd.append('scope',scope); if(refId) fd.append('ref_id',refId); fd.append('file',file);
+  try{ const r=await fetch('/api/upload',{method:'POST',headers:{'Authorization':'Bearer '+_tok()},body:fd}); return await r.json(); }
+  catch(e){ return {error:{message:'Error de subida'}}; }
+}
+async function apiDelete(path){
+  try{ const r=await fetch(path,{method:'DELETE',headers:{'Authorization':'Bearer '+_tok()}}); return await r.json().catch(()=>({})); }
+  catch(e){ return {error:{message:'Error'}}; }
+}
+function fileUrl(id, download){ return '/api/files/'+id+'?token='+encodeURIComponent(_tok())+(download?'&download=1':''); }
+function money(n){ n=Number(n||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('es-PA',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function modRefresh(view){ if(state.view!==view) return; if(!document.getElementById('modalWrap').hidden) return; render(); }
+function proyectoOptions(sel){ return [...state.projects.values()].map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join(''); }
+
+const mstate = { cuentas:[], contaTab:'comprobacion', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'campanas' };
+
+/* ================= CONTABILIDAD ================= */
+async function renderContabilidad(){
+  if(!canModule('conta')){ nav('dashboard'); return; }
+  setTopbar('Contabilidad');
+  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
+  document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:900px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+      ${[['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
+      <div><label style="font-size:11px;color:var(--c-muted);display:block">Desde</label><input type="date" value="${mstate.contaDesde}" onchange="mstate.contaDesde=this.value;renderContabilidad()"></div>
+      <div><label style="font-size:11px;color:var(--c-muted);display:block">Hasta</label><input type="date" value="${mstate.contaHasta}" onchange="mstate.contaHasta=this.value;renderContabilidad()"></div>
+    </div>
+    <div id="contaBody"><div class="nodata" style="padding:30px">Cargando…</div></div>
+  </div>`;
+  if(!mstate.cuentas.length){ const {data}=await sb.from('cuentas').select('*').order('codigo'); mstate.cuentas=data||[]; }
+  if(mstate.contaTab==='mayor'){ renderContaMayor(); return; }
+  const {data:saldos,error}=await apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta});
+  const body=document.getElementById('contaBody'); if(!body) return;
+  if(error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(error.message)}</div>`; return; }
+  if(mstate.contaTab==='comprobacion') body.innerHTML=contaComprobacion(saldos);
+  else if(mstate.contaTab==='resultados') body.innerHTML=contaResultados(saldos);
+  else if(mstate.contaTab==='balance') body.innerHTML=contaBalance(saldos);
+}
+function contaComprobacion(s){
+  const rows=s.filter(c=>c.debe>0||c.haber>0);
+  if(!rows.length) return '<div class="nodata" style="padding:30px">Sin movimientos en el período.</div>';
+  const td=rows.reduce((a,c)=>a+c.debe,0), th=rows.reduce((a,c)=>a+c.haber,0);
+  return `<div class="section-card"><table style="width:100%;border-collapse:collapse;font-size:13px">
+    <tr style="text-align:left;color:var(--c-muted);font-size:11px;text-transform:uppercase"><th style="padding:8px">Cuenta</th><th style="padding:8px;text-align:right">Debe</th><th style="padding:8px;text-align:right">Haber</th><th style="padding:8px;text-align:right">Saldo</th></tr>
+    ${rows.map(c=>`<tr style="border-top:1px solid var(--c-border)"><td style="padding:8px">${esc(c.codigo)} · ${esc(c.nombre)}</td><td style="padding:8px;text-align:right">${money(c.debe)}</td><td style="padding:8px;text-align:right">${money(c.haber)}</td><td style="padding:8px;text-align:right">${money(c.saldo)}</td></tr>`).join('')}
+    <tr style="border-top:2px solid var(--c-border);font-weight:700"><td style="padding:8px">Totales</td><td style="padding:8px;text-align:right">${money(td)}</td><td style="padding:8px;text-align:right">${money(th)}</td><td style="padding:8px;text-align:right;color:${Math.round((td-th)*100)===0?'#166534':'#DC2626'}">${money(td-th)}</td></tr>
+  </table></div>`;
+}
+function contaResultados(s){
+  const ing=s.filter(c=>c.tipo==='ingreso'&&(c.debe||c.haber));
+  const gas=s.filter(c=>c.tipo==='gasto'&&(c.debe||c.haber));
+  const totIng=ing.reduce((a,c)=>a+(c.haber-c.debe),0), totGas=gas.reduce((a,c)=>a+(c.debe-c.haber),0), util=totIng-totGas;
+  const sec=(titulo,arr,tipo)=>`<h3 style="font-size:13px;margin:14px 0 6px">${titulo}</h3>`+(arr.length?arr.map(c=>`<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--c-border)"><span>${esc(c.nombre)}</span><span>${money(tipo==='ing'?(c.haber-c.debe):(c.debe-c.haber))}</span></div>`).join(''):'<div class="nodata" style="padding:6px;font-size:12px">—</div>');
+  return `<div class="section-card">
+    ${sec('Ingresos',ing,'ing')}<div style="display:flex;justify-content:space-between;font-weight:700;padding:6px 0"><span>Total ingresos</span><span>${money(totIng)}</span></div>
+    ${sec('Costos y gastos',gas,'gas')}<div style="display:flex;justify-content:space-between;font-weight:700;padding:6px 0"><span>Total gastos</span><span>${money(totGas)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-weight:800;font-size:15px;border-top:2px solid var(--c-border);padding-top:10px;margin-top:8px;color:${util>=0?'#166534':'#DC2626'}"><span>Utilidad neta</span><span>${money(util)}</span></div>
+  </div>`;
+}
+function contaBalance(s){
+  const sum=(tipo,signo)=>s.filter(c=>c.tipo===tipo).reduce((a,c)=>a+(signo==='d'?(c.debe-c.haber):(c.haber-c.debe)),0);
+  const activo=sum('activo','d'), pasivo=sum('pasivo','h'), patr=sum('patrimonio','h'), util=sum('ingreso','h')-sum('gasto','d'), patrTot=patr+util;
+  const cuadra=Math.round((activo-(pasivo+patrTot))*100)===0;
+  const line=(l,v)=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:14px;border-bottom:1px solid var(--c-border)"><span>${l}</span><span>${money(v)}</span></div>`;
+  return `<div class="section-card">
+    <h3 style="font-size:13px;margin:0 0 6px">Activo</h3>${line('Total activo',activo)}
+    <h3 style="font-size:13px;margin:14px 0 6px">Pasivo</h3>${line('Total pasivo',pasivo)}
+    <h3 style="font-size:13px;margin:14px 0 6px">Patrimonio</h3>${line('Capital y reservas',patr)}${line('Utilidad del período',util)}${line('Total patrimonio',patrTot)}
+    <div style="display:flex;justify-content:space-between;font-weight:800;border-top:2px solid var(--c-border);padding-top:10px;margin-top:10px"><span>Pasivo + Patrimonio</span><span>${money(pasivo+patrTot)}</span></div>
+    <div style="margin-top:10px;font-size:12px;color:${cuadra?'#166534':'#DC2626'}">${cuadra?'✓ La ecuación contable cuadra':'✗ Descuadre de '+money(activo-(pasivo+patrTot))}</div>
+  </div>`;
+}
+async function renderContaMayor(){
+  const body=document.getElementById('contaBody'); if(!body) return;
+  const opts=mstate.cuentas.map(c=>`<option value="${c.id}" ${mstate.mayorCuenta===c.id?'selected':''}>${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join('');
+  body.innerHTML=`<div class="section-card"><div class="form-group"><label>Cuenta</label><select onchange="mstate.mayorCuenta=this.value;renderContaMayor()"><option value="">Elegí una cuenta…</option>${opts}</select></div><div id="mayorBody"></div></div>`;
+  if(!mstate.mayorCuenta) return;
+  const {data,error}=await apiPost('/api/conta/mayor',{cuenta_id:mstate.mayorCuenta,desde:mstate.contaDesde,hasta:mstate.contaHasta});
+  const mb=document.getElementById('mayorBody'); if(!mb) return;
+  if(error){ mb.innerHTML=`<div class="nodata">${esc(error.message)}</div>`; return; }
+  if(!data.length){ mb.innerHTML='<div class="nodata" style="padding:20px">Sin movimientos.</div>'; return; }
+  mb.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:10px">
+    <tr style="text-align:left;color:var(--c-muted);font-size:11px;text-transform:uppercase"><th style="padding:6px">Fecha</th><th style="padding:6px">Detalle</th><th style="padding:6px;text-align:right">Debe</th><th style="padding:6px;text-align:right">Haber</th><th style="padding:6px;text-align:right">Saldo</th></tr>
+    ${data.map(r=>`<tr style="border-top:1px solid var(--c-border)"><td style="padding:6px">${esc(r.fecha)}</td><td style="padding:6px">${esc(r.descripcion||r.linea||'')}</td><td style="padding:6px;text-align:right">${r.debe?money(r.debe):''}</td><td style="padding:6px;text-align:right">${r.haber?money(r.haber):''}</td><td style="padding:6px;text-align:right">${money(r.saldo)}</td></tr>`).join('')}
+  </table>`;
+}
+function asientoLineHtml(){
+  return `<div class="asiento-line" style="display:grid;grid-template-columns:1fr 85px 85px 110px 24px;gap:6px;margin-bottom:6px;align-items:center">
+    <select class="al-cuenta">${mstate.cuentas.map(c=>`<option value="${c.id}">${esc(c.codigo)} · ${esc(c.nombre)}</option>`).join('')}</select>
+    <input class="al-debe" type="number" step="0.01" min="0" placeholder="Debe" oninput="recalcAsiento()">
+    <input class="al-haber" type="number" step="0.01" min="0" placeholder="Haber" oninput="recalcAsiento()">
+    <select class="al-proy"><option value="">(proyecto)</option>${proyectoOptions()}</select>
+    <button type="button" onclick="this.closest('.asiento-line').remove();recalcAsiento()" style="border:none;background:none;color:#DC2626;cursor:pointer;font-size:16px">×</button>
+  </div>`;
+}
+function addAsientoLine(){ document.getElementById('asientoLines').insertAdjacentHTML('beforeend', asientoLineHtml()); recalcAsiento(); }
+function recalcAsiento(){
+  let d=0,h=0;
+  document.querySelectorAll('#asientoLines .asiento-line').forEach(l=>{ d+=Number(l.querySelector('.al-debe').value)||0; h+=Number(l.querySelector('.al-haber').value)||0; });
+  const cuadra=Math.round((d-h)*100)===0;
+  const el=document.getElementById('asientoTotals'); if(el) el.innerHTML=`Debe: <b>${money(d)}</b> · Haber: <b>${money(h)}</b> · <span style="color:${cuadra?'#166534':'#DC2626'}">${cuadra?'✓ cuadra':'✗ descuadre '+money(d-h)}</span>`;
+}
+function openAsientoModal(){
+  openModal(`
+    <div class="modal-head"><h2>Nuevo asiento</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="form-group" style="flex:1"><label>Fecha</label><input id="asFecha" type="date" value="${todayStr()}"></div>
+        <div class="form-group" style="flex:1"><label>Referencia</label><input id="asRef" placeholder="FAC-001"></div>
+      </div>
+      <div class="form-group"><label>Descripción</label><input id="asDesc" placeholder="Concepto del asiento"></div>
+      <label style="font-size:12px;font-weight:700;color:var(--c-muted)">Líneas (el debe debe igualar al haber)</label>
+      <div id="asientoLines" style="margin:8px 0"></div>
+      <button type="button" class="btn btn-sm btn-ghost" onclick="addAsientoLine()">+ Agregar línea</button>
+      <div id="asientoTotals" style="margin-top:12px;font-size:13px"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveAsiento()">Guardar asiento</button></div>`);
+  addAsientoLine(); addAsientoLine();
+}
+async function saveAsiento(){
+  const movimientos=[];
+  document.querySelectorAll('#asientoLines .asiento-line').forEach(l=>{
+    const debe=Number(l.querySelector('.al-debe').value)||0, haber=Number(l.querySelector('.al-haber').value)||0;
+    if(debe>0||haber>0) movimientos.push({cuenta_id:l.querySelector('.al-cuenta').value,debe,haber,proyecto_id:l.querySelector('.al-proy').value||null});
+  });
+  const {error}=await apiPost('/api/asiento',{fecha:document.getElementById('asFecha').value,descripcion:document.getElementById('asDesc').value,referencia:document.getElementById('asRef').value,movimientos});
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Asiento registrado','ok'); renderContabilidad();
+}
+
+/* ================= LICITACIONES ================= */
+const LIC_ESTADOS={borrador:'Borrador',en_revision:'En revisión',aprobada:'Aprobada',rechazada:'Rechazada',presentada:'Presentada',adjudicada:'Adjudicada',perdida:'Perdida'};
+const LIC_COLOR={borrador:['#F0EEE9','#6B6B78'],en_revision:['#FEF3C7','#D97706'],aprobada:['#DCFCE7','#166534'],rechazada:['#FEE2E2','#DC2626'],presentada:['#DBEAFE','#1D4ED8'],adjudicada:['#DCFCE7','#166534'],perdida:['#FEE2E2','#DC2626']};
+function licBadge(e){ const c=LIC_COLOR[e]||['#eee','#555']; return `<span style="font-size:11px;background:${c[0]};color:${c[1]};padding:2px 8px;border-radius:20px;font-weight:700">${LIC_ESTADOS[e]||e}</span>`; }
+async function renderLicitaciones(){
+  if(!canModule('licit')){ nav('dashboard'); return; }
+  setTopbar('Licitaciones');
+  if(state.isAdmin||state.isSupervisor) document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`;
+  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:860px"><div id="licList"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
+  const {data,error}=await sb.from('licitaciones').select('*').order('created_at',{ascending:false});
+  const list=document.getElementById('licList'); if(!list) return;
+  if(error){ list.innerHTML=`<div class="nodata" style="padding:20px">${esc(error.message)}</div>`; return; }
+  mstate.lics=data||[];
+  if(!data.length){ list.innerHTML='<div class="nodata" style="padding:30px">Sin licitaciones aún.</div>'; return; }
+  list.innerHTML=data.map(l=>`<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openLicDetail('${l.id}')">
+    <div style="display:flex;justify-content:space-between;align-items:start;gap:10px"><div><div style="font-weight:700">${esc(l.titulo)}</div><div style="font-size:12px;color:var(--c-muted)">${esc(l.entidad||'')} ${l.numero?'· '+esc(l.numero):''}</div></div>${licBadge(l.estado)}</div>
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.monto_estimado?`<span>💰 ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}</div>
+  </div>`).join('');
+}
+function openLicModal(lic){
+  lic=lic||{};
+  openModal(`
+    <div class="modal-head"><h2>${lic.id?'Editar':'Nueva'} licitación</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Título</label><input id="liTitulo" value="${esc(lic.titulo||'')}"></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Entidad</label><input id="liEntidad" value="${esc(lic.entidad||'')}"></div><div class="form-group" style="flex:1"><label>N°</label><input id="liNumero" value="${esc(lic.numero||'')}"></div></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Publicación</label><input id="liPub" type="date" value="${esc(lic.fecha_publicacion||'')}"></div><div class="form-group" style="flex:1"><label>Fecha límite</label><input id="liLim" type="date" value="${esc(lic.fecha_limite||'')}"></div></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Monto estimado</label><input id="liMonto" type="number" step="0.01" value="${lic.monto_estimado||''}"></div><div class="form-group" style="flex:1"><label>Responsable</label><input id="liResp" value="${esc(lic.responsable||'')}"></div></div>
+      <div class="form-group"><label>Notas</label><textarea id="liNotas" rows="2">${esc(lic.notas||'')}</textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveLic('${lic.id||''}')">Guardar</button></div>`);
+}
+async function saveLic(id){
+  const row={titulo:document.getElementById('liTitulo').value.trim(),entidad:document.getElementById('liEntidad').value.trim(),numero:document.getElementById('liNumero').value.trim(),fecha_publicacion:document.getElementById('liPub').value||null,fecha_limite:document.getElementById('liLim').value||null,monto_estimado:Number(document.getElementById('liMonto').value)||null,responsable:document.getElementById('liResp').value.trim(),notas:document.getElementById('liNotas').value.trim()};
+  if(!row.titulo){ showToast('Falta el título','err'); return; }
+  let error; if(id){ ({error}=await sb.from('licitaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('licitaciones').insert(row)); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Guardado','ok'); renderLicitaciones();
+}
+async function openLicDetail(id){
+  const l=(mstate.lics||[]).find(x=>x.id===id); if(!l) return;
+  const {data:docs}=await sb.from('files').select('*').eq('scope','licitacion').eq('ref_id',id);
+  const canEdit=state.isAdmin||state.isSupervisor;
+  const estSel=canEdit?`<div class="form-group" style="margin-top:12px"><label>Estado</label><select onchange="setLicEstado('${id}',this.value)">${Object.entries(LIC_ESTADOS).filter(([k])=>k!=='aprobada'&&k!=='rechazada').map(([k,v])=>`<option value="${k}" ${l.estado===k?'selected':''}>${v}</option>`).join('')}</select></div>`:'';
+  openModal(`
+    <div class="modal-head"><h2>${esc(l.titulo)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:10px">${licBadge(l.estado)} ${l.aprobado_at?`<span style="font-size:11px;color:var(--c-muted)">· resuelta ${esc(l.aprobado_at.slice(0,10))}</span>`:''}</div>
+      <div style="font-size:13px;color:var(--c-muted);line-height:1.7">${l.entidad?`<div><b>Entidad:</b> ${esc(l.entidad)}</div>`:''}${l.numero?`<div><b>N°:</b> ${esc(l.numero)}</div>`:''}${l.fecha_limite?`<div><b>Fecha límite:</b> ${esc(l.fecha_limite)}</div>`:''}${l.monto_estimado?`<div><b>Monto:</b> ${money(l.monto_estimado)} ${esc(l.moneda||'')}</div>`:''}${l.responsable?`<div><b>Responsable:</b> ${esc(l.responsable)}</div>`:''}${l.notas?`<div style="margin-top:6px">${esc(l.notas)}</div>`:''}</div>
+      ${estSel}
+      <h3 style="font-size:13px;margin:14px 0 6px">Documentos</h3>
+      <div>${docsHtml(docs,'licitacion',id)}</div>
+      ${canEdit?`<div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input type="file" id="licFile"><button class="btn btn-sm btn-ghost" onclick="uploadDoc('licitacion','${id}','licFile',()=>openLicDetail('${id}'))">Subir</button></div>`:''}
+    </div>
+    <div class="modal-foot" style="justify-content:space-between">
+      <div>${state.isAdmin?`<button class="btn btn-sm" style="background:#DCFCE7;color:#166534" onclick="aprobarLic('${id}',true)">Aprobar</button> <button class="btn btn-sm" style="background:#FEE2E2;color:#DC2626" onclick="aprobarLic('${id}',false)">Rechazar</button>`:''}</div>
+      <div>${canEdit?`<button class="btn btn-ghost" onclick="openLicModal(mstate.lics.find(x=>x.id==='${id}'))">Editar</button> `:''}${state.isAdmin?`<button class="btn btn-ghost" style="color:#DC2626" onclick="delLic('${id}')">Eliminar</button> `:''}<button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
+    </div>`);
+}
+function docsHtml(docs,scope,refId){
+  if(!docs||!docs.length) return '<div class="nodata" style="padding:8px;font-size:12px">Sin documentos.</div>';
+  return docs.map(d=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--c-border);font-size:13px">
+    <a href="${fileUrl(d.id)}" target="_blank" style="color:var(--c-primary);text-decoration:none">📎 ${esc(d.name)}</a>
+    <span><a href="${fileUrl(d.id,true)}" style="font-size:11px;color:var(--c-muted);margin-right:10px">descargar</a><button onclick="delFile('${d.id}','${scope}','${refId}')" style="border:none;background:none;color:#DC2626;cursor:pointer">×</button></span>
+  </div>`).join('');
+}
+async function uploadDoc(scope,refId,inputId,after){
+  const inp=document.getElementById(inputId); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
+  const {error}=await apiUpload(scope,refId,inp.files[0]);
+  if(error){ showToast(error.message,'err'); return; }
+  showToast('Archivo subido','ok'); if(after) after();
+}
+async function delFile(id,scope,refId){
+  const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; }
+  showToast('Archivo eliminado','ok');
+  if(scope==='licitacion') openLicDetail(refId); else if(scope==='campana') openCampanaDetail(refId);
+}
+async function setLicEstado(id,estado){ const {error}=await sb.from('licitaciones').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado actualizado','ok'); const l=mstate.lics.find(x=>x.id===id); if(l)l.estado=estado; } }
+async function aprobarLic(id,ok){ const {error}=await sb.from('licitaciones').update({estado:ok?'aprobada':'rechazada',aprobado_por:state.userId,aprobado_at:new Date().toISOString()}).eq('id',id); if(error){ showToast(error.message,'err'); return; } showToast(ok?'Aprobada':'Rechazada','ok'); closeModal(); renderLicitaciones(); }
+async function delLic(id){ if(!confirm('¿Eliminar esta licitación?')) return; const {error}=await sb.from('licitaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminada','ok'); closeModal(); renderLicitaciones(); }
+
+/* ================= MERCADEO ================= */
+async function renderMercadeo(){
+  if(!canModule('mkt')){ nav('dashboard'); return; }
+  setTopbar('Mercadeo');
+  const tab=mstate.mktTab||'campanas';
+  document.getElementById('topbarActions').innerHTML = tab==='campanas'
+    ? `<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`
+    : `<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Pendiente</button>`;
+  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:960px">
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn btn-sm ${tab==='campanas'?'btn-primary':'btn-ghost'}" onclick="mstate.mktTab='campanas';renderMercadeo()">Campañas</button>
+      <button class="btn btn-sm ${tab==='tareas'?'btn-primary':'btn-ghost'}" onclick="mstate.mktTab='tareas';renderMercadeo()">Tablero de pendientes</button>
+    </div>
+    <div id="mktBody"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
+  if(tab==='campanas') renderCampanas(); else renderTareas();
+}
+async function renderCampanas(){
+  const {data}=await sb.from('campanas').select('*').order('created_at',{ascending:false});
+  const b=document.getElementById('mktBody'); if(!b) return;
+  mstate.campanas=data||[];
+  if(!data||!data.length){ b.innerHTML='<div class="nodata" style="padding:30px">Sin campañas aún.</div>'; return; }
+  b.innerHTML=data.map(c=>`<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openCampanaDetail('${c.id}')">
+    <div style="display:flex;justify-content:space-between"><div style="font-weight:700">${esc(c.nombre)}</div><span style="font-size:11px;color:var(--c-muted)">${esc(c.estado)}</span></div>
+    ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-top:4px">${esc(c.descripcion)}</div>`:''}
+    <div style="font-size:12px;color:var(--c-muted);margin-top:6px">${c.fecha_inicio?'📅 '+esc(c.fecha_inicio):''} ${c.fecha_fin?'→ '+esc(c.fecha_fin):''} ${c.responsable?'· 👤 '+esc(c.responsable):''}</div>
+  </div>`).join('');
+}
+function openCampanaModal(c){
+  c=c||{};
+  openModal(`
+    <div class="modal-head"><h2>${c.id?'Editar':'Nueva'} campaña</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Nombre</label><input id="cmNombre" value="${esc(c.nombre||'')}"></div>
+      <div class="form-group"><label>Descripción</label><textarea id="cmDesc" rows="2">${esc(c.descripcion||'')}</textarea></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Inicio</label><input id="cmIni" type="date" value="${esc(c.fecha_inicio||'')}"></div><div class="form-group" style="flex:1"><label>Fin</label><input id="cmFin" type="date" value="${esc(c.fecha_fin||'')}"></div></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="cmResp" value="${esc(c.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Estado</label><select id="cmEstado"><option value="activa" ${c.estado==='activa'?'selected':''}>Activa</option><option value="pausada" ${c.estado==='pausada'?'selected':''}>Pausada</option><option value="finalizada" ${c.estado==='finalizada'?'selected':''}>Finalizada</option></select></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCampana('${c.id||''}')">Guardar</button></div>`);
+}
+async function saveCampana(id){
+  const row={nombre:document.getElementById('cmNombre').value.trim(),descripcion:document.getElementById('cmDesc').value.trim(),fecha_inicio:document.getElementById('cmIni').value||null,fecha_fin:document.getElementById('cmFin').value||null,responsable:document.getElementById('cmResp').value.trim(),estado:document.getElementById('cmEstado').value};
+  if(!row.nombre){ showToast('Falta el nombre','err'); return; }
+  let error; if(id){ ({error}=await sb.from('campanas').update(row).eq('id',id)); } else { ({error}=await sb.from('campanas').insert(row)); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Guardado','ok'); renderMercadeo();
+}
+async function openCampanaDetail(id){
+  const c=(mstate.campanas||[]).find(x=>x.id===id); if(!c) return;
+  const {data:mats}=await sb.from('files').select('*').eq('scope','campana').eq('ref_id',id);
+  const {data:pubs}=await sb.from('publicaciones').select('*').eq('campana_id',id).order('fecha');
+  openModal(`
+    <div class="modal-head"><h2>${esc(c.nombre)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-bottom:10px">${esc(c.descripcion)}</div>`:''}
+      <h3 style="font-size:13px;margin:10px 0 6px">Materiales</h3>
+      <div>${docsHtml(mats,'campana',id)}</div>
+      <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input type="file" id="cmFile"><button class="btn btn-sm btn-ghost" onclick="uploadDoc('campana','${id}','cmFile',()=>openCampanaDetail('${id}'))">Subir material</button></div>
+      <h3 style="font-size:13px;margin:16px 0 6px">Calendario de publicaciones</h3>
+      <div>${pubsHtml(pubs,id)}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <input id="pbFecha" type="date" style="flex:0 0 140px"><input id="pbCanal" placeholder="Canal" style="flex:0 0 110px"><input id="pbCont" placeholder="Contenido" style="flex:1;min-width:120px"><button class="btn btn-sm btn-ghost" onclick="savePub('${id}')">Agregar</button>
+      </div>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between">
+      <div><button class="btn btn-ghost" style="color:#DC2626" onclick="delCampana('${id}')">Eliminar</button></div>
+      <div><button class="btn btn-ghost" onclick="openCampanaModal(mstate.campanas.find(x=>x.id==='${id}'))">Editar</button> <button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
+    </div>`);
+}
+function pubsHtml(pubs,campanaId){
+  if(!pubs||!pubs.length) return '<div class="nodata" style="padding:6px;font-size:12px">Sin publicaciones.</div>';
+  return pubs.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--c-border);font-size:13px">
+    <span><b>${esc(p.fecha||'')}</b> ${p.canal?'· '+esc(p.canal):''} — ${esc(p.contenido||'')}</span>
+    <span style="white-space:nowrap"><button onclick="togglePub('${p.id}','${p.estado==='publicada'?'planificada':'publicada'}','${campanaId}')" style="border:none;background:none;cursor:pointer;font-size:11px;color:${p.estado==='publicada'?'#166534':'var(--c-muted)'}">${p.estado==='publicada'?'✓ publicada':'marcar'}</button> <button onclick="delPub('${p.id}','${campanaId}')" style="border:none;background:none;color:#DC2626;cursor:pointer">×</button></span>
+  </div>`).join('');
+}
+async function savePub(campanaId){
+  const contenido=document.getElementById('pbCont').value.trim(); if(!contenido){ showToast('Falta el contenido','err'); return; }
+  const {error}=await sb.from('publicaciones').insert({campana_id:campanaId,fecha:document.getElementById('pbFecha').value||null,canal:document.getElementById('pbCanal').value.trim(),contenido});
+  if(error){ showToast(error.message,'err'); return; }
+  openCampanaDetail(campanaId);
+}
+async function togglePub(id,estado,campanaId){ const {error}=await sb.from('publicaciones').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
+async function delPub(id,campanaId){ const {error}=await sb.from('publicaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
+async function delCampana(id){ if(!confirm('¿Eliminar campaña?')) return; const {error}=await sb.from('campanas').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
+async function openTareaModal(){
+  openModal(`
+    <div class="modal-head"><h2>Nuevo pendiente</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Título</label><input id="tTitulo"></div>
+      <div class="form-group"><label>Descripción</label><textarea id="tDesc" rows="2"></textarea></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="tResp"></div><div class="form-group" style="flex:1"><label>Prioridad</label><select id="tPrio"><option value="baja">Baja</option><option value="media" selected>Media</option><option value="alta">Alta</option></select></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarea()">Guardar</button></div>`);
+}
+async function saveTarea(){
+  const titulo=document.getElementById('tTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
+  const {error}=await sb.from('mercadeo_tareas').insert({titulo,descripcion:document.getElementById('tDesc').value.trim(),responsable:document.getElementById('tResp').value.trim(),prioridad:document.getElementById('tPrio').value});
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Pendiente creado','ok'); renderMercadeo();
+}
+async function renderTareas(){
+  const {data}=await sb.from('mercadeo_tareas').select('*').order('created_at',{ascending:false});
+  const b=document.getElementById('mktBody'); if(!b) return;
+  const cols=[['pendiente','Pendiente'],['en_progreso','En progreso'],['hecho','Hecho']];
+  const PR={alta:['#FEE2E2','#DC2626'],media:['#FEF3C7','#D97706'],baja:['#E0E7FF','#4338CA']};
+  b.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">${cols.map(([k,l])=>{
+    const items=(data||[]).filter(t=>t.estado===k);
+    return `<div><div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:8px">${l} (${items.length})</div>${items.map(t=>{const pc=PR[t.prioridad]||PR.media;return `<div class="section-card" style="margin-bottom:8px;padding:10px">
+      <div style="font-weight:600;font-size:13px">${esc(t.titulo)}</div>${t.descripcion?`<div style="font-size:12px;color:var(--c-muted);margin-top:3px">${esc(t.descripcion)}</div>`:''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span style="font-size:10px;background:${pc[0]};color:${pc[1]};padding:1px 6px;border-radius:4px;font-weight:700">${(t.prioridad||'media').toUpperCase()}</span>
+      <span style="white-space:nowrap">${k!=='pendiente'?`<button title="atrás" onclick="moveTarea('${t.id}','${k==='hecho'?'en_progreso':'pendiente'}')" style="border:none;background:none;cursor:pointer">◀</button>`:''}${k!=='hecho'?`<button title="avanzar" onclick="moveTarea('${t.id}','${k==='pendiente'?'en_progreso':'hecho'}')" style="border:none;background:none;cursor:pointer">▶</button>`:''}<button onclick="delTarea('${t.id}')" style="border:none;background:none;color:#DC2626;cursor:pointer">×</button></span></div>
+      ${t.responsable?`<div style="font-size:11px;color:var(--c-muted);margin-top:4px">👤 ${esc(t.responsable)}</div>`:''}
+    </div>`;}).join('')||'<div class="nodata" style="padding:12px;font-size:12px">—</div>'}</div>`;}).join('')}</div>`;
+}
+async function moveTarea(id,estado){ const {error}=await sb.from('mercadeo_tareas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else renderMercadeo(); }
+async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else renderMercadeo(); }
 </script>
 </body>
 </html>

@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const multer = require('multer');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -99,6 +100,106 @@ CREATE TABLE IF NOT EXISTS messages (
   content    TEXT,
   created_at TEXT
 );
+
+-- ── Archivos subidos (comprobantes, documentos de licitación, piezas) ──
+CREATE TABLE IF NOT EXISTS files (
+  id          TEXT PRIMARY KEY,
+  name        TEXT,
+  mime        TEXT,
+  size        INTEGER,
+  path        TEXT,
+  scope       TEXT,
+  ref_id      TEXT,
+  uploaded_by TEXT,
+  uploaded_at TEXT
+);
+
+-- ── Contabilidad (partida doble) ──
+CREATE TABLE IF NOT EXISTS cuentas (
+  id         TEXT PRIMARY KEY,
+  codigo     TEXT,
+  nombre     TEXT NOT NULL,
+  tipo       TEXT NOT NULL,            -- activo|pasivo|patrimonio|ingreso|gasto
+  parent_id  TEXT,
+  activa     INTEGER DEFAULT 1,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS asientos (
+  id               TEXT PRIMARY KEY,
+  fecha            TEXT NOT NULL,
+  descripcion      TEXT,
+  referencia       TEXT,
+  estado           TEXT DEFAULT 'confirmado',
+  comprobante_file TEXT,
+  created_by       TEXT,
+  created_at       TEXT,
+  updated_at       TEXT
+);
+CREATE TABLE IF NOT EXISTS movimientos (
+  id          TEXT PRIMARY KEY,
+  asiento_id  TEXT NOT NULL,
+  cuenta_id   TEXT NOT NULL,
+  debe        REAL DEFAULT 0,
+  haber       REAL DEFAULT 0,
+  proyecto_id TEXT,
+  descripcion TEXT
+);
+
+-- ── Licitaciones ──
+CREATE TABLE IF NOT EXISTS licitaciones (
+  id                TEXT PRIMARY KEY,
+  titulo            TEXT NOT NULL,
+  entidad           TEXT,
+  numero            TEXT,
+  fecha_publicacion TEXT,
+  fecha_limite      TEXT,
+  monto_estimado    REAL,
+  moneda            TEXT DEFAULT 'USD',
+  estado            TEXT DEFAULT 'borrador',  -- borrador|en_revision|aprobada|rechazada|presentada|adjudicada|perdida
+  responsable       TEXT,
+  notas             TEXT,
+  aprobado_por      TEXT,
+  aprobado_at       TEXT,
+  created_by        TEXT,
+  created_at        TEXT,
+  updated_at        TEXT
+);
+
+-- ── Mercadeo ──
+CREATE TABLE IF NOT EXISTS campanas (
+  id            TEXT PRIMARY KEY,
+  nombre        TEXT NOT NULL,
+  descripcion   TEXT,
+  estado        TEXT DEFAULT 'activa',    -- activa|pausada|finalizada
+  fecha_inicio  TEXT,
+  fecha_fin     TEXT,
+  responsable   TEXT,
+  created_by    TEXT,
+  created_at    TEXT,
+  updated_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS publicaciones (
+  id          TEXT PRIMARY KEY,
+  campana_id  TEXT,
+  fecha       TEXT,
+  canal       TEXT,
+  contenido   TEXT,
+  estado      TEXT DEFAULT 'planificada', -- planificada|publicada
+  created_by  TEXT,
+  created_at  TEXT,
+  updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS mercadeo_tareas (
+  id          TEXT PRIMARY KEY,
+  titulo      TEXT NOT NULL,
+  descripcion TEXT,
+  responsable TEXT,
+  prioridad   TEXT DEFAULT 'media',       -- baja|media|alta
+  estado      TEXT DEFAULT 'pendiente',   -- pendiente|en_progreso|hecho
+  created_by  TEXT,
+  created_at  TEXT,
+  updated_at  TEXT
+);
 `);
 
 // Columnas permitidas por tabla (whitelist anti-inyección e integridad)
@@ -108,8 +209,47 @@ const SCHEMA = {
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
-  messages:  ['id', 'user_id', 'content', 'created_at']
+  messages:  ['id', 'user_id', 'content', 'created_at'],
+  files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
+  cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
+  asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
+  movimientos:  ['id', 'asiento_id', 'cuenta_id', 'debe', 'haber', 'proyecto_id', 'descripcion'],
+  licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'moneda', 'estado', 'responsable', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
+  campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'created_by', 'created_at', 'updated_at'],
+  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'created_by', 'created_at', 'updated_at'],
+  mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'created_by', 'created_at', 'updated_at']
 };
+
+// ── Control de acceso por módulo (lectura y escritura) ──
+// Qué roles pueden ver/usar cada módulo sensible. admin ve todo.
+const MODULE_ROLES = {
+  conta: ['admin', 'contador'],
+  licit: ['admin', 'supervisor'],
+  mkt:   ['admin', 'mercadeo']
+};
+const TABLE_MODULE = {
+  cuentas: 'conta', asientos: 'conta', movimientos: 'conta',
+  licitaciones: 'licit',
+  campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt'
+};
+const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt' };
+
+function roleCan(module, user) {
+  if (!module) return true;               // tabla no restringida
+  const roles = MODULE_ROLES[module];
+  return roles ? roles.includes(user.role) : false;
+}
+
+// Módulo al que pertenece una petición (según tabla y, para files, según scope).
+function moduleFor(table, reqBody) {
+  if (table === 'files') {
+    const scope = (reqBody && reqBody.values && reqBody.values.scope)
+      || (reqBody && reqBody.filters || []).find?.(f => f.col === 'scope')?.val
+      || (reqBody && reqBody.scope);
+    return SCOPE_MODULE[scope] || null;   // files sin scope reconocido: sin módulo restringido
+  }
+  return TABLE_MODULE[table] || null;
+}
 
 // ── Secreto JWT: del entorno, o generado y persistido en la DB ──
 let JWT_SECRET = process.env.JWT_SECRET;
@@ -198,13 +338,50 @@ function importData(file) {
   console.log(`Importados ${total} registros desde ${path.basename(file)} (${profs} perfiles sin login — se enganchan al registrarse con su email).`);
 }
 
+// Plan de cuentas base (contabilidad). Se siembra si la tabla está vacía.
+function seedCuentas() {
+  const c = db.prepare('SELECT COUNT(*) AS c FROM cuentas').get().c;
+  if (c > 0) return;
+  const now = new Date().toISOString();
+  const cuentas = [
+    ['1',    'Activo',                 'activo'],
+    ['1101', 'Caja',                   'activo'],
+    ['1102', 'Bancos',                 'activo'],
+    ['1103', 'Cuentas por cobrar',     'activo'],
+    ['1104', 'Inventario',             'activo'],
+    ['1201', 'Maquinaria y equipo',    'activo'],
+    ['1202', 'Vehículos',              'activo'],
+    ['2',    'Pasivo',                 'pasivo'],
+    ['2101', 'Cuentas por pagar',      'pasivo'],
+    ['2102', 'Impuestos por pagar',    'pasivo'],
+    ['2201', 'Préstamos bancarios',    'pasivo'],
+    ['3',    'Patrimonio',             'patrimonio'],
+    ['3101', 'Capital',                'patrimonio'],
+    ['3102', 'Utilidades retenidas',   'patrimonio'],
+    ['4',    'Ingresos',               'ingreso'],
+    ['4101', 'Ingresos por obra',      'ingreso'],
+    ['4102', 'Otros ingresos',         'ingreso'],
+    ['5',    'Costos y gastos',        'gasto'],
+    ['5101', 'Costo de obra',          'gasto'],
+    ['5102', 'Mano de obra',           'gasto'],
+    ['5103', 'Materiales',             'gasto'],
+    ['5104', 'Gastos administrativos', 'gasto'],
+    ['5105', 'Gastos de ventas',       'gasto']
+  ];
+  const ins = db.prepare('INSERT INTO cuentas (id,codigo,nombre,tipo,activa,created_at) VALUES (?,?,?,?,1,?)');
+  tx(() => { cuentas.forEach(x => ins.run(crypto.randomUUID(), x[0], x[1], x[2], now)); });
+  console.log('Plan de cuentas base sembrado.');
+}
+
 // Arranque: si la base está vacía, importa import.json o siembra ejemplos.
 function bootstrap() {
   const count = db.prepare('SELECT COUNT(*) AS c FROM projects').get().c;
-  if (count > 0) return;
-  const importPath = process.env.IMPORT_PATH || path.join(__dirname, 'import.json');
-  if (fs.existsSync(importPath)) importData(importPath);
-  else seedDefaults();
+  if (count === 0) {
+    const importPath = process.env.IMPORT_PATH || path.join(__dirname, 'import.json');
+    if (fs.existsSync(importPath)) importData(importPath);
+    else seedDefaults();
+  }
+  seedCuentas(); // contabilidad es módulo nuevo: sembrar plan base si falta
 }
 bootstrap();
 
@@ -331,6 +508,28 @@ function canWrite(table, op, user, values, filters) {
       const idf = (filters || []).find(f => f.col === 'id');
       return user.role === 'admin' || (idf && idf.val === user.id); // nombre propio
     }
+    // ── Contabilidad ──
+    case 'cuentas':
+      return roleCan('conta', user);
+    case 'asientos':
+    case 'movimientos':
+    case 'files':
+      return false; // sólo vía endpoints dedicados (/api/asiento, /api/upload)
+    // ── Licitaciones ──
+    case 'licitaciones': {
+      if (!roleCan('licit', user)) return false;
+      if (op === 'delete') return user.role === 'admin';
+      if (op === 'update') {
+        const est = values && values.estado;
+        if (est === 'aprobada' || est === 'rechazada') return user.role === 'admin'; // aprobar: solo admin
+      }
+      return true; // crear/editar: admin + supervisor
+    }
+    // ── Mercadeo ──
+    case 'campanas':
+    case 'publicaciones':
+    case 'mercadeo_tareas':
+      return roleCan('mkt', user);
     default:
       return false;
   }
@@ -377,6 +576,7 @@ function doInsert(table, values, user) {
     if (table === 'projects') throw { message: 'Falta el id del proyecto' };
     v.id = crypto.randomUUID();
   }
+  if (allowed.includes('created_by') && !v.created_by) v.created_by = user.id;
   const now = new Date().toISOString();
   if (allowed.includes('created_at') && !v.created_at) v.created_at = now;
   if (allowed.includes('updated_at')) v.updated_at = now;
@@ -428,6 +628,9 @@ app.post('/api/select', (req, res) => {
   if (!u) return res.status(401).json({ data: null, error: { message: 'No autenticado' } });
   const { table } = req.body || {};
   if (!SCHEMA[table]) return res.json({ data: null, error: { message: 'Tabla inválida' } });
+  const module = moduleFor(table, req.body);
+  if (table === 'files' && !module) return res.status(403).json({ data: null, error: { message: 'Falta scope' } });
+  if (!roleCan(module, u)) return res.status(403).json({ data: null, error: { message: 'No autorizado' } });
   try { res.json({ data: runSelect(table, req.body), error: null }); }
   catch (e) { res.json({ data: null, error: { message: e.message } }); }
 });
@@ -463,6 +666,144 @@ app.post('/api/delete', (req, res) => {
   if (!canWrite(table, 'delete', u, null, filters)) return res.status(403).json({ data: null, error: { message: 'No autorizado' } });
   try { res.json({ data: null, count: doDelete(table, filters), error: null }); }
   catch (e) { res.json({ data: null, error: { message: e.message } }); }
+});
+
+// ============================================================
+// ARCHIVOS (subida/descarga al volumen)
+// ============================================================
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(path.dirname(DB_PATH), 'uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const upload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 25 * 1024 * 1024 } });
+
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  const u = getUser(req);
+  const cleanup = () => { if (req.file) { try { fs.unlinkSync(req.file.path); } catch (e) {} } };
+  if (!u) { cleanup(); return res.status(401).json({ error: { message: 'No autenticado' } }); }
+  if (u.status !== 'active') { cleanup(); return res.status(403).json({ error: { message: 'Cuenta no activa' } }); }
+  if (!req.file) return res.status(400).json({ error: { message: 'No se recibió archivo' } });
+  const scope = req.body.scope;
+  const module = SCOPE_MODULE[scope] || null;
+  if (!roleCan(module, u)) { cleanup(); return res.status(403).json({ error: { message: 'No autorizado' } }); }
+  const id = crypto.randomUUID();
+  const name = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO files (id,name,mime,size,path,scope,ref_id,uploaded_by,uploaded_at) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(id, name, req.file.mimetype, req.file.size, path.basename(req.file.path), scope || null, req.body.ref_id || null, u.id, now);
+  const row = db.prepare('SELECT * FROM files WHERE id = ?').get(id);
+  broadcast({ table: 'files', eventType: 'INSERT', new: row, old: null });
+  res.json({ data: { id, name, scope: scope || null, ref_id: req.body.ref_id || null, url: '/api/files/' + id }, error: null });
+});
+
+app.get('/api/files/:id', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).end();
+  const f = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
+  if (!f) return res.status(404).end();
+  if (!roleCan(SCOPE_MODULE[f.scope] || null, u)) return res.status(403).end();
+  const full = path.join(UPLOAD_DIR, f.path);
+  if (!fs.existsSync(full)) return res.status(404).end();
+  if (f.mime) res.type(f.mime);
+  const disp = req.query.download ? 'attachment' : 'inline';
+  res.set('Content-Disposition', `${disp}; filename="${encodeURIComponent(f.name || 'archivo')}"`);
+  res.sendFile(full);
+});
+
+app.delete('/api/files/:id', (req, res) => {
+  const u = getUser(req);
+  if (!u || u.status !== 'active') return res.status(401).json({ error: { message: 'No autenticado' } });
+  const f = db.prepare('SELECT * FROM files WHERE id = ?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: { message: 'No existe' } });
+  const module = SCOPE_MODULE[f.scope] || null;
+  if (!(u.role === 'admin' || (roleCan(module, u) && f.uploaded_by === u.id)))
+    return res.status(403).json({ error: { message: 'No autorizado' } });
+  try { fs.unlinkSync(path.join(UPLOAD_DIR, f.path)); } catch (e) {}
+  db.prepare('DELETE FROM files WHERE id = ?').run(f.id);
+  broadcast({ table: 'files', eventType: 'DELETE', new: null, old: f });
+  res.json({ error: null });
+});
+
+// ============================================================
+// CONTABILIDAD (partida doble)
+// ============================================================
+app.post('/api/asiento', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (u.status !== 'active' || !roleCan('conta', u)) return res.status(403).json({ error: { message: 'No autorizado' } });
+  const { fecha, descripcion, referencia, comprobante_file } = req.body || {};
+  const lineas = Array.isArray(req.body && req.body.movimientos) ? req.body.movimientos : [];
+  if (!fecha) return res.json({ error: { message: 'Falta la fecha' } });
+  if (lineas.length < 2) return res.json({ error: { message: 'Un asiento necesita al menos 2 líneas' } });
+
+  let totDebe = 0, totHaber = 0;
+  for (const l of lineas) {
+    const d = Number(l.debe) || 0, h = Number(l.haber) || 0;
+    if (!l.cuenta_id) return res.json({ error: { message: 'Hay una línea sin cuenta' } });
+    if (d < 0 || h < 0) return res.json({ error: { message: 'No se permiten montos negativos' } });
+    if (d > 0 && h > 0) return res.json({ error: { message: 'Una línea no puede tener debe y haber a la vez' } });
+    totDebe += d; totHaber += h;
+  }
+  if (Math.round((totDebe - totHaber) * 100) !== 0)
+    return res.json({ error: { message: `Asiento descuadrado: debe ${totDebe.toFixed(2)} ≠ haber ${totHaber.toFixed(2)}` } });
+  if (totDebe === 0) return res.json({ error: { message: 'El asiento no puede ser en cero' } });
+
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  tx(() => {
+    db.prepare('INSERT INTO asientos (id,fecha,descripcion,referencia,estado,comprobante_file,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(id, fecha, descripcion || '', referencia || '', 'confirmado', comprobante_file || null, u.id, now, now);
+    const insM = db.prepare('INSERT INTO movimientos (id,asiento_id,cuenta_id,debe,haber,proyecto_id,descripcion) VALUES (?,?,?,?,?,?,?)');
+    for (const l of lineas) {
+      insM.run(crypto.randomUUID(), id, l.cuenta_id, Number(l.debe) || 0, Number(l.haber) || 0, l.proyecto_id || null, l.descripcion || '');
+    }
+  });
+  const row = db.prepare('SELECT * FROM asientos WHERE id = ?').get(id);
+  broadcast({ table: 'asientos', eventType: 'INSERT', new: row, old: null });
+  res.json({ data: row, error: null });
+});
+
+// Saldos por cuenta en un rango: base del balance de comprobación, el estado
+// de resultados y el balance general (el front arma cada vista con esto).
+app.post('/api/conta/saldos', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (!roleCan('conta', u)) return res.status(403).json({ error: { message: 'No autorizado' } });
+  const { desde, hasta, proyecto_id } = req.body || {};
+  const cond = [], params = [];
+  if (desde) { cond.push('a.fecha >= ?'); params.push(desde); }
+  if (hasta) { cond.push('a.fecha <= ?'); params.push(hasta); }
+  if (proyecto_id) { cond.push('m.proyecto_id = ?'); params.push(proyecto_id); }
+  // El filtro de fecha va en el ON para no descartar cuentas sin movimientos.
+  const sql = `
+    SELECT c.id AS cuenta_id, c.codigo, c.nombre, c.tipo,
+           COALESCE(SUM(m.debe),0) AS debe, COALESCE(SUM(m.haber),0) AS haber
+    FROM cuentas c
+    LEFT JOIN movimientos m ON m.cuenta_id = c.id
+    LEFT JOIN asientos a ON a.id = m.asiento_id ${cond.length ? 'AND ' + cond.join(' AND ') : ''}
+    GROUP BY c.id
+    ORDER BY c.codigo`;
+  const rows = db.prepare(sql).all(...params).map(r => ({ ...r, saldo: Number(r.debe) - Number(r.haber) }));
+  res.json({ data: rows, error: null });
+});
+
+// Libro mayor de una cuenta: movimientos ordenados con saldo corriente.
+app.post('/api/conta/mayor', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (!roleCan('conta', u)) return res.status(403).json({ error: { message: 'No autorizado' } });
+  const { cuenta_id, desde, hasta, proyecto_id } = req.body || {};
+  if (!cuenta_id) return res.json({ error: { message: 'Falta la cuenta' } });
+  const cond = ['m.cuenta_id = ?'], params = [cuenta_id];
+  if (desde) { cond.push('a.fecha >= ?'); params.push(desde); }
+  if (hasta) { cond.push('a.fecha <= ?'); params.push(hasta); }
+  if (proyecto_id) { cond.push('m.proyecto_id = ?'); params.push(proyecto_id); }
+  const sql = `
+    SELECT a.fecha, a.descripcion, a.referencia, m.debe, m.haber, m.proyecto_id, m.descripcion AS linea
+    FROM movimientos m JOIN asientos a ON a.id = m.asiento_id
+    WHERE ${cond.join(' AND ')}
+    ORDER BY a.fecha, a.created_at`;
+  let saldo = 0;
+  const rows = db.prepare(sql).all(...params).map(r => { saldo += Number(r.debe) - Number(r.haber); return { ...r, saldo }; });
+  res.json({ data: rows, error: null });
 });
 
 // ============================================================
