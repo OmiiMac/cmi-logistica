@@ -16,5 +16,5 @@
   <rect x="470" y="660" width="175" height="82" fill="#8E1F2B"/>
   <!-- texto -->
   <text x="688" y="520" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="238" fill="#8E1F2B" letter-spacing="2">CMI</text>
-  <text x="694" y="614" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="84" fill="#1A1A1A" letter-spacing="9">CORPORATION</text>
+  <text x="692" y="606" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="42" fill="#1A1A1A" letter-spacing="2">CONSTRUCTIONS CORP</text>
 </svg>
