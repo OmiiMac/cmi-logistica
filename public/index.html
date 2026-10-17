@@ -920,6 +920,14 @@ const CAT_META = {
   materiales:  {color:'#0F766E',icon:'<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>'}
 };
 
+// Color por categoría (para las etiquetas de inventario)
+const CAT_COLOR = { herramientas:'#9B1B30', equipos:'#1D4ED8', pinturas:'#D97706', materiales:'#0F766E' };
+function catChip(catId){
+  const label = CATS.find(c=>c.id===catId)?.label || catId;
+  const c = CAT_COLOR[catId] || '#6B6B78';
+  return `<span class="cat-chip" style="background:${c}1A;color:${c}">${esc(label)}</span>`;
+}
+
 function renderDashboard(){
   setTopbar('Dashboard');
   const items     = [...state.items.values()];
@@ -1149,7 +1157,7 @@ function renderInventario(){
               <tr onclick="nav('project','${i.projectId}')" style="cursor:pointer">
                 <td><b style="font-size:13px">${esc(i.name)}</b></td>
                 <td style="font-size:12px;color:var(--c-muted)">${esc(projName(i.projectId))}</td>
-                <td><span class="cat-chip">${CATS.find(c=>c.id===i.category)?.label||i.category}</span></td>
+                <td>${catChip(i.category)}</td>
                 <td>${i.quantity}${i.minStock>0&&i.quantity<=i.minStock?' <span style="color:#D97706;font-size:11px">⚠</span>':''}</td>
                 <td style="font-size:12px;color:var(--c-muted)">${esc(i.unit)}</td>
                 <td><span style="font-size:11px;font-weight:700;color:${i.estado==='NO_OPERATIVA'?'#DC2626':i.estado==='MANTENIMIENTO'?'#D97706':'#166534'}">${(i.estado||'OPERATIVA').replace('_',' ')}</span></td>
@@ -1204,7 +1212,7 @@ function renderProject(){
           :items.map(item=>`
           <tr>
             <td><b style="font-size:13px">${esc(item.name)}</b></td>
-            <td><span class="cat-chip">${CATS.find(c=>c.id===item.category)?.label||item.category}</span></td>
+            <td>${catChip(item.category)}</td>
             <td><span class="qty-num ${item.minStock>0&&item.quantity<=item.minStock?'qty-low':''}">${item.quantity}</span></td>
             <td style="color:var(--c-muted);font-size:12px">${esc(item.unit)}</td>
             <td><span class="estado-chip ${item.estado}">${item.estado.replace('_',' ')}</span></td>
