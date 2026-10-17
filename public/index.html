@@ -2230,7 +2230,8 @@ async function initApp(){
 
   const prR = await api('/api/select',{table:'profiles',columns:['name','role','status'],filters:[{col:'id',val:me.user.id}],single:true});
   const profile = prR.data;
-  const status = profile?.status || 'pending';
+  if(!profile){ setToken(null); showLogin(); return; }
+  const status = profile.status || 'pending';
   if(status==='pending'){ showPending(false); return; }
   if(status==='rejected'){ showPending(true); setToken(null); return; }
 
