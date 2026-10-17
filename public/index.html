@@ -14,27 +14,24 @@
 :root {
   --c-primary:#9B1B30; --c-primary-h:#7A1526; --c-primary-lt:#FDF0F2;
   --c-accent:#C8960C;  --c-accent-h:#A67A08;  --c-accent-lt:#FDF6E3;
-  --c-bg:#F0EEE9; --c-card:#FFFFFF; --c-text:#1B1B20; --c-muted:#6B6B78;
-  --c-border:#E2E1DE; --c-side:#140C10; --c-side2:#221620;
-  --c-ok:#16A34A; --c-warn:#D97706; --c-err:#DC2626;
-  --c-ok-lt:#DCFCE7; --c-warn-lt:#FEF3C7; --c-err-lt:#FEE2E2;
+  /* Paleta rojo/negro unificada (misma estética que el dashboard) en toda la app */
+  --c-bg:#0C0708; --c-card:#160A0D; --c-text:#F5E9EC; --c-muted:#B0909A;
+  --c-border:#3A1A22; --c-side:#140C10; --c-side2:#221620;
+  --c-primary-lt:#2A0C14; --c-accent-lt:#2A2008;
+  --c-ok:#22C55E; --c-warn:#F59E0B; --c-err:#F0556A;
+  --c-ok-lt:#0F2419; --c-warn-lt:#271E09; --c-err-lt:#2A0C10;
   --font:'DM Sans',system-ui,-apple-system,sans-serif;
   --font-num:'Orbitron','DM Sans',sans-serif;
   --r:12px; --r-sm:7px;
-  --shadow:0 2px 8px rgba(0,0,0,.08);
-  --shadow-md:0 4px 20px rgba(0,0,0,.1);
-  color-scheme: light;
+  --shadow:0 2px 10px rgba(0,0,0,.45);
+  --shadow-md:0 8px 26px rgba(0,0,0,.55);
+  color-scheme: dark;
 }
-@media(prefers-color-scheme:dark){:root:not([data-theme=light]){
-  --c-bg:#0F0D10; --c-card:#1C1820; --c-text:#E8E6EA; --c-muted:#8B8896;
-  --c-border:#2E2B35; --c-primary-lt:#2A0C14; --c-accent-lt:#2A2008;
-  --c-ok-lt:#0F2419; --c-warn-lt:#271E09; --c-err-lt:#27090C;
+/* El tema es el mismo sin importar el modo del sistema (se ve igual en todos los teléfonos) */
+@media(prefers-color-scheme:light){:root:not([data-theme=dark]){
+  --c-bg:#0C0708; --c-card:#160A0D; --c-text:#F5E9EC; --c-muted:#B0909A;
+  --c-border:#3A1A22;
 }}
-:root[data-theme=dark]{
-  --c-bg:#0F0D10; --c-card:#1C1820; --c-text:#E8E6EA; --c-muted:#8B8896;
-  --c-border:#2E2B35; --c-primary-lt:#2A0C14; --c-accent-lt:#2A2008;
-  --c-ok-lt:#0F2419; --c-warn-lt:#271E09; --c-err-lt:#27090C;
-}
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 [hidden]{display:none!important}
@@ -158,7 +155,9 @@ html{height:100%}
 }
 .topbar-title{font-size:15px;font-weight:700;flex:1;letter-spacing:-.01em}
 .topbar-badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--c-primary-lt);color:var(--c-primary);letter-spacing:.02em}
-#view{flex:1;overflow-y:auto;padding:24px;scrollbar-width:thin;scrollbar-color:var(--c-border) transparent}
+#view{flex:1;overflow-y:auto;padding:24px;scrollbar-width:thin;scrollbar-color:var(--c-border) transparent;
+  background:radial-gradient(1100px 440px at 8% -10%, rgba(198,32,64,.16), transparent),
+             radial-gradient(900px 420px at 100% 0%, rgba(155,27,48,.11), transparent), var(--c-bg)}
 .hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;color:var(--c-text)}
 
 /* ── GREETING ── */
@@ -663,6 +662,7 @@ const ESTADOS = ['OPERATIVA','NO_OPERATIVA','MANTENIMIENTO'];
 const RUTA_ST = ['pendiente','en_ruta','completada'];
 const RUTA_ST_LABEL = {pendiente:'Pendiente',en_ruta:'En ruta',completada:'Completada'};
 const DAYS_ES = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 // ── State ────────────────────────────────────────────────────
@@ -1236,7 +1236,7 @@ function renderInventario(){
                 <td>${catChip(i.category)}</td>
                 <td>${i.quantity}${i.minStock>0&&i.quantity<=i.minStock?' <span style="color:#D97706;font-size:11px">⚠</span>':''}</td>
                 <td style="font-size:12px;color:var(--c-muted)">${esc(i.unit)}</td>
-                <td><span style="font-size:11px;font-weight:700;color:${i.estado==='NO_OPERATIVA'?'#DC2626':i.estado==='MANTENIMIENTO'?'#D97706':'#166534'}">${(i.estado||'OPERATIVA').replace('_',' ')}</span></td>
+                <td><span style="font-size:11px;font-weight:700;color:${i.estado==='NO_OPERATIVA'?'var(--c-err)':i.estado==='MANTENIMIENTO'?'var(--c-warn)':'var(--c-ok)'}">${(i.estado||'OPERATIVA').replace('_',' ')}</span></td>
               </tr>`).join('')}
         </tbody>
       </table>
@@ -1308,72 +1308,123 @@ function renderProject(){
 }
 
 // ── Rutas ─────────────────────────────────────────────────────
+function rutaRowHtml(r){
+  return `<div class="ruta-row">
+    <div class="ruta-time-block">
+      <span class="ruta-time">${r.hora||'--'}</span>
+      <span class="ruta-time-label">hrs</span>
+    </div>
+    <div class="ruta-content">
+      <div class="ruta-title">${esc(r.descripcion)}</div>
+      ${(r.origen||r.destino)?`<div class="ruta-route">
+        <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 8 16 12 12 16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        ${esc(r.origen||'')}${r.origen&&r.destino?' → ':''}${esc(r.destino||'')}
+      </div>`:''}
+      ${r.conductor?`<div class="ruta-conductor">
+        <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        ${esc(r.conductor)}
+      </div>`:''}
+    </div>
+    <div class="ruta-actions">
+      <span class="status-chip ${r.status}" style="cursor:pointer" title="Clic para cambiar estado" onclick="cycleRutaStatus('${r.id}')">${RUTA_ST_LABEL[r.status]}</span>
+      ${state.isAdmin?`
+      <button class="act-btn" onclick="showRutaModal('${r.id}')" title="Editar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+      <button class="act-btn del" onclick="deleteRuta('${r.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button>`:''}
+    </div>
+  </div>`;
+}
+function _ymdToDate(s){ const p=(s||'').split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
+function _weekStart(d){ const x=new Date(d); const dow=(x.getDay()+6)%7; x.setDate(x.getDate()-dow); x.setHours(0,0,0,0); return x; } // lunes
+
 function renderRutas(){
   setTopbar('Rutas del Camion');
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-sm btn-ghost" onclick="goChat('rutas','rutas')">💬 Chat</button>`
     + (state.isAdmin?`<button class="btn btn-sm btn-primary" onclick="showRutaModal()">+ Ruta</button>`:'');
 
-  const today = todayStr();
-  const dates = [];
-  for(let i=-1;i<=5;i++){
-    const d = new Date(); d.setDate(d.getDate()+i);
-    dates.push(ymd(d));
+  const mode = state.rutaMode || 'dia';
+  const toggle = `<div class="filter-chips" style="margin-bottom:14px">
+    ${[['dia','Día'],['semana','Semana'],['mes','Mes']].map(([m,l])=>`<span class="chip ${mode===m?'active':''}" onclick="setRutaMode('${m}')">${l}</span>`).join('')}
+  </div>`;
+
+  let body;
+  if(mode==='dia'){
+    const today = todayStr();
+    const dates = [];
+    for(let i=-1;i<=5;i++){ const d=new Date(); d.setDate(d.getDate()+i); dates.push(ymd(d)); }
+    const dateStrip = dates.map(d=>{
+      const dt=_ymdToDate(d);
+      const cnt=state.rutas.filter(r=>r.date===d).length;
+      return `<div class="date-tab ${d===today?'today':''} ${d===state.rutaDate?'active':''}" onclick="state.rutaDate='${d}';renderRutas()">
+        <div class="dd">${dt.getDate()}</div><div class="dow">${DAYS_ES[dt.getDay()]}</div><div class="cnt">${cnt?cnt+' ruta':'—'}</div>
+      </div>`;
+    }).join('');
+    const selRutas = state.rutas.filter(r=>r.date===state.rutaDate).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+    body = `<div class="date-strip-wrap">
+      <button class="nav-arrow" onclick="shiftRutaDate(-7)">‹‹</button>
+      <div class="date-strip">${dateStrip}</div>
+      <button class="nav-arrow" onclick="shiftRutaDate(7)">>>></button>
+    </div>
+    ${selRutas.length===0
+      ?`<div class="ruta-day-card"><div class="no-rutas">Sin rutas para ${fmtDateLong(state.rutaDate)}</div></div>`
+      :`<div class="ruta-day-card">
+        <div class="ruta-day-head"><span>${fmtDateLong(state.rutaDate)}</span><span style="font-size:11px">${selRutas.length} ruta(s)</span></div>
+        ${selRutas.map(rutaRowHtml).join('')}
+      </div>`}`;
+  } else {
+    body = rutaRegistroHtml(mode);
   }
+  document.getElementById('view').innerHTML = toggle + body;
+}
 
-  const dateStrip = dates.map(d=>{
-    const parts  = d.split('-');
-    const dt     = new Date(+parts[0],+parts[1]-1,+parts[2]);
-    const cnt    = state.rutas.filter(r=>r.date===d).length;
-    return `<div class="date-tab ${d===today?'today':''} ${d===state.rutaDate?'active':''}"
-              onclick="state.rutaDate='${d}';renderRutas()">
-      <div class="dd">${dt.getDate()}</div>
-      <div class="dow">${DAYS_ES[dt.getDay()]}</div>
-      <div class="cnt">${cnt?cnt+' ruta':'—'}</div>
-    </div>`;
-  }).join('');
-
-  const selRutas = state.rutas.filter(r=>r.date===state.rutaDate)
-                              .sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
-
-  document.getElementById('view').innerHTML = `
-  <div class="date-strip-wrap">
-    <button class="nav-arrow" onclick="shiftRutaDate(-7)">‹‹</button>
-    <div class="date-strip">${dateStrip}</div>
-    <button class="nav-arrow" onclick="shiftRutaDate(7)">>>></button>
+// Registro semanal / mensual de salidas: totales + lista agrupada por día.
+function rutaRegistroHtml(mode){
+  const base=_ymdToDate(state.rutaDate);
+  let start,end,title;
+  if(mode==='semana'){
+    start=_weekStart(base); end=new Date(start); end.setDate(end.getDate()+6);
+    title='Semana del '+start.getDate()+' '+MESES_ES[start.getMonth()]+' al '+end.getDate()+' '+MESES_ES[end.getMonth()]+' '+end.getFullYear();
+  } else {
+    start=new Date(base.getFullYear(),base.getMonth(),1); end=new Date(base.getFullYear(),base.getMonth()+1,0);
+    title=MESES_ES[start.getMonth()]+' '+start.getFullYear();
+  }
+  const s=ymd(start), e=ymd(end);
+  const inRange=state.rutas.filter(r=>r.date>=s && r.date<=e)
+    .sort((a,b)=>a.date.localeCompare(b.date)||(a.hora||'').localeCompare(b.hora||''));
+  const byStatus={pendiente:0,en_ruta:0,completada:0};
+  inRange.forEach(r=>{ if(byStatus[r.status]!=null) byStatus[r.status]++; });
+  const groups={}; inRange.forEach(r=>{ (groups[r.date]=groups[r.date]||[]).push(r); });
+  const kpi=(l,v,c)=>`<div style="flex:1;min-width:92px;text-align:center;background:var(--c-bg);border:1px solid var(--c-border);border-radius:10px;padding:10px 8px">
+    <div style="font-family:var(--font-num);font-size:22px;font-weight:800;color:${c}">${v}</div>
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin-top:2px">${l}</div></div>`;
+  const prd = mode==='semana'?'semana':'mes';
+  const listHtml = inRange.length===0
+    ? `<div class="no-rutas">Sin salidas registradas en este ${prd}.</div>`
+    : Object.keys(groups).sort().map(d=>`
+        <div style="font-size:11px;font-weight:700;color:var(--c-primary);text-transform:capitalize;margin:12px 0 4px;padding-bottom:4px;border-bottom:1px solid var(--c-border)">
+          ${DAYS_ES[_ymdToDate(d).getDay()]} ${fmtDateLong(d)} · ${groups[d].length} salida(s)</div>
+        ${groups[d].map(rutaRowHtml).join('')}`).join('');
+  return `<div class="date-strip-wrap" style="justify-content:space-between">
+    <button class="nav-arrow" onclick="shiftRutaPeriod(-1)">‹‹</button>
+    <div style="flex:1;text-align:center;font-weight:700;text-transform:capitalize">${title}</div>
+    <button class="nav-arrow" onclick="shiftRutaPeriod(1)">>>></button>
   </div>
-  ${selRutas.length===0
-    ?`<div class="ruta-day-card"><div class="no-rutas">Sin rutas para ${fmtDateLong(state.rutaDate)}</div></div>`
-    :`<div class="ruta-day-card">
-      <div class="ruta-day-head">
-        <span>${fmtDateLong(state.rutaDate)}</span>
-        <span style="font-size:11px">${selRutas.length} ruta(s)</span>
-      </div>
-      ${selRutas.map(r=>`
-      <div class="ruta-row">
-        <div class="ruta-time-block">
-          <span class="ruta-time">${r.hora||'--'}</span>
-          <span class="ruta-time-label">hrs</span>
-        </div>
-        <div class="ruta-content">
-          <div class="ruta-title">${esc(r.descripcion)}</div>
-          ${(r.origen||r.destino)?`<div class="ruta-route">
-            <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 8 16 12 12 16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-            ${esc(r.origen||'')}${r.origen&&r.destino?' → ':''}${esc(r.destino||'')}
-          </div>`:''}
-          ${r.conductor?`<div class="ruta-conductor">
-            <svg width="11" height="11" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            ${esc(r.conductor)}
-          </div>`:''}
-        </div>
-        <div class="ruta-actions">
-          <span class="status-chip ${r.status}" style="cursor:pointer" title="Clic para cambiar estado" onclick="cycleRutaStatus('${r.id}')">${RUTA_ST_LABEL[r.status]}</span>
-          ${state.isAdmin?`
-          <button class="act-btn" onclick="showRutaModal('${r.id}')" title="Editar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="act-btn del" onclick="deleteRuta('${r.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button>`:''}
-        </div>
-      </div>`).join('')}
-    </div>`}`;
+  <div class="ruta-day-card">
+    <div class="ruta-day-head"><span>Registro de salidas · ${prd}</span><span style="font-size:11px">${inRange.length} salida(s)</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;padding:12px 0 2px">
+      ${kpi('Total',inRange.length,'var(--c-text)')}
+      ${kpi('Completadas',byStatus.completada,'var(--c-ok)')}
+      ${kpi('En ruta',byStatus.en_ruta,'#60A5FA')}
+      ${kpi('Pendientes',byStatus.pendiente,'var(--c-warn)')}
+    </div>
+    ${listHtml}
+  </div>`;
+}
+function setRutaMode(m){ state.rutaMode=m; renderRutas(); }
+function shiftRutaPeriod(dir){
+  const d=_ymdToDate(state.rutaDate);
+  if((state.rutaMode||'dia')==='mes') d.setMonth(d.getMonth()+dir); else d.setDate(d.getDate()+7*dir);
+  state.rutaDate=ymd(d); renderRutas();
 }
 
 function shiftRutaDate(days){
@@ -1483,7 +1534,7 @@ function movItemPick(input){
     row.dataset.itemId=atOrigen.id;
     const unid=row.querySelector('.mi-unid'); if(unid && !unid.value) unid.value=atOrigen.unit||'';
     setThumb(atOrigen.photoId);
-    if(hint){ hint.textContent='Disponible en '+(projName(origen)||origen||'origen')+': '+atOrigen.quantity; hint.style.color=atOrigen.quantity>0?'#166534':'#DC2626'; }
+    if(hint){ hint.textContent='Disponible en '+(projName(origen)||origen||'origen')+': '+atOrigen.quantity; hint.style.color=atOrigen.quantity>0?'#34D77F':'#F0556A'; }
   } else {
     row.dataset.itemId='';
     const unid=row.querySelector('.mi-unid'); if(anywhere && unid && !unid.value) unid.value=anywhere.unit||'';
@@ -2811,7 +2862,7 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
   background:url('/cmi-logo.svg') no-repeat center;
   background-size:min(62vw,460px); opacity:.05;
 }
-#main::before{ opacity:.04; }
+#main::before{ opacity:.06; }
 /* Login: logo como marca de agua en la esquina inferior derecha */
 #loginWrap::before, #resetWrap::before, #pendingWrap::before{
   background-image:url('/cmi-logo-light.svg');
