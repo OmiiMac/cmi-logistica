@@ -2377,90 +2377,102 @@ async function moveTarea(id,estado){ const {error}=await sb.from('mercadeo_tarea
 async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else renderMercadeo(); }
 </script>
 <style>
-/* ===== Dashboard futurista (scoped a .dash-fx) ===== */
-.dash-fx{ --neon1:#00E5FF; --neon2:#7C5CFF; --neon3:#FF2D95;
-  background:radial-gradient(1100px 420px at 8% -12%, rgba(124,92,255,.18), transparent),
-             radial-gradient(900px 400px at 100% 0%, rgba(0,229,255,.10), transparent), #070a16;
+/* ===== Dashboard futurista — paleta rojo/negro ===== */
+.dash-fx{ --neon1:#E8384A; --neon2:#C62040; --neon3:#9B1B30;
+  background:radial-gradient(1100px 420px at 8% -12%, rgba(198,32,64,.20), transparent),
+             radial-gradient(900px 400px at 100% 0%, rgba(155,27,48,.14), transparent), #0C0708;
   min-height:100%; padding:16px; }
-.dash-fx .greeting-bar{ background:linear-gradient(120deg,#0b1020,#1a1040 45%,#2a0a3a);
-  border:1px solid rgba(124,92,255,.45);
-  box-shadow:0 0 34px rgba(124,92,255,.35), inset 0 0 30px rgba(0,229,255,.08);
+.dash-fx .greeting-bar{ background:linear-gradient(120deg,#15090b,#2a0810 50%,#1a060a);
+  border:1px solid rgba(198,32,64,.45);
+  box-shadow:0 0 34px rgba(155,27,48,.45), inset 0 0 30px rgba(232,56,74,.08);
   position:relative; overflow:hidden; }
 .dash-fx .greeting-bar::after{ content:''; position:absolute; inset:-60%;
-  background:conic-gradient(from 0deg, transparent, rgba(0,229,255,.16), transparent 30%);
+  background:conic-gradient(from 0deg, transparent, rgba(232,56,74,.18), transparent 30%);
   animation:dashspin 9s linear infinite; }
 @keyframes dashspin{ to{ transform:rotate(360deg); } }
-.dash-fx .greeting-hi{ color:#fff; font-family:'Orbitron',sans-serif; letter-spacing:.04em; text-shadow:0 0 14px rgba(0,229,255,.6); }
-.dash-fx .greeting-date{ color:#9fb3ff; }
+.dash-fx .greeting-hi{ color:#fff; font-family:'Orbitron',sans-serif; letter-spacing:.04em; text-shadow:0 0 14px rgba(232,56,74,.7); }
+.dash-fx .greeting-date{ color:#C9A8AE; }
 .dash-fx .greeting-kpi-val{ font-family:'Orbitron',sans-serif; color:#fff; text-shadow:0 0 12px var(--neon1); }
-.dash-fx .greeting-kpi-label{ color:#9fb3ff; }
-.dash-fx .stat-card{ background:linear-gradient(160deg,#0e1430,#141a3a);
-  border:1px solid rgba(124,92,255,.35); overflow:hidden; position:relative;
-  box-shadow:0 0 20px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05);
+.dash-fx .greeting-kpi-label{ color:#C9A8AE; }
+.dash-fx .stat-card{ background:linear-gradient(160deg,#17090c,#1d0b10);
+  border:1px solid rgba(198,32,64,.33); overflow:hidden; position:relative;
+  box-shadow:0 0 20px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05);
   transition:transform .2s, box-shadow .2s; }
 .dash-fx .stat-card:hover{ transform:translateY(-5px); box-shadow:0 10px 34px color-mix(in srgb, var(--stat-color) 55%, transparent); }
 .dash-fx .stat-card::before{ content:''; position:absolute; top:0; left:0; right:0; height:2px;
   background:var(--stat-color); box-shadow:0 0 14px var(--stat-color); }
-.dash-fx .stat-val{ font-family:'Orbitron',sans-serif; filter:brightness(1.35); text-shadow:0 0 16px var(--stat-color); }
-.dash-fx .stat-label{ color:#9fb3ff; text-transform:uppercase; letter-spacing:.09em; font-size:10px; }
+.dash-fx .stat-val{ font-family:'Orbitron',sans-serif; filter:brightness(1.3); text-shadow:0 0 16px var(--stat-color); }
+.dash-fx .stat-label{ color:#C9A8AE; text-transform:uppercase; letter-spacing:.09em; font-size:10px; }
 .dash-fx .stat-icon{ filter:drop-shadow(0 0 7px var(--stat-color)); }
-.dash-fx .section-card{ background:#0e1430; border:1px solid rgba(124,92,255,.28);
-  box-shadow:0 0 18px rgba(0,0,0,.4); }
-.dash-fx .section-head h3{ color:#eaf2ff; font-family:'Orbitron',sans-serif; font-size:12.5px; letter-spacing:.03em; }
+.dash-fx .section-card{ background:#160a0d; border:1px solid rgba(198,32,64,.26);
+  box-shadow:0 0 18px rgba(0,0,0,.45); }
+.dash-fx .section-head h3{ color:#F5E9EC; font-family:'Orbitron',sans-serif; font-size:12.5px; letter-spacing:.03em; }
 .dash-fx .section-head-bar{ box-shadow:0 0 8px currentColor; }
-.dash-fx .ruta-desc,.dash-fx .proj-info-name{ color:#eaf2ff; }
-.dash-fx .ruta-dest,.dash-fx .proj-info-sup,.dash-fx .nodata{ color:#8aa0d0; }
-.dash-fx .ruta-item:hover,.dash-fx .proj-list-item:hover{ background:rgba(124,92,255,.14); }
-.dash-fx .proj-count-badge{ background:rgba(0,229,255,.15); color:#00E5FF; }
-.dash-fx .ruta-hora{ color:#00E5FF; }
-.dash-fx .cat-card{ background:linear-gradient(160deg,#0e1430,#141a3a);
-  border:1px solid rgba(124,92,255,.3); box-shadow:0 0 16px rgba(0,0,0,.4);
+.dash-fx .ruta-desc,.dash-fx .proj-info-name{ color:#F5E9EC; }
+.dash-fx .ruta-dest,.dash-fx .proj-info-sup,.dash-fx .nodata{ color:#B0909A; }
+.dash-fx .ruta-item:hover,.dash-fx .proj-list-item:hover{ background:rgba(198,32,64,.16); }
+.dash-fx .proj-count-badge{ background:rgba(198,32,64,.2); color:#F08A98; }
+.dash-fx .ruta-hora{ color:#F08A98; }
+.dash-fx .cat-card{ background:linear-gradient(160deg,#17090c,#1d0b10);
+  border:1px solid rgba(198,32,64,.28); box-shadow:0 0 16px rgba(0,0,0,.45);
   transition:transform .2s; }
 .dash-fx .cat-card:hover{ transform:translateY(-4px) scale(1.02); }
 .dash-fx .cat-card-num{ font-family:'Orbitron',sans-serif; text-shadow:0 0 12px var(--cat-color); }
-.dash-fx .cat-card-label{ color:#9fb3ff; }
+.dash-fx .cat-card-label{ color:#C9A8AE; }
 .dash-fx .cat-bar-bg{ background:rgba(255,255,255,.08); }
 .dash-fx .cat-bar-fill{ box-shadow:0 0 10px var(--cat-color); animation:dashgrow 1s ease both; }
 @keyframes dashgrow{ from{ width:0; } }
 .dash-fx .alert-bar{ backdrop-filter:blur(4px); }
 
-/* ===== Login / reset futurista (mismo lenguaje que el dashboard) ===== */
+/* ===== Login / reset futurista — paleta rojo/negro ===== */
 #loginWrap, #resetWrap, #pendingWrap{
   background:
-    radial-gradient(900px 520px at 15% 8%, rgba(124,92,255,.30), transparent 60%),
-    radial-gradient(820px 520px at 85% 88%, rgba(0,229,255,.18), transparent 60%),
-    radial-gradient(700px 520px at 60% 45%, rgba(155,27,48,.22), transparent 60%),
-    #05060f;
+    radial-gradient(900px 520px at 15% 8%, rgba(198,32,64,.28), transparent 60%),
+    radial-gradient(820px 520px at 85% 88%, rgba(155,27,48,.20), transparent 60%),
+    radial-gradient(700px 520px at 60% 45%, rgba(232,56,74,.12), transparent 60%),
+    #0C0708;
 }
 #resetWrap, #pendingWrap{ position:fixed; inset:0; z-index:300; padding:16px; }
 #resetWrap:not([hidden]), #pendingWrap:not([hidden]){ display:flex; align-items:center; justify-content:center; }
 .login-card{
-  background:linear-gradient(160deg, rgba(16,18,40,.96), rgba(22,14,32,.96));
-  border:1px solid rgba(124,92,255,.5);
-  box-shadow:0 0 52px rgba(124,92,255,.35), 0 32px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.07);
+  background:linear-gradient(160deg, rgba(28,14,16,.96), rgba(20,8,11,.96));
+  border:1px solid rgba(198,32,64,.5);
+  box-shadow:0 0 52px rgba(155,27,48,.4), 0 32px 80px rgba(0,0,0,.72), inset 0 1px 0 rgba(255,255,255,.06);
   position:relative; overflow:hidden;
 }
 .login-card::before{
   content:''; position:absolute; inset:-80%; pointer-events:none;
-  background:conic-gradient(from 0deg, transparent, rgba(0,229,255,.14), transparent 25%, rgba(124,92,255,.16), transparent 55%);
+  background:conic-gradient(from 0deg, transparent, rgba(232,56,74,.14), transparent 25%, rgba(155,27,48,.18), transparent 55%);
   animation:dashspin 12s linear infinite;
 }
 .login-card > *{ position:relative; z-index:1; }
-.brand-text{ text-shadow:0 0 14px rgba(0,229,255,.55); }
-.brand-badge{ box-shadow:0 0 18px rgba(155,27,48,.7); }
-.login-sub{ color:#9fb3ff; }
-.login-card label{ color:#8fa6e0; }
-.login-card input{ background:#10142a; border-color:rgba(124,92,255,.4); }
-.login-card input:focus{ border-color:#00E5FF; background:#0e1733; box-shadow:0 0 0 3px rgba(0,229,255,.15), 0 0 18px rgba(0,229,255,.28); }
+.brand-text{ text-shadow:0 0 14px rgba(232,56,74,.6); }
+.brand-badge{ box-shadow:0 0 18px rgba(155,27,48,.75); }
+.login-sub{ color:#C9A8AE; }
+.login-card label{ color:#BFA2A8; }
+.login-card input{ background:#1a0e11; border-color:rgba(198,32,64,.4); }
+.login-card input:focus{ border-color:#E8384A; background:#241015; box-shadow:0 0 0 3px rgba(232,56,74,.15), 0 0 18px rgba(232,56,74,.28); }
 .login-card input:-webkit-autofill,
 .login-card input:-webkit-autofill:hover,
-.login-card input:-webkit-autofill:focus{ -webkit-box-shadow:0 0 0 1000px #10142a inset; }
+.login-card input:-webkit-autofill:focus{ -webkit-box-shadow:0 0 0 1000px #1a0e11 inset; }
 .login-card .w-full{
-  background:linear-gradient(135deg,#7C5CFF,#9B1B30 62%,#C62040);
-  box-shadow:0 0 24px rgba(124,92,255,.45); font-family:var(--font-num);
+  background:linear-gradient(135deg,#C62040,#9B1B30 60%,#7A1526);
+  box-shadow:0 0 24px rgba(155,27,48,.5); font-family:var(--font-num);
   letter-spacing:.12em; text-transform:uppercase;
 }
-.login-card .w-full:hover{ filter:brightness(1.1); box-shadow:0 0 32px rgba(124,92,255,.6); }
+.login-card .w-full:hover{ filter:brightness(1.12); box-shadow:0 0 32px rgba(198,32,64,.65); }
+
+/* ===== Marca de agua CMI (logo de fondo) ===== */
+#main, .dash-fx{ position:relative; }
+#loginWrap::before, #resetWrap::before, #pendingWrap::before, #main::before, .dash-fx::before{
+  content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
+  background:url('/cmi-logo.svg') no-repeat center;
+  background-size:min(62vw,460px); opacity:.05;
+}
+#main::before{ opacity:.04; }
+#main > *{ position:relative; z-index:1; }
+.dash-fx > *{ position:relative; z-index:1; }
+.login-card{ z-index:1; }
 </style>
 </body>
 </html>
