@@ -12,9 +12,13 @@
     try { t ? localStorage.setItem('cmi_token', t) : localStorage.removeItem('cmi_token'); } catch (e) {}
   }
 
+  function currentToken() {
+    try { return localStorage.getItem('cmi_token') || token; } catch (e) { return token; }
+  }
   async function api(path, body) {
     const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = 'Bearer ' + token;
+    const t = currentToken();
+    if (t) headers['Authorization'] = 'Bearer ' + t;
     let res, json;
     try {
       res = await fetch(path, { method: 'POST', headers, body: JSON.stringify(body || {}) });
