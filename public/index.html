@@ -767,6 +767,7 @@ function render(){
   else if(state.view==='transfers') renderTransfers();
   else if(state.view==='users') renderUsers();
   else if(state.view==='chat') renderChat();
+  else if(state.view==='pchat') renderProjectChat();
   else if(state.view==='contabilidad') renderContabilidad();
   else if(state.view==='licitaciones') renderLicitaciones();
   else if(state.view==='mercadeo') renderMercadeo();
@@ -805,7 +806,7 @@ function renderSidebar(){
   // Projects list
   const projects = sortedProjects();
   document.getElementById('sbProjects').innerHTML = projects.map(p=>`
-    <div class="sb-proj ${state.view==='project'&&state.projectId===p.id?'active':''}"
+    <div class="sb-proj ${(state.view==='project'||state.view==='pchat')&&state.projectId===p.id?'active':''}"
          onclick="nav('project','${p.id}')">
       <span class="sb-proj-dot" style="background:${p.color}"></span>
       <span class="sb-proj-name">${esc(p.name)}</span>
@@ -1012,8 +1013,9 @@ function renderProject(){
 
   const engineerName = proj.engineerId ? (state.profiles[proj.engineerId]||'Asignado') : '';
 
-  document.getElementById('topbarActions').innerHTML = state.isAdmin
-    ?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'';
+  document.getElementById('topbarActions').innerHTML =
+    `<button class="btn btn-sm btn-ghost" onclick="nav('pchat','${proj.id}')">💬 Chat</button>`
+    + (state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'');
 
   document.getElementById('view').innerHTML = `
   ${engineerName?`<div style="font-size:12px;color:var(--c-muted);margin-bottom:14px">Ingeniero asignado: <b>${esc(engineerName)}</b></div>`:''}
@@ -1657,12 +1659,10 @@ async function saveProfile(){
 }
 
 // ── Chat ──────────────────────────────────────────────────────
-const state_chat = { messages: [], loaded: false };
+const state_chat = { messages: [], loaded: false, scope: null };
 
-function renderChat(){
-  setTopbar('Chat');
-  document.getElementById('topbarActions').innerHTML = '';
-  document.getElementById('view').innerHTML = `
+function chatUIHtml(){
+  return `
   <div id="chatWrap">
     <div id="chatMessages"><div class="nodata" style="padding:30px;text-align:center">Cargando mensajes...</div></div>
     <div id="chatInputBar">
@@ -1672,13 +1672,32 @@ function renderChat(){
       </button>
     </div>
   </div>`;
+}
+
+function renderChat(){
+  state_chat.scope = null;
+  setTopbar('Chat general');
+  document.getElementById('topbarActions').innerHTML = '';
+  document.getElementById('view').innerHTML = chatUIHtml();
   loadChatMessages();
   const badge = document.getElementById('chatUnread');
   if(badge) badge.hidden = true;
 }
 
+function renderProjectChat(){
+  const proj = state.projects.get(state.projectId);
+  if(!proj){ nav('dashboard'); return; }
+  state_chat.scope = state.projectId;
+  setTopbar(proj.name, 'Chat');
+  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="nav('project','${proj.id}')">← Inventario</button>`;
+  document.getElementById('view').innerHTML = chatUIHtml();
+  loadChatMessages();
+}
+
 async function loadChatMessages(){
-  const {data} = await sb.from('messages').select('*').order('created_at', {ascending:true}).limit(100);
+  let q = sb.from('messages').select('*');
+  q = state_chat.scope ? q.eq('project_id', state_chat.scope) : q.eq('project_id', null);
+  const {data} = await q.order('created_at', {ascending:true}).limit(200);
   state_chat.messages = data || [];
   state_chat.loaded = true;
   drawMessages();
@@ -1720,18 +1739,23 @@ async function sendChatMessage(){
   const content = input.value.trim();
   if(!content) return;
   input.value = '';
-  const {error} = await sb.from('messages').insert({user_id: state.userId, content});
+  const row = { content };
+  if(state_chat.scope) row.project_id = state_chat.scope;
+  const {error} = await sb.from('messages').insert(row);
   if(error) showToast('Error al enviar','err');
 }
 
 function setupChatRealtime(){
   sb.channel('chat-messages')
     .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, (p) => {
-      state_chat.messages.push(p.new);
-      if(state.view === 'chat'){
+      const msgScope = p.new.project_id || null;
+      const curScope = state_chat.scope || null;
+      const viewingChat = (state.view === 'chat' || state.view === 'pchat');
+      if(viewingChat && msgScope === curScope){
+        state_chat.messages.push(p.new);
         drawMessages();
-      } else {
-        const badge = document.getElementById('chatUnread');
+      } else if(msgScope === null && state.view !== 'chat'){
+        const badge = document.getElementById('chatUnread');   // badge solo para el chat general
         if(badge) badge.hidden = false;
       }
     })

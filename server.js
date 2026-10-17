@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS messages (
   id         TEXT PRIMARY KEY,
   user_id    TEXT,
   content    TEXT,
+  project_id TEXT,
   created_at TEXT
 );
 
@@ -202,6 +203,13 @@ CREATE TABLE IF NOT EXISTS mercadeo_tareas (
 );
 `);
 
+// Migraciones ligeras: agrega columnas que falten en bases ya creadas.
+function ensureColumn(table, col, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some(c => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
+}
+ensureColumn('messages', 'project_id', 'TEXT');
+
 // Columnas permitidas por tabla (whitelist anti-inyección e integridad)
 const SCHEMA = {
   profiles:  ['id', 'email', 'name', 'role', 'status', 'created_at', 'updated_at'],
@@ -209,7 +217,7 @@ const SCHEMA = {
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
-  messages:  ['id', 'user_id', 'content', 'created_at'],
+  messages:  ['id', 'user_id', 'content', 'project_id', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
@@ -547,7 +555,9 @@ function runSelect(table, { columns, filters, order, limit, single }) {
   }
   const where = [], params = [];
   (filters || []).forEach(f => {
-    if (allowed.includes(f.col)) { where.push(`"${f.col}" = ?`); params.push(f.val); }
+    if (!allowed.includes(f.col)) return;
+    if (f.val === null) { where.push(`"${f.col}" IS NULL`); }       // chat general: project_id nulo
+    else { where.push(`"${f.col}" = ?`); params.push(f.val); }
   });
   let sql = `SELECT ${cols} FROM "${table}"`;
   if (where.length) sql += ' WHERE ' + where.join(' AND ');
