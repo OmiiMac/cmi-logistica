@@ -1174,6 +1174,19 @@ function renderInventario(){
   const low  = all.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length;
   const noOp = all.filter(i=>i.estado==='NO_OPERATIVA').length;
   const tile = (typeof kpiTile==='function') ? kpiTile : (l,v)=>`<div class="section-card" style="text-align:center"><div style="font-size:20px;font-weight:800">${v}</div><div style="font-size:11px;color:var(--c-muted)">${l}</div></div>`;
+  // Resumen consolidado: el mismo artículo (nombre+categoría) sumado por ubicación (bodega vs proyectos).
+  const groups = new Map();
+  all.forEach(i=>{
+    if(state.cat!=='all' && i.category!==state.cat) return;
+    if(state.search && !(i.name||'').toLowerCase().includes(state.search.toLowerCase())) return;
+    const k=(i.name||'').toLowerCase()+'|'+i.category;
+    if(!groups.has(k)) groups.set(k,{name:i.name,category:i.category,photoId:i.photoId||null,bodega:0,proy:0,total:0,proj:{}});
+    const g=groups.get(k), q=i.quantity||0;
+    if(i.projectId==='bodega'){ g.bodega+=q; } else { g.proy+=q; if(q) g.proj[i.projectId]=(g.proj[i.projectId]||0)+q; }
+    g.total+=q; if(!g.photoId&&i.photoId) g.photoId=i.photoId;
+  });
+  const summary=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
+  const projBreak=g=>Object.keys(g.proj).map(pid=>esc((projName(pid)||pid)+': '+g.proj[pid])).join(' · ');
   document.getElementById('view').innerHTML = `
   <div style="padding:20px 24px">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px">
@@ -1191,6 +1204,25 @@ function renderInventario(){
         ${CATS.map(c=>`<span class="chip ${state.cat===c.id?'active':''}" onclick="state.cat='${c.id}';renderInventario()">${c.label}</span>`).join('')}
       </div>
     </div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:18px 0 8px">Resumen por artículo · bodega vs proyectos</h3>
+    <div class="item-table" style="margin-bottom:18px">
+      <table>
+        <thead><tr><th>Artículo</th><th>Categoría</th><th style="text-align:center">En bodega</th><th style="text-align:center">En proyectos</th><th style="text-align:center">Total</th></tr></thead>
+        <tbody>
+          ${summary.length===0
+            ? `<tr><td colspan="5"><div class="empty-state">Sin artículos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
+            : summary.map(g=>`
+              <tr>
+                <td><div style="display:flex;align-items:center;gap:9px">${g.photoId?`<img src="${fileUrl(g.photoId)}" loading="lazy" style="width:30px;height:30px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:30px;height:30px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(g.name)}</b></div></td>
+                <td>${catChip(g.category)}</td>
+                <td style="text-align:center;font-weight:700">${g.bodega}</td>
+                <td style="text-align:center;font-weight:700"${Object.keys(g.proj).length?` title="${projBreak(g)}"`:''}>${g.proy}${Object.keys(g.proj).length?`<div style="font-size:9px;font-weight:400;color:var(--c-muted);line-height:1.2;margin-top:1px">${projBreak(g)}</div>`:''}</td>
+                <td style="text-align:center;font-weight:800;color:var(--c-primary)">${g.total}</td>
+              </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Detalle por ubicación</h3>
     <div class="item-table">
       <table>
         <thead><tr><th>Artículo</th><th>Proyecto</th><th>Categoría</th><th>Cantidad</th><th>Unidad</th><th>Estado</th></tr></thead>
@@ -1423,10 +1455,10 @@ const COND_OPTS = ['Excelente','Bueno','Regular','Dañado','Requiere mantenimien
 function movItemRow(it){
   it=it||{};
   const I=(cls,val,type,extra)=>`<input class="${cls}" ${type?`type="${type}" min="0"`:''} ${extra||''} value="${esc(val==null?'':val)}" style="width:100%;padding:6px 7px;font-size:12px;border:1px solid var(--c-border);border-radius:5px">`;
-  return `<tr class="mov-item">
+  return `<tr class="mov-item" data-item-id="${esc(it.item_id||'')}">
     <td style="padding:2px;width:30px"><img class="mi-thumb" style="width:26px;height:26px;object-fit:cover;border-radius:4px;display:none"></td>
     <td style="padding:2px">${I('mi-cod',it.cod)}</td>
-    <td style="padding:2px">${I('mi-desc',it.desc,'','list="invItemsList" oninput="movItemPick(this)"')}</td>
+    <td style="padding:2px">${I('mi-desc',it.desc,'','list="invItemsList" oninput="movItemPick(this)"')}<div class="mi-hint" style="font-size:9px;line-height:1.2;margin-top:1px;color:var(--c-muted)"></div></td>
     <td style="padding:2px;width:58px">${I('mi-cant',it.cant,'number')}</td>
     <td style="padding:2px;width:70px">${I('mi-unid',it.unid)}</td>
     <td style="padding:2px;width:96px">${I('mi-estado',it.estado)}</td>
@@ -1435,16 +1467,32 @@ function movItemRow(it){
   </tr>`;
 }
 function addMovItem(){ document.getElementById('movItemsBody').insertAdjacentHTML('beforeend', movItemRow()); }
-// Al elegir/escribir un artículo del inventario: autocompleta unidad y muestra su foto.
+// Al elegir/escribir un artículo del inventario: lo enlaza a la ubicación de
+// ORIGEN (para descontar stock), autocompleta unidad y muestra foto + disponible.
 function movItemPick(input){
   const row=input.closest('tr'); const name=input.value.trim().toLowerCase();
-  const it=[...state.items.values()].find(i=>(i.name||'').toLowerCase()===name);
+  const origen=(document.getElementById('mvOrigen')||{}).value||'';
   const thumb=row.querySelector('.mi-thumb');
-  if(it){
-    const unid=row.querySelector('.mi-unid'); if(unid && !unid.value) unid.value=it.unit||'';
-    if(thumb){ if(it.photoId){ thumb.src=fileUrl(it.photoId); thumb.style.display='block'; } else { thumb.style.display='none'; } }
-  } else if(thumb){ thumb.style.display='none'; }
+  const hint=row.querySelector('.mi-hint');
+  const setThumb=ph=>{ if(!thumb)return; if(ph){thumb.src=fileUrl(ph);thumb.style.display='block';}else{thumb.style.display='none';} };
+  if(!name){ row.dataset.itemId=''; setThumb(null); if(hint)hint.textContent=''; return; }
+  // Prioridad: el mismo artículo que esté en el ORIGEN elegido (ese es el que descuenta).
+  const atOrigen=[...state.items.values()].find(i=>(i.name||'').toLowerCase()===name && i.projectId===origen);
+  const anywhere=atOrigen||[...state.items.values()].find(i=>(i.name||'').toLowerCase()===name);
+  if(atOrigen){
+    row.dataset.itemId=atOrigen.id;
+    const unid=row.querySelector('.mi-unid'); if(unid && !unid.value) unid.value=atOrigen.unit||'';
+    setThumb(atOrigen.photoId);
+    if(hint){ hint.textContent='Disponible en '+(projName(origen)||origen||'origen')+': '+atOrigen.quantity; hint.style.color=atOrigen.quantity>0?'#166534':'#DC2626'; }
+  } else {
+    row.dataset.itemId='';
+    const unid=row.querySelector('.mi-unid'); if(anywhere && unid && !unid.value) unid.value=anywhere.unit||'';
+    setThumb(anywhere?anywhere.photoId:null);
+    if(hint){ hint.textContent = anywhere?('No está en el origen elegido — no descuenta stock'):''; hint.style.color='#D97706'; }
+  }
 }
+// Al cambiar el origen, re-evaluar todas las líneas ya escritas.
+function movReloadInv(){ document.querySelectorAll('#movItemsBody .mov-item .mi-desc').forEach(inp=>movItemPick(inp)); }
 
 function showMovModal(tipo, id){
   const mov = id ? (mstate.movs||[]).find(m=>m.id===id) : null;
@@ -1454,6 +1502,11 @@ function showMovModal(tipo, id){
   const numero = mov?.numero || `${prefix}-${String(n).padStart(4,'0')}`;
   let items = []; try{ items = JSON.parse(mov?.items||'[]')||[]; }catch(e){}
   if(!items.length) items = [{},{},{}];
+  // Ubicaciones: por defecto salida = de bodega → a un proyecto; entrada = de un proyecto → a bodega.
+  const origenDef  = mov?.origen_id  || (sal ? 'bodega' : '');
+  const destinoDef = mov?.destino_id || (sal ? '' : 'bodega');
+  const locOpts = selId => `<option value="">— Elegí —</option>` +
+    [...state.projects.values()].map(p=>`<option value="${p.id}" ${selId===p.id?'selected':''}>${esc(p.name)}</option>`).join('');
   const F=(id2,val,ph,type)=>`<input id="${id2}" ${type?`type="${type}"`:''} value="${esc(val==null?'':val)}" placeholder="${ph||''}" style="width:100%">`;
   openModal(`
   <div class="modal-head"><h2>${mov?'Editar':'Nueva'} ${sal?'Salida':'Entrada'} de equipos</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
@@ -1475,6 +1528,12 @@ function showMovModal(tipo, id){
       <div class="form-group"><label>Fecha ${sal?'salida':'entrada'}</label>${F('mvFechaMov',mov?.fecha_mov||todayStr(),'','date')}</div>
       <div class="form-group"><label>${sal?'Retorno estimado':'Fecha salida orig.'}</label>${F('mvFechaRet',mov?.fecha_ret,'','date')}</div>
     </div>
+    <h3 style="font-size:12px;color:var(--c-primary);margin:12px 0 6px">Movimiento de stock entre ubicaciones</h3>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+      <div class="form-group"><label>Origen (de dónde sale)</label><select id="mvOrigen" onchange="movReloadInv()">${locOpts(origenDef)}</select></div>
+      <div class="form-group"><label>Destino (a dónde va)</label><select id="mvDestino">${locOpts(destinoDef)}</select></div>
+    </div>
+    <div style="font-size:10px;color:var(--c-muted);margin:-2px 0 8px">Las líneas que elijas del inventario <b>se restan del origen y se suman al destino</b> automáticamente. Las líneas escritas a mano quedan solo como documento.</div>
     <h3 style="font-size:12px;color:var(--c-primary);margin:12px 0 2px">Detalle de equipos y herramientas</h3>
     <div style="font-size:10px;color:var(--c-muted);margin-bottom:6px">En "Descripción" podés escribir o elegir un artículo del inventario (autocompleta unidad y muestra su foto).</div>
     <datalist id="invItemsList">${[...new Set([...state.items.values()].map(i=>i.name))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
@@ -1505,18 +1564,18 @@ async function saveMov(tipo, id){
     const desc=r.querySelector('.mi-desc').value.trim();
     const cod=r.querySelector('.mi-cod').value.trim();
     if(!desc && !cod) return;
-    items.push({ cod, desc, cant:r.querySelector('.mi-cant').value, unid:r.querySelector('.mi-unid').value.trim(), estado:r.querySelector('.mi-estado').value.trim(), obs:r.querySelector('.mi-obs').value.trim() });
+    items.push({ item_id:r.dataset.itemId||'', cod, desc, cant:r.querySelector('.mi-cant').value, unid:r.querySelector('.mi-unid').value.trim(), estado:r.querySelector('.mi-estado').value.trim(), obs:r.querySelector('.mi-obs').value.trim() });
   });
   if(!v('mvProy') && !items.length){ showToast('Completá al menos proyecto/motivo o una línea','err'); return; }
-  const row={ tipo, numero:v('mvNumero'), fecha:v('mvFecha'), proyecto_motivo:v('mvProy'), placa:v('mvPlaca'),
+  const origen=(document.getElementById('mvOrigen')||{}).value||'';
+  const destino=(document.getElementById('mvDestino')||{}).value||'';
+  const payload={ id:id||undefined, tipo, numero:v('mvNumero'), fecha:v('mvFecha'), proyecto_motivo:v('mvProy'), placa:v('mvPlaca'),
     responsable:v('mvResp'), cedula:v('mvCed'), cargo:v('mvCargo'), tel:v('mvTel'), sitio:v('mvSitio'), supervisor:v('mvSup'),
     fecha_mov:v('mvFechaMov'), fecha_ret:v('mvFechaRet'), condicion:v('mvCond'), observaciones:v('mvObs'),
-    firma_sol:v('mvF1'), firma_aut:v('mvF2'), firma_sup:v('mvF3'), items:JSON.stringify(items) };
-  let error;
-  if(id){ ({error}=await sb.from('equipo_movs').update(row).eq('id',id)); }
-  else { ({error}=await sb.from('equipo_movs').insert(row)); }
+    firma_sol:v('mvF1'), firma_aut:v('mvF2'), firma_sup:v('mvF3'), origen_id:origen, destino_id:destino, items };
+  const {error}=await apiPost('/api/mov', payload);
   if(error){ showToast(error.message,'err'); return; }
-  closeModal(); showToast('Vale guardado','ok'); renderTransfers();
+  closeModal(); showToast(id?'Vale actualizado':'Vale guardado — stock actualizado','ok'); renderTransfers();
 }
 
 function movFormHtml(m){

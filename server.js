@@ -253,6 +253,8 @@ ensureColumn('messages', 'project_id', 'TEXT');
 ensureColumn('messages', 'room', 'TEXT');
 ensureColumn('messages', 'file_id', 'TEXT');
 ensureColumn('items', 'photo_id', 'TEXT');
+ensureColumn('equipo_movs', 'origen_id', 'TEXT');
+ensureColumn('equipo_movs', 'destino_id', 'TEXT');
 // Backfill idempotente: mensajes previos quedan en su sala correcta.
 db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
 db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
@@ -263,7 +265,7 @@ const SCHEMA = {
   projects:  ['id', 'name', 'address', 'supervisor', 'engineer_id', 'color', 'status', 'notes', 'created_at', 'updated_at'],
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
-  equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'created_by', 'created_at', 'updated_at'],
+  equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'origen_id', 'destino_id', 'created_by', 'created_at', 'updated_at'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
   messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'file_id', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
@@ -913,6 +915,104 @@ app.post('/api/asiento', (req, res) => {
   const row = db.prepare('SELECT * FROM asientos WHERE id = ?').get(id);
   broadcast({ table: 'asientos', eventType: 'INSERT', new: row, old: null });
   res.json({ data: row, error: null });
+});
+
+// ============================================================
+// VALES DE SALIDA / ENTRADA  (mueven stock entre ubicaciones)
+// ------------------------------------------------------------
+// Un vale nuevo descuenta las líneas enlazadas a un artículo del
+// inventario (item_id + cant) de su ubicación de ORIGEN y las suma
+// en la de DESTINO (bodega o un proyecto). Al editar un vale sólo se
+// corrigen los datos del documento; el stock NO se vuelve a mover
+// para no duplicar el movimiento.
+// ============================================================
+const MOV_FIELDS = ['tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'origen_id', 'destino_id'];
+
+app.post('/api/mov', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (u.status !== 'active') return res.status(403).json({ error: { message: 'Cuenta no activa' } });
+
+  const b = req.body || {};
+  const tipo = b.tipo === 'entrada' ? 'entrada' : 'salida';
+  const lines = Array.isArray(b.items) ? b.items : [];
+  const origen = b.origen_id || (tipo === 'salida' ? 'bodega' : '');
+  const destino = b.destino_id || (tipo === 'entrada' ? 'bodega' : '');
+
+  // Campos del documento (el autor y el stock los pone el servidor).
+  const fields = { tipo, origen_id: origen || null, destino_id: destino || null, items: JSON.stringify(lines) };
+  for (const k of MOV_FIELDS) if (k !== 'tipo' && k !== 'origen_id' && k !== 'destino_id') fields[k] = b[k] || '';
+
+  const now = new Date().toISOString();
+
+  // ── EDICIÓN: sólo actualiza el documento, sin tocar stock ──
+  if (b.id) {
+    const keys = Object.keys(fields);
+    db.prepare(`UPDATE equipo_movs SET ${keys.map(k => `"${k}" = ?`).join(',')}, updated_at = ? WHERE id = ?`)
+      .run(...keys.map(k => fields[k]), now, b.id);
+    const row = db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(b.id);
+    if (!row) return res.json({ error: { message: 'Vale no encontrado' } });
+    broadcast({ table: 'equipo_movs', eventType: 'UPDATE', new: row, old: null });
+    return res.json({ data: { mov: row, items: [] }, error: null });
+  }
+
+  // ── NUEVO: aplica stock a las líneas enlazadas ──
+  const stockLines = lines
+    .filter(l => l && l.item_id && Math.round(Number(l.cant) || 0) > 0)
+    .map(l => ({ item_id: l.item_id, cant: Math.round(Number(l.cant) || 0) }));
+
+  if (stockLines.length) {
+    if (!origen) return res.json({ error: { message: 'Elegí la ubicación de origen (de dónde salen los artículos).' } });
+    if (!destino) return res.json({ error: { message: 'Elegí la ubicación de destino (a dónde van los artículos).' } });
+    if (origen === destino) return res.json({ error: { message: 'El origen y el destino no pueden ser el mismo.' } });
+    for (const l of stockLines) {
+      const src = db.prepare('SELECT * FROM items WHERE id = ?').get(l.item_id);
+      if (!src) return res.json({ error: { message: 'Un artículo enlazado ya no existe en el inventario.' } });
+      if (src.project_id !== origen) return res.json({ error: { message: `"${src.name}" no está en el origen seleccionado.` } });
+      if (l.cant > (src.quantity || 0)) return res.json({ error: { message: `No hay suficiente "${src.name}" en el origen (hay ${src.quantity || 0}, pedís ${l.cant}).` } });
+    }
+  }
+
+  const movId = crypto.randomUUID();
+  const touched = new Set();
+  try {
+    tx(() => {
+      const keys = ['id', ...Object.keys(fields), 'created_by', 'created_at', 'updated_at'];
+      const vals = [movId, ...Object.keys(fields).map(k => fields[k]), u.id, now, now];
+      db.prepare(`INSERT INTO equipo_movs (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...vals);
+
+      for (const l of stockLines) {
+        const src = db.prepare('SELECT * FROM items WHERE id = ?').get(l.item_id);
+        db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+          .run((src.quantity || 0) - l.cant, u.id, now, src.id);
+        touched.add(src.id);
+
+        const dst = db.prepare('SELECT * FROM items WHERE project_id = ? AND lower(name) = lower(?) AND category = ? LIMIT 1')
+          .get(destino, src.name, src.category);
+        if (dst) {
+          db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+            .run((dst.quantity || 0) + l.cant, u.id, now, dst.id);
+          touched.add(dst.id);
+        } else {
+          const nid = crypto.randomUUID();
+          db.prepare('INSERT INTO items (id,name,category,unit,quantity,min_stock,estado,notes,photo_id,project_id,updated_by,updated_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+            .run(nid, src.name, src.category, src.unit || '', l.cant, 0, src.estado || 'OPERATIVA', '', src.photo_id || null, destino, u.id, now, now);
+          touched.add(nid);
+        }
+      }
+    });
+  } catch (e) {
+    return res.json({ error: { message: e.message || 'No se pudo guardar el vale' } });
+  }
+
+  const movRow = db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(movId);
+  broadcast({ table: 'equipo_movs', eventType: 'INSERT', new: movRow, old: null });
+  const items = [];
+  for (const iid of touched) {
+    const r = db.prepare('SELECT * FROM items WHERE id = ?').get(iid);
+    if (r) { broadcast({ table: 'items', eventType: 'UPDATE', new: r, old: null }); items.push(r); }
+  }
+  res.json({ data: { mov: movRow, items }, error: null });
 });
 
 // Saldos por cuenta en un rango: base del balance de comprobación, el estado
