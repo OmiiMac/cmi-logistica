@@ -1378,10 +1378,11 @@ function quickTransfersHtml(){
 const COND_OPTS = ['Excelente','Bueno','Regular','Dañado','Requiere mantenimiento'];
 function movItemRow(it){
   it=it||{};
-  const I=(cls,val,type)=>`<input class="${cls}" ${type?`type="${type}" min="0"`:''} value="${esc(val==null?'':val)}" style="width:100%;padding:6px 7px;font-size:12px;border:1px solid var(--c-border);border-radius:5px">`;
+  const I=(cls,val,type,extra)=>`<input class="${cls}" ${type?`type="${type}" min="0"`:''} ${extra||''} value="${esc(val==null?'':val)}" style="width:100%;padding:6px 7px;font-size:12px;border:1px solid var(--c-border);border-radius:5px">`;
   return `<tr class="mov-item">
+    <td style="padding:2px;width:30px"><img class="mi-thumb" style="width:26px;height:26px;object-fit:cover;border-radius:4px;display:none"></td>
     <td style="padding:2px">${I('mi-cod',it.cod)}</td>
-    <td style="padding:2px">${I('mi-desc',it.desc)}</td>
+    <td style="padding:2px">${I('mi-desc',it.desc,'','list="invItemsList" oninput="movItemPick(this)"')}</td>
     <td style="padding:2px;width:58px">${I('mi-cant',it.cant,'number')}</td>
     <td style="padding:2px;width:70px">${I('mi-unid',it.unid)}</td>
     <td style="padding:2px;width:96px">${I('mi-estado',it.estado)}</td>
@@ -1390,6 +1391,16 @@ function movItemRow(it){
   </tr>`;
 }
 function addMovItem(){ document.getElementById('movItemsBody').insertAdjacentHTML('beforeend', movItemRow()); }
+// Al elegir/escribir un artículo del inventario: autocompleta unidad y muestra su foto.
+function movItemPick(input){
+  const row=input.closest('tr'); const name=input.value.trim().toLowerCase();
+  const it=[...state.items.values()].find(i=>(i.name||'').toLowerCase()===name);
+  const thumb=row.querySelector('.mi-thumb');
+  if(it){
+    const unid=row.querySelector('.mi-unid'); if(unid && !unid.value) unid.value=it.unit||'';
+    if(thumb){ if(it.photoId){ thumb.src=fileUrl(it.photoId); thumb.style.display='block'; } else { thumb.style.display='none'; } }
+  } else if(thumb){ thumb.style.display='none'; }
+}
 
 function showMovModal(tipo, id){
   const mov = id ? (mstate.movs||[]).find(m=>m.id===id) : null;
@@ -1420,9 +1431,11 @@ function showMovModal(tipo, id){
       <div class="form-group"><label>Fecha ${sal?'salida':'entrada'}</label>${F('mvFechaMov',mov?.fecha_mov||todayStr(),'','date')}</div>
       <div class="form-group"><label>${sal?'Retorno estimado':'Fecha salida orig.'}</label>${F('mvFechaRet',mov?.fecha_ret,'','date')}</div>
     </div>
-    <h3 style="font-size:12px;color:var(--c-primary);margin:12px 0 6px">Detalle de equipos y herramientas</h3>
+    <h3 style="font-size:12px;color:var(--c-primary);margin:12px 0 2px">Detalle de equipos y herramientas</h3>
+    <div style="font-size:10px;color:var(--c-muted);margin-bottom:6px">En "Descripción" podés escribir o elegir un artículo del inventario (autocompleta unidad y muestra su foto).</div>
+    <datalist id="invItemsList">${[...new Set([...state.items.values()].map(i=>i.name))].map(n=>`<option value="${esc(n)}">`).join('')}</datalist>
     <table style="width:100%;border-collapse:collapse;font-size:11px">
-      <thead><tr style="color:var(--c-muted);text-align:left"><th style="padding:2px">Cód.</th><th style="padding:2px">Descripción</th><th style="padding:2px">Cant.</th><th style="padding:2px">Unid.</th><th style="padding:2px">Estado</th><th style="padding:2px">Observ.</th><th></th></tr></thead>
+      <thead><tr style="color:var(--c-muted);text-align:left"><th></th><th style="padding:2px">Cód.</th><th style="padding:2px">Descripción</th><th style="padding:2px">Cant.</th><th style="padding:2px">Unid.</th><th style="padding:2px">Estado</th><th style="padding:2px">Observ.</th><th></th></tr></thead>
       <tbody id="movItemsBody">${items.map(movItemRow).join('')}</tbody>
     </table>
     <button type="button" class="btn btn-sm btn-ghost" style="margin-top:6px" onclick="addMovItem()">+ Agregar línea</button>
