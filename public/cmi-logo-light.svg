@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 840" fill="none">
+  <!-- techo -->
+  <polygon points="150,300 452,300 452,182 150,252" fill="#F24A54"/>
+  <polygon points="470,300 645,300 645,252 470,182" fill="#B23048"/>
+  <!-- fila 1 -->
+  <rect x="150" y="315" width="302" height="95" fill="#F24A54"/>
+  <rect x="470" y="315" width="175" height="95" fill="#B23048"/>
+  <!-- fila 2 -->
+  <rect x="150" y="430" width="302" height="95" fill="#F24A54"/>
+  <rect x="470" y="430" width="175" height="95" fill="#B23048"/>
+  <!-- fila 3 -->
+  <rect x="150" y="545" width="302" height="95" fill="#F24A54"/>
+  <rect x="470" y="545" width="175" height="95" fill="#B23048"/>
+  <!-- fila 4 -->
+  <rect x="150" y="660" width="302" height="82" fill="#F24A54"/>
+  <rect x="470" y="660" width="175" height="82" fill="#B23048"/>
+  <!-- texto (claro para fondo oscuro) -->
+  <text x="688" y="520" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="238" fill="#FFFFFF" letter-spacing="2">CMI</text>
+  <text x="692" y="606" font-family="Arial, Helvetica, sans-serif" font-weight="600" font-size="42" fill="#F2DDE1" letter-spacing="2">CONSTRUCTIONS CORP</text>
+</svg>
