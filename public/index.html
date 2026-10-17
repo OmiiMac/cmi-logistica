@@ -1327,27 +1327,223 @@ async function deleteRuta(id){
 }
 
 // ── Transfers ─────────────────────────────────────────────────
-function renderTransfers(){
-  setTopbar('Historial de Transferencias');
-  document.getElementById('topbarActions').innerHTML = '';
-  const transfers = state.transfers.slice(0,80);
-  document.getElementById('view').innerHTML = transfers.length===0
-    ?'<div class="nodata">Sin transferencias registradas</div>'
-    :`<div class="transfer-list">
-      ${transfers.map(t=>{
-        const fromName = projName(t.fromProject)||t.fromProject||'?';
-        const toName   = projName(t.toProject)||t.toProject||'?';
-        return `<div class="transfer-row">
-          <div class="tr-icon"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#9B1B30" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg></div>
-          <div class="tr-info">
-            <div class="tr-name">${esc(t.itemName)}</div>
-            <div class="tr-route">${esc(fromName)} → ${esc(toName)}${t.notes?' • '+esc(t.notes):''}</div>
-          </div>
-          <span class="tr-qty">+${t.quantity} ${esc(t.unit||'')}</span>
-          <span class="tr-date">${fmtDate(t.date)}</span>
-        </div>`;
-      }).join('')}
+async function renderTransfers(){
+  setTopbar('Transferencias y Vales');
+  document.getElementById('topbarActions').innerHTML =
+    `<button class="btn btn-sm btn-primary" onclick="showMovModal('salida')">📤 Salida</button> <button class="btn btn-sm btn-ghost" onclick="showMovModal('entrada')">📥 Entrada</button>`;
+  document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:880px">
+    <div id="movList"><div class="nodata" style="padding:30px">Cargando vales…</div></div>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:26px 0 10px">Movimientos rápidos de inventario</h3>
+    <div id="quickTransfers"></div>
+  </div>`;
+  const {data} = await sb.from('equipo_movs').select('*').order('created_at',{ascending:false}).limit(100);
+  mstate.movs = data || [];
+  const list=document.getElementById('movList'); if(list) list.innerHTML = movListHtml(mstate.movs);
+  const qt=document.getElementById('quickTransfers'); if(qt) qt.innerHTML = quickTransfersHtml();
+}
+
+function movBadge(tipo){
+  const sal = tipo==='salida';
+  return `<span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:${sal?'#9B1B30':'#7A1526'};color:#fff">${sal?'SALIDA':'ENTRADA'}</span>`;
+}
+function movListHtml(movs){
+  if(!movs||!movs.length) return '<div class="nodata" style="padding:30px">Sin vales de salida/entrada. Creá uno con los botones de arriba.</div>';
+  return movs.map(m=>{
+    let n=0; try{ n=(JSON.parse(m.items||'[]')||[]).length; }catch(e){}
+    return `<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="viewMov('${m.id}')">
+      <div style="display:flex;justify-content:space-between;align-items:start;gap:10px">
+        <div><div style="font-weight:700">${movBadge(m.tipo)} &nbsp;N° ${esc(m.numero||'—')}</div>
+          <div style="font-size:12px;color:var(--c-muted);margin-top:4px">${esc(m.proyecto_motivo||'')}${m.responsable?' · '+esc(m.responsable):''}</div></div>
+        <div style="text-align:right;font-size:12px;color:var(--c-muted)">${esc(m.fecha||'')}<br>${n} ítem(s)</div>
+      </div>
     </div>`;
+  }).join('');
+}
+function quickTransfersHtml(){
+  const transfers = (state.transfers||[]).slice(0,80);
+  if(transfers.length===0) return '<div class="nodata" style="padding:16px">Sin movimientos rápidos</div>';
+  return `<div class="transfer-list">${transfers.map(t=>{
+    const fromName = projName(t.fromProject)||t.fromProject||'?';
+    const toName   = projName(t.toProject)||t.toProject||'?';
+    return `<div class="transfer-row">
+      <div class="tr-icon"><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#9B1B30" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg></div>
+      <div class="tr-info"><div class="tr-name">${esc(t.itemName)}</div>
+        <div class="tr-route">${esc(fromName)} → ${esc(toName)}${t.notes?' • '+esc(t.notes):''}</div></div>
+      <span class="tr-qty">+${t.quantity} ${esc(t.unit||'')}</span>
+      <span class="tr-date">${fmtDate(t.date)}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+const COND_OPTS = ['Excelente','Bueno','Regular','Dañado','Requiere mantenimiento'];
+function movItemRow(it){
+  it=it||{};
+  const I=(cls,val,type)=>`<input class="${cls}" ${type?`type="${type}" min="0"`:''} value="${esc(val==null?'':val)}" style="width:100%;padding:6px 7px;font-size:12px;border:1px solid var(--c-border);border-radius:5px">`;
+  return `<tr class="mov-item">
+    <td style="padding:2px">${I('mi-cod',it.cod)}</td>
+    <td style="padding:2px">${I('mi-desc',it.desc)}</td>
+    <td style="padding:2px;width:58px">${I('mi-cant',it.cant,'number')}</td>
+    <td style="padding:2px;width:70px">${I('mi-unid',it.unid)}</td>
+    <td style="padding:2px;width:96px">${I('mi-estado',it.estado)}</td>
+    <td style="padding:2px">${I('mi-obs',it.obs)}</td>
+    <td style="padding:2px;width:24px"><button type="button" onclick="this.closest('tr').remove()" style="border:none;background:none;color:#DC2626;cursor:pointer;font-size:15px">×</button></td>
+  </tr>`;
+}
+function addMovItem(){ document.getElementById('movItemsBody').insertAdjacentHTML('beforeend', movItemRow()); }
+
+function showMovModal(tipo, id){
+  const mov = id ? (mstate.movs||[]).find(m=>m.id===id) : null;
+  const sal = tipo==='salida';
+  const prefix = sal?'SAL':'ENT';
+  const n = (mstate.movs||[]).filter(m=>m.tipo===tipo).length + 1;
+  const numero = mov?.numero || `${prefix}-${String(n).padStart(4,'0')}`;
+  let items = []; try{ items = JSON.parse(mov?.items||'[]')||[]; }catch(e){}
+  if(!items.length) items = [{},{},{}];
+  const F=(id2,val,ph,type)=>`<input id="${id2}" ${type?`type="${type}"`:''} value="${esc(val==null?'':val)}" placeholder="${ph||''}" style="width:100%">`;
+  openModal(`
+  <div class="modal-head"><h2>${mov?'Editar':'Nueva'} ${sal?'Salida':'Entrada'} de equipos</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body" style="max-height:72vh;overflow-y:auto">
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+      <div class="form-group"><label>N° Form</label>${F('mvNumero',numero,'')}</div>
+      <div class="form-group"><label>Fecha</label>${F('mvFecha',mov?.fecha||todayStr(),'','date')}</div>
+      <div class="form-group"><label>Proyecto / Motivo</label>${F('mvProy',mov?.proyecto_motivo,'')}</div>
+      <div class="form-group"><label>Placa vehículo</label>${F('mvPlaca',mov?.placa,'')}</div>
+    </div>
+    <h3 style="font-size:12px;color:var(--c-primary);margin:12px 0 6px">Información de ${sal?'salida':'entrada'}</h3>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+      <div class="form-group"><label>Responsable</label>${F('mvResp',mov?.responsable,'')}</div>
+      <div class="form-group"><label>Cédula</label>${F('mvCed',mov?.cedula,'')}</div>
+      <div class="form-group"><label>Cargo</label>${F('mvCargo',mov?.cargo,'')}</div>
+      <div class="form-group"><label>Tel</label>${F('mvTel',mov?.tel,'')}</div>
+      <div class="form-group"><label>Sitio ${sal?'destino':'origen'}</label>${F('mvSitio',mov?.sitio,'')}</div>
+      <div class="form-group"><label>Supervisor</label>${F('mvSup',mov?.supervisor,'')}</div>
+      <div class="form-group"><label>Fecha ${sal?'salida':'entrada'}</label>${F('mvFechaMov',mov?.fecha_mov||todayStr(),'','date')}</div>
+      <div class="form-group"><label>${sal?'Retorno estimado':'Fecha salida orig.'}</label>${F('mvFechaRet',mov?.fecha_ret,'','date')}</div>
+    </div>
+    <h3 style="font-size:12px;color:var(--c-primary);margin:12px 0 6px">Detalle de equipos y herramientas</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="color:var(--c-muted);text-align:left"><th style="padding:2px">Cód.</th><th style="padding:2px">Descripción</th><th style="padding:2px">Cant.</th><th style="padding:2px">Unid.</th><th style="padding:2px">Estado</th><th style="padding:2px">Observ.</th><th></th></tr></thead>
+      <tbody id="movItemsBody">${items.map(movItemRow).join('')}</tbody>
+    </table>
+    <button type="button" class="btn btn-sm btn-ghost" style="margin-top:6px" onclick="addMovItem()">+ Agregar línea</button>
+    <h3 style="font-size:12px;color:var(--c-primary);margin:14px 0 6px">Condición general y observaciones</h3>
+    <div class="form-group"><label>Condición</label>
+      <select id="mvCond"><option value="">—</option>${COND_OPTS.map(o=>`<option ${mov?.condicion===o?'selected':''}>${o}</option>`).join('')}</select>
+    </div>
+    <div class="form-group"><label>Observaciones</label><textarea id="mvObs" rows="2">${esc(mov?.observaciones||'')}</textarea></div>
+    <h3 style="font-size:12px;color:var(--c-primary);margin:14px 0 6px">Firmas (nombres)</h3>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      <div class="form-group"><label>${sal?'Solicitado por':'Entregado por'}</label>${F('mvF1',mov?.firma_sol,'')}</div>
+      <div class="form-group"><label>${sal?'Autorizado por':'Recibido por'}</label>${F('mvF2',mov?.firma_aut,'')}</div>
+      <div class="form-group"><label>Supervisor / Encargado</label>${F('mvF3',mov?.firma_sup,'')}</div>
+    </div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveMov('${tipo}','${mov?.id||''}')">Guardar</button></div>`);
+}
+
+async function saveMov(tipo, id){
+  const v=i=>{ const el=document.getElementById(i); return el?el.value.trim():''; };
+  const items=[];
+  document.querySelectorAll('#movItemsBody .mov-item').forEach(r=>{
+    const desc=r.querySelector('.mi-desc').value.trim();
+    const cod=r.querySelector('.mi-cod').value.trim();
+    if(!desc && !cod) return;
+    items.push({ cod, desc, cant:r.querySelector('.mi-cant').value, unid:r.querySelector('.mi-unid').value.trim(), estado:r.querySelector('.mi-estado').value.trim(), obs:r.querySelector('.mi-obs').value.trim() });
+  });
+  if(!v('mvProy') && !items.length){ showToast('Completá al menos proyecto/motivo o una línea','err'); return; }
+  const row={ tipo, numero:v('mvNumero'), fecha:v('mvFecha'), proyecto_motivo:v('mvProy'), placa:v('mvPlaca'),
+    responsable:v('mvResp'), cedula:v('mvCed'), cargo:v('mvCargo'), tel:v('mvTel'), sitio:v('mvSitio'), supervisor:v('mvSup'),
+    fecha_mov:v('mvFechaMov'), fecha_ret:v('mvFechaRet'), condicion:v('mvCond'), observaciones:v('mvObs'),
+    firma_sol:v('mvF1'), firma_aut:v('mvF2'), firma_sup:v('mvF3'), items:JSON.stringify(items) };
+  let error;
+  if(id){ ({error}=await sb.from('equipo_movs').update(row).eq('id',id)); }
+  else { ({error}=await sb.from('equipo_movs').insert(row)); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Vale guardado','ok'); renderTransfers();
+}
+
+function movFormHtml(m){
+  const sal = m.tipo==='salida';
+  const RED = sal?'#9B1B30':'#7A1526';
+  let items=[]; try{ items=JSON.parse(m.items||'[]')||[]; }catch(e){}
+  const rows = Math.max(items.length, 6);
+  let body='';
+  for(let i=0;i<rows;i++){ const it=items[i]||{};
+    body += `<tr>
+      <td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${i+1}</td>
+      <td style="border:1px solid #ddd;padding:4px 6px">${esc(it.cod||'')}</td>
+      <td style="border:1px solid #ddd;padding:4px 6px">${esc(it.desc||'')}</td>
+      <td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${esc(it.cant||'')}</td>
+      <td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${esc(it.unid||'')}</td>
+      <td style="border:1px solid #ddd;padding:4px 6px">${esc(it.estado||'')}</td>
+      <td style="border:1px solid #ddd;padding:4px 6px">${esc(it.obs||'')}</td>
+    </tr>`;
+  }
+  const cell=(l,v)=>`<td style="border:1px solid #ddd;padding:5px 8px;font-size:11px"><b style="color:#555">${l}</b> ${esc(v||'')}</td>`;
+  const cond = COND_OPTS.map(o=>`${m.condicion===o?'☑':'☐'} ${o}`).join('&nbsp;&nbsp;');
+  const firmaCol=(titulo,nombre)=>`<td style="border:1px solid #ddd;padding:10px 12px;vertical-align:top;width:33%">
+    <div style="font-size:10px;font-weight:700;color:#fff;background:${RED};padding:3px 6px;margin:-10px -12px 26px;text-align:center">${titulo}</div>
+    <div style="border-top:1px solid #333;margin-top:28px;padding-top:3px;font-size:10px;color:#555">Firma</div>
+    <div style="font-size:11px;margin-top:6px">Nombre: ${esc(nombre||'')}</div>
+    <div style="font-size:11px;margin-top:4px">Fecha: ___/___/______</div></td>`;
+  return `<div style="font-family:Arial,sans-serif;color:#1b1b20;max-width:900px;margin:0 auto">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <img src="${location.origin}/cmi-logo-full.svg" style="height:40px">
+        <div><div style="color:${RED};font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
+        <div style="font-size:9px;color:#777">Panamá, República de Panamá</div></div>
+      </div>
+      <div style="background:${RED};color:#fff;padding:10px 20px;border-radius:4px;text-align:center">
+        <div style="font-size:16px;font-weight:800">${sal?'📤 SALIDA':'📥 ENTRADA'}</div>
+        <div style="font-size:9px;letter-spacing:.05em">DE EQUIPOS Y HERRAMIENTAS</div></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-top:12px">
+      <tr>${cell('N° FORM:',m.numero)}${cell('FECHA:',m.fecha)}${cell('PROYECTO/MOTIVO:',m.proyecto_motivo)}${cell('PLACA VEHÍC.:',m.placa)}</tr>
+    </table>
+    <div style="background:${RED};color:#fff;font-size:10px;font-weight:700;padding:3px 8px;margin-top:8px">INFORMACIÓN DE ${sal?'SALIDA':'ENTRADA'}</div>
+    <table style="width:100%;border-collapse:collapse">
+      <tr>${cell('RESPONSABLE:',m.responsable)}${cell('CÉDULA:',m.cedula)}${cell('CARGO:',m.cargo)}${cell('TEL:',m.tel)}</tr>
+      <tr>${cell(sal?'SITIO DESTINO:':'SITIO ORIGEN:',m.sitio)}${cell('SUPERVISOR:',m.supervisor)}${cell(sal?'FECHA SALIDA:':'FECHA ENTRADA:',m.fecha_mov)}${cell(sal?'RETORNO EST.:':'FECHA SALIDA ORIG.:',m.fecha_ret)}</tr>
+    </table>
+    <div style="background:${RED};color:#fff;font-size:10px;font-weight:700;padding:3px 8px;margin-top:8px">DETALLE DE EQUIPOS Y HERRAMIENTAS</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="background:${RED};color:#fff"><th style="border:1px solid #ddd;padding:4px">N°</th><th style="border:1px solid #ddd;padding:4px">CÓD.</th><th style="border:1px solid #ddd;padding:4px">DESCRIPCIÓN</th><th style="border:1px solid #ddd;padding:4px">CANT.</th><th style="border:1px solid #ddd;padding:4px">UNID.</th><th style="border:1px solid #ddd;padding:4px">ESTADO</th><th style="border:1px solid #ddd;padding:4px">OBSERVACIONES</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+    <div style="background:${RED};color:#fff;font-size:10px;font-weight:700;padding:3px 8px;margin-top:8px">CONDICIÓN GENERAL Y OBSERVACIONES</div>
+    <div style="border:1px solid #ddd;padding:6px 8px;font-size:11px"><b>CONDICIÓN:</b> ${cond}</div>
+    <div style="border:1px solid #ddd;border-top:none;padding:6px 8px;font-size:11px;min-height:28px"><b>OBSERVACIONES:</b> ${esc(m.observaciones||'')}</div>
+    <div style="background:${RED};color:#fff;font-size:10px;font-weight:700;padding:3px 8px;margin-top:8px">FIRMAS Y AUTORIZACIONES</div>
+    <table style="width:100%;border-collapse:collapse"><tr>
+      ${firmaCol(sal?'SOLICITADO POR:':'ENTREGADO POR:',m.firma_sol)}
+      ${firmaCol(sal?'AUTORIZADO POR:':'RECIBIDO / ACEPTADO POR:',m.firma_aut)}
+      ${firmaCol('SUPERVISOR / ENCARGADO:',m.firma_sup)}
+    </tr></table>
+    <div style="font-size:9px;color:#999;text-align:center;margin-top:8px;font-style:italic">Este documento debe ser conservado en archivo físico y digital. CMI Construction Corp. — Uso Interno.</div>
+  </div>`;
+}
+
+function viewMov(id){
+  const m=(mstate.movs||[]).find(x=>x.id===id); if(!m) return;
+  openModal(`
+    <div class="modal-head"><h2>${m.tipo==='salida'?'Salida':'Entrada'} N° ${esc(m.numero||'')}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body" style="max-height:72vh;overflow:auto;background:#fff">${movFormHtml(m)}</div>
+    <div class="modal-foot" style="justify-content:space-between">
+      <div>${state.isAdmin?`<button class="btn btn-ghost" style="color:#DC2626" onclick="delMov('${m.id}')">Eliminar</button>`:''}</div>
+      <div><button class="btn btn-ghost" onclick="showMovModal('${m.tipo}','${m.id}')">Editar</button> <button class="btn btn-ghost" onclick="printMov('${m.id}')">🖨 Imprimir</button> <button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
+    </div>`);
+}
+function printMov(id){
+  const m=(mstate.movs||[]).find(x=>x.id===id); if(!m) return;
+  const w=window.open('','_blank'); if(!w){ showToast('Permití las ventanas emergentes para imprimir','err'); return; }
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(m.numero||'Vale')}</title></head><body style="margin:16px">${movFormHtml(m)}</body></html>`);
+  w.document.close(); setTimeout(()=>{ try{ w.print(); }catch(e){} }, 350);
+}
+async function delMov(id){
+  if(!confirm('¿Eliminar este vale?')) return;
+  const {error}=await sb.from('equipo_movs').delete().eq('id',id);
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Vale eliminado','ok'); renderTransfers();
 }
 
 // ── Modals ────────────────────────────────────────────────────

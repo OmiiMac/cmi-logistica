@@ -209,6 +209,33 @@ CREATE TABLE IF NOT EXISTS mercadeo_tareas (
   updated_at  TEXT
 );
 
+-- Vales de Salida / Entrada de equipos y herramientas (formato CMI)
+CREATE TABLE IF NOT EXISTS equipo_movs (
+  id              TEXT PRIMARY KEY,
+  tipo            TEXT,            -- salida | entrada
+  numero          TEXT,
+  fecha           TEXT,
+  proyecto_motivo TEXT,
+  placa           TEXT,
+  responsable     TEXT,
+  cedula          TEXT,
+  cargo           TEXT,
+  tel             TEXT,
+  sitio           TEXT,
+  supervisor      TEXT,
+  fecha_mov       TEXT,
+  fecha_ret       TEXT,
+  condicion       TEXT,
+  observaciones   TEXT,
+  firma_sol       TEXT,
+  firma_aut       TEXT,
+  firma_sup       TEXT,
+  items           TEXT,            -- JSON con las líneas de equipos
+  created_by      TEXT,
+  created_at      TEXT,
+  updated_at      TEXT
+);
+
 -- Tokens de recuperación de contraseña (autoservicio por email)
 CREATE TABLE IF NOT EXISTS password_resets (
   token   TEXT PRIMARY KEY,
@@ -236,6 +263,7 @@ const SCHEMA = {
   projects:  ['id', 'name', 'address', 'supervisor', 'engineer_id', 'color', 'status', 'notes', 'created_at', 'updated_at'],
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
+  equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'created_by', 'created_at', 'updated_at'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
   messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'file_id', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
@@ -617,6 +645,8 @@ function canWrite(table, op, user, values, filters) {
       return true;
     case 'transfers':
       return op === 'insert';
+    case 'equipo_movs':
+      return op === 'delete' ? user.role === 'admin' : true; // crear/editar: cualquier activo; borrar: admin
     case 'messages':
       if (op !== 'insert') return false;
       return roleCan(chatRoomModule(values && values.room), user); // sala restringida → rol del módulo
