@@ -806,6 +806,28 @@ app.post('/api/conta/mayor', (req, res) => {
   res.json({ data: rows, error: null });
 });
 
+// Ingresos y gastos agrupados por mes (para las gráficas del panel).
+app.post('/api/conta/mensual', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (!roleCan('conta', u)) return res.status(403).json({ error: { message: 'No autorizado' } });
+  const { desde, hasta, proyecto_id } = req.body || {};
+  const cond = [], params = [];
+  if (desde) { cond.push('a.fecha >= ?'); params.push(desde); }
+  if (hasta) { cond.push('a.fecha <= ?'); params.push(hasta); }
+  if (proyecto_id) { cond.push('m.proyecto_id = ?'); params.push(proyecto_id); }
+  const sql = `
+    SELECT substr(a.fecha,1,7) AS mes,
+           COALESCE(SUM(CASE WHEN c.tipo='ingreso' THEN (m.haber - m.debe) ELSE 0 END),0) AS ingresos,
+           COALESCE(SUM(CASE WHEN c.tipo='gasto'   THEN (m.debe - m.haber) ELSE 0 END),0) AS gastos
+    FROM movimientos m
+    JOIN asientos a ON a.id = m.asiento_id
+    JOIN cuentas c ON c.id = m.cuenta_id
+    ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''}
+    GROUP BY mes ORDER BY mes`;
+  res.json({ data: db.prepare(sql).all(...params), error: null });
+});
+
 // ============================================================
 // EMAILS (Resend) — sin cambios respecto a la versión previa
 // ============================================================

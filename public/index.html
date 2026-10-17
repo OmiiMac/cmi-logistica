@@ -1796,7 +1796,11 @@ function money(n){ n=Number(n||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleS
 function modRefresh(view){ if(state.view!==view) return; if(!document.getElementById('modalWrap').hidden) return; render(); }
 function proyectoOptions(sel){ return [...state.projects.values()].map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join(''); }
 
-const mstate = { cuentas:[], contaTab:'comprobacion', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'campanas' };
+const mstate = { cuentas:[], contaTab:'panel', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'campanas' };
+const CHART_PALETTE = ['#9B1B30','#1D4ED8','#D97706','#166534','#7C3AED','#0F766E','#BE185D','#C8960C','#4338CA','#DC2626'];
+let _contaCharts = [];
+function destroyContaCharts(){ _contaCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _contaCharts=[]; }
+function chartOpts(extra){ return Object.assign({responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}}}, extra||{}); }
 
 /* ================= CONTABILIDAD ================= */
 async function renderContabilidad(){
@@ -1805,7 +1809,7 @@ async function renderContabilidad(){
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
   document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:900px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      ${[['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
+      ${[['panel','📊 Panel'],['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
     </div>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
       <div><label style="font-size:11px;color:var(--c-muted);display:block">Desde</label><input type="date" value="${mstate.contaDesde}" onchange="mstate.contaDesde=this.value;renderContabilidad()"></div>
@@ -1814,6 +1818,7 @@ async function renderContabilidad(){
     <div id="contaBody"><div class="nodata" style="padding:30px">Cargando…</div></div>
   </div>`;
   if(!mstate.cuentas.length){ const {data}=await sb.from('cuentas').select('*').order('codigo'); mstate.cuentas=data||[]; }
+  if(mstate.contaTab==='panel'){ renderContaPanel(); return; }
   if(mstate.contaTab==='mayor'){ renderContaMayor(); return; }
   const {data:saldos,error}=await apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta});
   const body=document.getElementById('contaBody'); if(!body) return;
@@ -1821,6 +1826,53 @@ async function renderContabilidad(){
   if(mstate.contaTab==='comprobacion') body.innerHTML=contaComprobacion(saldos);
   else if(mstate.contaTab==='resultados') body.innerHTML=contaResultados(saldos);
   else if(mstate.contaTab==='balance') body.innerHTML=contaBalance(saldos);
+}
+function kpiTile(label,val,color,bg){ return `<div style="background:${bg};border-radius:10px;padding:14px"><div style="font-size:20px;font-weight:800;color:${color}">${val}</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">${label}</div></div>`; }
+async function renderContaPanel(){
+  const body=document.getElementById('contaBody'); if(!body) return;
+  const [rs,rm]=await Promise.all([
+    apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
+    apiPost('/api/conta/mensual',{desde:mstate.contaDesde,hasta:mstate.contaHasta})
+  ]);
+  if(rs.error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(rs.error.message)}</div>`; return; }
+  const s=rs.data||[], mensual=rm.data||[];
+  const sum=(tipo,signo)=>s.filter(c=>c.tipo===tipo).reduce((a,c)=>a+(signo==='d'?(c.debe-c.haber):(c.haber-c.debe)),0);
+  const totIng=sum('ingreso','h'), totGas=sum('gasto','d'), util=totIng-totGas;
+  const activo=sum('activo','d'), pasivo=sum('pasivo','h'), patr=sum('patrimonio','h')+util;
+  body.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Ingresos',money(totIng),'#166534','#DCFCE7')}
+      ${kpiTile('Gastos',money(totGas),'#DC2626','#FEE2E2')}
+      ${kpiTile('Utilidad',money(util),util>=0?'#166534':'#DC2626',util>=0?'#DCFCE7':'#FEE2E2')}
+      ${kpiTile('Activo',money(activo),'#1D4ED8','#DBEAFE')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+      <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Ingresos vs Gastos por mes</h3><canvas id="chIG" height="190"></canvas></div>
+      <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Utilidad acumulada</h3><canvas id="chUtil" height="190"></canvas></div>
+      <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Composición de gastos</h3><canvas id="chGastos" height="190"></canvas></div>
+      <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Activo · Pasivo · Patrimonio</h3><canvas id="chAPP" height="190"></canvas></div>
+    </div>`;
+  drawContaCharts(s,mensual,{activo,pasivo,patr});
+}
+function drawContaCharts(s,mensual,tot){
+  destroyContaCharts();
+  if(typeof Chart==='undefined') return;
+  const labels=mensual.map(m=>m.mes);
+  const ing=mensual.map(m=>Number(m.ingresos)||0);
+  const gas=mensual.map(m=>Number(m.gastos)||0);
+  const elIG=document.getElementById('chIG');
+  if(elIG) _contaCharts.push(new Chart(elIG,{type:'bar',data:{labels,datasets:[{label:'Ingresos',data:ing,backgroundColor:'#22C55E'},{label:'Gastos',data:gas,backgroundColor:'#EF4444'}]},options:chartOpts()}));
+  let acc=0; const acum=mensual.map(m=>{ acc+=(Number(m.ingresos)||0)-(Number(m.gastos)||0); return acc; });
+  const elU=document.getElementById('chUtil');
+  if(elU) _contaCharts.push(new Chart(elU,{type:'line',data:{labels,datasets:[{label:'Utilidad acumulada',data:acum,borderColor:'#9B1B30',backgroundColor:'rgba(155,27,48,.12)',fill:true,tension:.3}]},options:chartOpts()}));
+  const gastos=s.filter(c=>c.tipo==='gasto'&&(c.debe-c.haber)>0);
+  const elG=document.getElementById('chGastos');
+  if(elG){
+    if(gastos.length) _contaCharts.push(new Chart(elG,{type:'doughnut',data:{labels:gastos.map(c=>c.nombre),datasets:[{data:gastos.map(c=>c.debe-c.haber),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
+    else elG.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin gastos en el período</div>';
+  }
+  const elA=document.getElementById('chAPP');
+  if(elA) _contaCharts.push(new Chart(elA,{type:'bar',data:{labels:['Activo','Pasivo','Patrimonio'],datasets:[{data:[tot.activo,tot.pasivo,tot.patr],backgroundColor:['#1D4ED8','#D97706','#166534']}]},options:chartOpts({plugins:{legend:{display:false}}})}));
 }
 function contaComprobacion(s){
   const rows=s.filter(c=>c.debe>0||c.haber>0);
