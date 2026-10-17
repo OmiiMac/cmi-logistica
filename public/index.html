@@ -71,13 +71,23 @@ html{height:100%}
 .login-card .form-group{margin-bottom:18px}
 .login-card label{display:block;font-size:11px;font-weight:700;color:#8B7080;text-transform:uppercase;letter-spacing:.09em;margin-bottom:7px}
 .login-card input{
-  width:100%;background:rgba(255,255,255,.05);
-  border:1px solid rgba(155,27,48,.25);border-radius:10px;
-  padding:12px 16px;color:#fff;font-family:var(--font);font-size:14px;
-  outline:none;transition:border-color .2s,background .2s;
+  width:100%;background:#241820;
+  border:1px solid rgba(155,27,48,.35);border-radius:10px;
+  padding:12px 16px;color:#fff;font-family:var(--font);font-size:16px;
+  outline:none;caret-color:#fff;color-scheme:dark;
+  transition:border-color .2s,background .2s;
 }
-.login-card input:focus{border-color:var(--c-primary);background:rgba(155,27,48,.08)}
-.login-card input::placeholder{color:#4A3F44}
+.login-card input:focus{border-color:var(--c-primary);background:#2B1C24}
+.login-card input::placeholder{color:#8A7580}
+/* Autocompletar del navegador: forzar fondo oscuro y texto blanco (si no, el texto se vuelve invisible) */
+.login-card input:-webkit-autofill,
+.login-card input:-webkit-autofill:hover,
+.login-card input:-webkit-autofill:focus{
+  -webkit-text-fill-color:#fff;
+  -webkit-box-shadow:0 0 0 1000px #241820 inset;
+  caret-color:#fff;
+  transition:background-color 9999s ease-out 0s;
+}
 .w-full{width:100%;margin-top:6px;padding:13px;font-size:14px;letter-spacing:.02em}
 .login-divider{height:1px;background:rgba(255,255,255,.07);margin:20px 0}
 
@@ -467,8 +477,11 @@ html{height:100%}
     </div>
     <div class="form-group">
       <label for="loginPass">Contrasena</label>
-      <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password"
-             onkeydown="if(event.key==='Enter')doLogin()">
+      <div style="position:relative">
+        <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password" style="padding-right:58px"
+               onkeydown="if(event.key==='Enter')doLogin()">
+        <span onclick="togglePass('loginPass',this)" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:700;color:#C9A2AC;cursor:pointer;user-select:none">Ver</span>
+      </div>
     </div>
     <button id="loginBtn" class="btn btn-primary w-full" onclick="doLogin()">Ingresar</button>
     <div id="loginErr" style="color:#EF4444;font-size:12px;margin-top:10px;text-align:center;display:none"></div>
@@ -492,12 +505,18 @@ html{height:100%}
     <p class="login-sub">Definí tu nueva contraseña</p>
     <div class="form-group">
       <label for="resetPass">Nueva contraseña</label>
-      <input type="password" id="resetPass" placeholder="••••••••" autocomplete="new-password">
+      <div style="position:relative">
+        <input type="password" id="resetPass" placeholder="••••••••" autocomplete="new-password" style="padding-right:58px">
+        <span onclick="togglePass('resetPass',this)" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:700;color:#C9A2AC;cursor:pointer;user-select:none">Ver</span>
+      </div>
     </div>
     <div class="form-group">
       <label for="resetPass2">Repetir contraseña</label>
-      <input type="password" id="resetPass2" placeholder="••••••••" autocomplete="new-password"
-             onkeydown="if(event.key==='Enter')doReset()">
+      <div style="position:relative">
+        <input type="password" id="resetPass2" placeholder="••••••••" autocomplete="new-password" style="padding-right:58px"
+               onkeydown="if(event.key==='Enter')doReset()">
+        <span onclick="togglePass('resetPass2',this)" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;font-weight:700;color:#C9A2AC;cursor:pointer;user-select:none">Ver</span>
+      </div>
     </div>
     <button class="btn btn-primary w-full" onclick="doReset()">Guardar contraseña</button>
     <div id="resetErr" style="color:#EF4444;font-size:12px;margin-top:10px;text-align:center;display:none"></div>
@@ -719,6 +738,14 @@ async function forgotPassword(){
 
 function showResetErr(msg){
   const el = document.getElementById('resetErr'); el.textContent = msg; el.style.display = 'block';
+}
+
+// Mostrar/ocultar contraseña
+function togglePass(id, el){
+  const i = document.getElementById(id); if(!i) return;
+  const show = i.type === 'password';
+  i.type = show ? 'text' : 'password';
+  el.textContent = show ? 'Ocultar' : 'Ver';
 }
 
 async function doReset(){
