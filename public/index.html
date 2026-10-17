@@ -2497,6 +2497,14 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
   opacity:.26;
   filter:drop-shadow(0 0 22px rgba(242,74,84,.45));
 }
+/* En telefonos la tarjeta ocupa casi todo: el logo va centrado abajo para que se vea */
+@media (max-width:600px){
+  #loginWrap::before, #resetWrap::before, #pendingWrap::before{
+    background-position:center bottom 16px;
+    background-size:min(74vw,280px);
+    opacity:.22;
+  }
+}
 #main > *{ position:relative; z-index:1; }
 .dash-fx > *{ position:relative; z-index:1; }
 .login-card{ z-index:1; }
