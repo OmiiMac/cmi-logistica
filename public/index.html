@@ -942,9 +942,14 @@ function renderDashboard(){
 
   document.getElementById('view').innerHTML = `
   <div class="greeting-bar">
-    <div style="position:relative;z-index:1">
-      <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
-      <div class="greeting-date">${fmtDateLong(state.rutaDate)} · CMI Construction Corp</div>
+    <div style="display:flex;align-items:center;gap:16px;position:relative;z-index:1">
+      <div style="background:#fff;border-radius:12px;padding:9px 13px;display:flex;align-items:center;box-shadow:0 0 18px rgba(237,59,67,.35)">
+        <img src="/cmi-logo-full.svg" alt="CMI Corporation" style="height:30px;width:auto;display:block">
+      </div>
+      <div>
+        <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
+        <div class="greeting-date">${fmtDateLong(state.rutaDate)} · CMI Construction Corp</div>
+      </div>
     </div>
     <div class="greeting-kpis">
       <div class="greeting-kpi">
@@ -979,6 +984,18 @@ function renderDashboard(){
       <div class="stat-val" style="color:#D97706">${lowStock}</div>
       <div class="stat-label">Stock Bajo</div>
     </div>
+    ${canModule('licit') ? `
+    <div class="stat-card" style="--stat-color:#0F766E">
+      <div class="stat-icon" style="background:rgba(15,118,110,.12);color:#0F766E"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13l2 2 4-4"/></svg></div>
+      <div class="stat-val" id="dashLicit" style="color:#0F766E">…</div>
+      <div class="stat-label">Licitaciones</div>
+    </div>` : ''}
+    ${canModule('mkt') ? `
+    <div class="stat-card" style="--stat-color:#BE185D">
+      <div class="stat-icon" style="background:rgba(190,24,93,.12);color:#BE185D"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg></div>
+      <div class="stat-val" id="dashMkt" style="color:#BE185D">…</div>
+      <div class="stat-label">Campañas</div>
+    </div>` : ''}
   </div>
 
   <div class="two-col">
@@ -1065,6 +1082,10 @@ function renderDashboard(){
       </div>
     </div>
   </div>`;
+
+  // Conteos de modulos (async, solo para quien tiene acceso)
+  if(canModule('licit')) sb.from('licitaciones').select('id').then(({data})=>{ const el=document.getElementById('dashLicit'); if(el) el.textContent=(data||[]).length; });
+  if(canModule('mkt'))   sb.from('campanas').select('id').then(({data})=>{ const el=document.getElementById('dashMkt'); if(el) el.textContent=(data||[]).length; });
 
   // Gráfica de barras — items por proyecto
   requestAnimationFrame(()=>{
