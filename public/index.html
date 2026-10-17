@@ -597,7 +597,7 @@ const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Ago
 
 // ── State ────────────────────────────────────────────────────
 const state = {
-  userId: null, userName: '', role: '', isAdmin: false, isSupervisor: false, isContador: false, isMercadeo: false,
+  userId: null, userName: '', role: '', isAdmin: false, isSupervisor: false, isContador: false, isMercadeo: false, isLicitaciones: false,
   view: 'dashboard', projectId: null,
   search: '', cat: 'all',
   projects: new Map(), items: new Map(), transfers: [], rutas: [],
@@ -776,12 +776,12 @@ function render(){
 function canModule(m){
   if(state.isAdmin) return true;
   if(m==='conta') return state.isContador;
-  if(m==='licit') return state.isSupervisor;
+  if(m==='licit') return state.isLicitaciones;
   if(m==='mkt')   return state.isMercadeo;
   return false;
 }
 function roleLabel(){
-  return state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':state.isContador?' (Contador)':state.isMercadeo?' (Mercadeo)':'';
+  return state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':state.isContador?' (Contador)':state.isMercadeo?' (Mercadeo)':state.isLicitaciones?' (Licitaciones)':'';
 }
 
 // ── Sidebar ───────────────────────────────────────────────────
@@ -1537,6 +1537,7 @@ async function renderUsers(){
             <option value="supervisor" ${p.role==='supervisor'?'selected':''}>Supervisor</option>
             <option value="contador"   ${p.role==='contador'?'selected':''}>Contador</option>
             <option value="mercadeo"   ${p.role==='mercadeo'?'selected':''}>Mercadeo</option>
+            <option value="licitaciones" ${p.role==='licitaciones'?'selected':''}>Licitaciones</option>
             <option value="admin"      ${p.role==='admin'?'selected':''}>Admin</option>
           </select>` : ''}
       </div>
@@ -1610,12 +1611,13 @@ async function rejectUser(id){
 }
 
 // ── Roles ─────────────────────────────────────────────────────
-const ROLE_LABEL = { engineer:'Ingeniero', supervisor:'Supervisor', contador:'Contador', mercadeo:'Mercadeo', admin:'Admin' };
+const ROLE_LABEL = { engineer:'Ingeniero', supervisor:'Supervisor', contador:'Contador', mercadeo:'Mercadeo', licitaciones:'Licitaciones', admin:'Admin' };
 const ROLE_COLOR = {
-  admin:      ['var(--c-primary-lt)','var(--c-primary)'],
-  supervisor: ['#FEF3C7','#D97706'],
-  contador:   ['#DCFCE7','#166534'],
-  mercadeo:   ['#F3E8FF','#7C3AED']
+  admin:        ['var(--c-primary-lt)','var(--c-primary)'],
+  supervisor:   ['#FEF3C7','#D97706'],
+  contador:     ['#DCFCE7','#166534'],
+  mercadeo:     ['#F3E8FF','#7C3AED'],
+  licitaciones: ['#DBEAFE','#1D4ED8']
 };
 function roleBadge(role){
   const c = ROLE_COLOR[role]; if(!c) return '';
@@ -1749,6 +1751,7 @@ sb.auth.onAuthStateChange(async (event, session) => {
     state.isSupervisor = profile?.role === 'supervisor';
     state.isContador   = profile?.role === 'contador';
     state.isMercadeo   = profile?.role === 'mercadeo';
+    state.isLicitaciones = profile?.role === 'licitaciones';
     state.userName     = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
     showApp();
     await loadAll();
@@ -1918,7 +1921,7 @@ function licBadge(e){ const c=LIC_COLOR[e]||['#eee','#555']; return `<span style
 async function renderLicitaciones(){
   if(!canModule('licit')){ nav('dashboard'); return; }
   setTopbar('Licitaciones');
-  if(state.isAdmin||state.isSupervisor) document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`;
+  if(state.isAdmin||state.isLicitaciones) document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`;
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:860px"><div id="licList"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
   const {data,error}=await sb.from('licitaciones').select('*').order('created_at',{ascending:false});
   const list=document.getElementById('licList'); if(!list) return;
@@ -1953,7 +1956,7 @@ async function saveLic(id){
 async function openLicDetail(id){
   const l=(mstate.lics||[]).find(x=>x.id===id); if(!l) return;
   const {data:docs}=await sb.from('files').select('*').eq('scope','licitacion').eq('ref_id',id);
-  const canEdit=state.isAdmin||state.isSupervisor;
+  const canEdit=state.isAdmin||state.isLicitaciones;
   const estSel=canEdit?`<div class="form-group" style="margin-top:12px"><label>Estado</label><select onchange="setLicEstado('${id}',this.value)">${Object.entries(LIC_ESTADOS).filter(([k])=>k!=='aprobada'&&k!=='rechazada').map(([k,v])=>`<option value="${k}" ${l.estado===k?'selected':''}>${v}</option>`).join('')}</select></div>`:'';
   openModal(`
     <div class="modal-head"><h2>${esc(l.titulo)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>

@@ -224,7 +224,7 @@ const SCHEMA = {
 // Qué roles pueden ver/usar cada módulo sensible. admin ve todo.
 const MODULE_ROLES = {
   conta: ['admin', 'contador'],
-  licit: ['admin', 'supervisor'],
+  licit: ['admin', 'licitaciones'],  // rol propio; el supervisor solo opera logística
   mkt:   ['admin', 'mercadeo']
 };
 const TABLE_MODULE = {
