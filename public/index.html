@@ -2423,6 +2423,44 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
 .dash-fx .cat-bar-fill{ box-shadow:0 0 10px var(--cat-color); animation:dashgrow 1s ease both; }
 @keyframes dashgrow{ from{ width:0; } }
 .dash-fx .alert-bar{ backdrop-filter:blur(4px); }
+
+/* ===== Login / reset futurista (mismo lenguaje que el dashboard) ===== */
+#loginWrap, #resetWrap, #pendingWrap{
+  background:
+    radial-gradient(900px 520px at 15% 8%, rgba(124,92,255,.30), transparent 60%),
+    radial-gradient(820px 520px at 85% 88%, rgba(0,229,255,.18), transparent 60%),
+    radial-gradient(700px 520px at 60% 45%, rgba(155,27,48,.22), transparent 60%),
+    #05060f;
+}
+#resetWrap, #pendingWrap{ position:fixed; inset:0; z-index:300; padding:16px; }
+#resetWrap:not([hidden]), #pendingWrap:not([hidden]){ display:flex; align-items:center; justify-content:center; }
+.login-card{
+  background:linear-gradient(160deg, rgba(16,18,40,.96), rgba(22,14,32,.96));
+  border:1px solid rgba(124,92,255,.5);
+  box-shadow:0 0 52px rgba(124,92,255,.35), 0 32px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.07);
+  position:relative; overflow:hidden;
+}
+.login-card::before{
+  content:''; position:absolute; inset:-80%; pointer-events:none;
+  background:conic-gradient(from 0deg, transparent, rgba(0,229,255,.14), transparent 25%, rgba(124,92,255,.16), transparent 55%);
+  animation:dashspin 12s linear infinite;
+}
+.login-card > *{ position:relative; z-index:1; }
+.brand-text{ text-shadow:0 0 14px rgba(0,229,255,.55); }
+.brand-badge{ box-shadow:0 0 18px rgba(155,27,48,.7); }
+.login-sub{ color:#9fb3ff; }
+.login-card label{ color:#8fa6e0; }
+.login-card input{ background:#10142a; border-color:rgba(124,92,255,.4); }
+.login-card input:focus{ border-color:#00E5FF; background:#0e1733; box-shadow:0 0 0 3px rgba(0,229,255,.15), 0 0 18px rgba(0,229,255,.28); }
+.login-card input:-webkit-autofill,
+.login-card input:-webkit-autofill:hover,
+.login-card input:-webkit-autofill:focus{ -webkit-box-shadow:0 0 0 1000px #10142a inset; }
+.login-card .w-full{
+  background:linear-gradient(135deg,#7C5CFF,#9B1B30 62%,#C62040);
+  box-shadow:0 0 24px rgba(124,92,255,.45); font-family:var(--font-num);
+  letter-spacing:.12em; text-transform:uppercase;
+}
+.login-card .w-full:hover{ filter:brightness(1.1); box-shadow:0 0 32px rgba(124,92,255,.6); }
 </style>
 </body>
 </html>
