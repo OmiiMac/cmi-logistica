@@ -2489,12 +2489,13 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
   background-size:min(62vw,460px); opacity:.05;
 }
 #main::before{ opacity:.04; }
-/* Login: marca de agua GRANDE y visible (primera impresion) */
+/* Login: logo como marca de agua en la esquina inferior derecha */
 #loginWrap::before, #resetWrap::before, #pendingWrap::before{
   background-image:url('/cmi-logo-light.svg');
-  background-size:min(94vw,760px);
-  opacity:.17;
-  filter:drop-shadow(0 0 34px rgba(242,74,84,.45));
+  background-position:right 26px bottom 26px;
+  background-size:min(62vw,380px);
+  opacity:.26;
+  filter:drop-shadow(0 0 22px rgba(242,74,84,.45));
 }
 #main > *{ position:relative; z-index:1; }
 .dash-fx > *{ position:relative; z-index:1; }
