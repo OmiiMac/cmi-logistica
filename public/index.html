@@ -943,7 +943,7 @@ function renderDashboard(){
   document.getElementById('view').innerHTML = `
   <div class="greeting-bar">
     <div style="display:flex;align-items:center;gap:18px;position:relative;z-index:1">
-      <img src="/cmi-logo-light.svg" alt="CMI Corporation" style="height:54px;width:auto;display:block;filter:drop-shadow(0 0 12px rgba(242,74,84,.55))">
+      <img src="/cmi-logo-light.svg" alt="CMI Constructions Corp" style="height:62px;width:auto;display:block;filter:drop-shadow(0 0 12px rgba(242,74,84,.55))">
       <div>
         <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
         <div class="greeting-date">${fmtDateLong(state.rutaDate)} · CMI Construction Corp</div>
@@ -2493,7 +2493,7 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
 #loginWrap::before, #resetWrap::before, #pendingWrap::before{
   background-image:url('/cmi-logo-light.svg');
   background-position:right 26px bottom 26px;
-  background-size:min(62vw,380px);
+  background-size:min(70vw,470px);
   opacity:.26;
   filter:drop-shadow(0 0 22px rgba(242,74,84,.45));
 }
@@ -2501,7 +2501,7 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
 @media (max-width:600px){
   #loginWrap::before, #resetWrap::before, #pendingWrap::before{
     background-position:center bottom 16px;
-    background-size:min(74vw,280px);
+    background-size:min(84vw,340px);
     opacity:.22;
   }
 }
