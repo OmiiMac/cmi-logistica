@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Orbitron:wght@500;700&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
 <style>
@@ -558,16 +557,20 @@ html{height:100%}
 <div id="toast"></div>
 
 <script>
-// ============================================================
-// CONFIG — Fill in after creating your Supabase project
-// Dashboard: supabase.com → Settings → API
-// ============================================================
-const SUPABASE_URL      = 'https://iwwqtroccnepbtrinexl.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_OvIegJHzJXSOK4aL4BV9jg_APwTuTKH';
+// ── API helper (servidor propio, reemplaza Supabase) ─────────
+let _token = null;
+function getToken(){ return _token || localStorage.getItem('cmi_token') || null; }
+function setToken(t){ _token=t; if(t) localStorage.setItem('cmi_token',t); else localStorage.removeItem('cmi_token'); }
 
-// ── Supabase client ──────────────────────────────────────────
-const { createClient } = window.supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+async function api(endpoint, body){
+  const h = {'Content-Type':'application/json'};
+  const tok = getToken();
+  if(tok) h['Authorization'] = 'Bearer '+tok;
+  try {
+    const r = await fetch(endpoint,{method:'POST',headers:h,body:JSON.stringify(body||{})});
+    return r.json();
+  } catch(e){ return {data:null,error:{message:e.message}}; }
+}
 
 // ── Constants ────────────────────────────────────────────────
 const CATS = [
@@ -629,24 +632,30 @@ async function doLogin(){
   const btn   = document.getElementById('loginBtn');
   const err   = document.getElementById('loginErr');
   err.style.display = 'none';
-  if(!email||!pass){showLoginErr('Ingresa email y contrasena');return;}
+  if(!email||!pass){showLoginErr('Ingresa email y contraseña');return;}
   btn.disabled = true;
   if(_signupMode){
     btn.textContent = 'Creando cuenta...';
-    const {error} = await sb.auth.signUp({email,password:pass});
+    const d = await api('/api/auth/signup',{email,password:pass});
     btn.disabled = false; btn.textContent = 'Crear cuenta';
-    if(error){showLoginErr(error.message);}
-    else{showLoginErr('✅ Cuenta creada. Ahora inicia sesion.');_signupMode=false;document.getElementById('loginBtn').textContent='Ingresar';}
+    if(d.error){showLoginErr(d.error.message);}
+    else{showLoginErr('✅ Cuenta creada. Espera aprobación del administrador.');_signupMode=false;document.getElementById('loginBtn').textContent='Ingresar';}
   } else {
     btn.textContent = 'Ingresando...';
-    const {error} = await sb.auth.signInWithPassword({email,password:pass});
+    const d = await api('/api/auth/login',{email,password:pass});
     btn.disabled = false; btn.textContent = 'Ingresar';
-    if(error){showLoginErr(error.message==='Invalid login credentials'?'Email o contrasena incorrectos':error.message);}
+    if(d.error){showLoginErr(d.error.message==='Invalid login credentials'?'Email o contraseña incorrectos':d.error.message);return;}
+    setToken(d.token);
+    await initApp();
   }
 }
 
 async function doLogout(){
-  await sb.auth.signOut();
+  setToken(null);
+  state.userId=null;state.userName='';state.isAdmin=false;state.isSupervisor=false;
+  state.projects.clear();state.items.clear();state.transfers=[];state.rutas=[];
+  closeSSE();
+  showLogin();
 }
 
 function showLoginErr(msg){
@@ -684,53 +693,65 @@ function showApp(){
 // ── Data fetching ─────────────────────────────────────────────
 async function loadAll(){
   const [pR,iR,tR,rR,prR] = await Promise.all([
-    sb.from('projects').select('*').order('name'),
-    sb.from('items').select('*').order('name'),
-    sb.from('transfers').select('*').order('date',{ascending:false}).limit(100),
-    sb.from('rutas').select('*').order('date').order('hora'),
-    sb.from('profiles').select('id, name')
+    api('/api/select',{table:'projects',order:[{col:'name',asc:true}]}),
+    api('/api/select',{table:'items',order:[{col:'name',asc:true}]}),
+    api('/api/select',{table:'transfers',order:[{col:'date',asc:false}],limit:100}),
+    api('/api/select',{table:'rutas',order:[{col:'date',asc:true},{col:'hora',asc:true}]}),
+    api('/api/select',{table:'profiles',columns:['id','name']})
   ]);
   state.projects.clear();
   (pR.data||[]).forEach(r=>state.projects.set(r.id,normalizeProject(r)));
   state.items.clear();
   (iR.data||[]).forEach(r=>state.items.set(r.id,normalizeItem(r)));
-  state.transfers = (tR.data||[]).map(normalizeTransfer);
-  state.rutas     = (rR.data||[]).map(normalizeRuta);
-  state.profiles  = {};
+  state.transfers=(tR.data||[]).map(normalizeTransfer);
+  state.rutas=(rR.data||[]).map(normalizeRuta);
+  state.profiles={};
   (prR.data||[]).forEach(p=>{state.profiles[p.id]=p.name||p.id.slice(0,8);});
-
-  // Ensure bodega exists (admin only)
-  if(state.isAdmin && !state.projects.has('bodega')){
-    await sb.from('projects').insert({id:'bodega',name:'PATIO (Base Central)',address:'Almacen principal',supervisor:'GABRIEL',color:'#9B1B30',status:'active'});
-    const {data} = await sb.from('projects').select('*').eq('id','bodega');
-    if(data&&data[0]) state.projects.set('bodega',normalizeProject(data[0]));
-  }
 }
 
-// ── Real-time subscriptions ───────────────────────────────────
+// ── Realtime via SSE ──────────────────────────────────────────
+let _sse = null;
 function setupRealtime(){
-  sb.channel('db-changes')
-    .on('postgres_changes',{event:'*',schema:'public',table:'projects'},(p)=>{
-      if(p.eventType==='DELETE') state.projects.delete(p.old.id);
-      else state.projects.set(p.new.id,normalizeProject(p.new));
-      render();
-    })
-    .on('postgres_changes',{event:'*',schema:'public',table:'items'},(p)=>{
-      if(p.eventType==='DELETE') state.items.delete(p.old.id);
-      else state.items.set(p.new.id,normalizeItem(p.new));
-      render();
-    })
-    .on('postgres_changes',{event:'*',schema:'public',table:'transfers'},(p)=>{
-      if(p.eventType==='INSERT') state.transfers.unshift(normalizeTransfer(p.new));
-      render();
-    })
-    .on('postgres_changes',{event:'*',schema:'public',table:'rutas'},async()=>{
-      const {data}=await sb.from('rutas').select('*').order('date').order('hora');
-      state.rutas=(data||[]).map(normalizeRuta);
-      render();
-    })
-    .subscribe();
+  const tok=getToken(); if(!tok) return;
+  closeSSE();
+  _sse = new EventSource('/api/realtime?token='+encodeURIComponent(tok));
+  _sse.onmessage = (e) => {
+    const raw=e.data; if(!raw||raw.trim().startsWith(':')) return;
+    try {
+      const p=JSON.parse(raw);
+      const {table,eventType:type}=p;
+      if(table==='projects'){
+        if(type==='DELETE') state.projects.delete(p.old.id);
+        else state.projects.set(p.new.id,normalizeProject(p.new));
+        render();
+      } else if(table==='items'){
+        if(type==='DELETE') state.items.delete(p.old.id);
+        else state.items.set(p.new.id,normalizeItem(p.new));
+        render();
+      } else if(table==='transfers'){
+        if(type==='INSERT') state.transfers.unshift(normalizeTransfer(p.new));
+        render();
+      } else if(table==='rutas'){
+        if(type==='DELETE') state.rutas=state.rutas.filter(r=>r.id!==p.old.id);
+        else if(type==='INSERT') state.rutas.push(normalizeRuta(p.new));
+        else if(type==='UPDATE'){
+          const idx=state.rutas.findIndex(r=>r.id===p.new.id);
+          if(idx>=0) state.rutas[idx]=normalizeRuta(p.new); else state.rutas.push(normalizeRuta(p.new));
+        }
+        state.rutas.sort((a,b)=>a.date.localeCompare(b.date)||(a.hora||'').localeCompare(b.hora||''));
+        render();
+      } else if(table==='messages'){
+        if(type==='INSERT'){
+          if(!state_chat.messages.find(m=>m.id===p.new.id)) state_chat.messages.push(p.new);
+          if(state.view==='chat') drawMessages();
+          else { const b=document.getElementById('chatUnread'); if(b) b.hidden=false; }
+        }
+      }
+    } catch(ex){}
+  };
+  _sse.onerror=()=>{ closeSSE(); setTimeout(setupRealtime,8000); };
 }
+function closeSSE(){ if(_sse){_sse.close();_sse=null;} }
 
 // ── Navigation ────────────────────────────────────────────────
 function nav(view, projectId){
@@ -1101,15 +1122,15 @@ async function cycleRutaStatus(id){
   const ruta = state.rutas.find(r=>r.id===id);
   if(!ruta) return;
   const next = RUTA_ST[(RUTA_ST.indexOf(ruta.status)+1)%RUTA_ST.length];
-  const {error} = await sb.from('rutas').update({status:next,updated_by:state.userId,updated_at:new Date().toISOString()}).eq('id',id);
-  if(error){toast('Error al actualizar','err');return;}
+  const d = await api('/api/update',{table:'rutas',values:{status:next,updated_by:state.userId,updated_at:new Date().toISOString()},filters:[{col:'id',val:id}]});
+  if(d.error){toast('Error al actualizar','err');return;}
   ruta.status = next;
   renderRutas();
 }
 
 async function deleteRuta(id){
   if(!confirm('Eliminar esta ruta?')) return;
-  await sb.from('rutas').delete().eq('id',id);
+  await api('/api/delete',{table:'rutas',filters:[{col:'id',val:id}]});
   state.rutas = state.rutas.filter(r=>r.id!==id);
   renderRutas();
   toast('Ruta eliminada');
@@ -1179,10 +1200,10 @@ async function deleteProject(id){
   const proj = state.projects.get(id);
   if(!proj) return;
   if(!confirm(`¿Eliminar el proyecto "${proj.name}"? Esto también eliminará todos sus artículos.`)) return;
-  const {error} = await sb.from('projects').delete().eq('id', id);
-  if(error){ showToast('Error al eliminar: '+error.message, 'err'); return; }
+  const d = await api('/api/delete',{table:'projects',filters:[{col:'id',val:id}]});
+  if(d.error){ showToast('Error al eliminar: '+d.error.message,'err'); return; }
   state.projects.delete(id);
-  closeModal(); showToast('Proyecto eliminado', 'ok');
+  closeModal(); showToast('Proyecto eliminado','ok');
   nav('dashboard');
 }
 
@@ -1196,12 +1217,12 @@ async function saveProject(id){
   if(!name){toast('Ingresa el nombre del proyecto','err');return;}
   const row = {name,supervisor:sup,address:addr,color,status,notes,updated_at:new Date().toISOString()};
   if(id){
-    const {error}=await sb.from('projects').update(row).eq('id',id);
-    if(error){toast('Error al guardar','err');return;}
+    const d=await api('/api/update',{table:'projects',values:row,filters:[{col:'id',val:id}]});
+    if(d.error){toast('Error al guardar','err');return;}
   } else {
     const pid = name.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'').slice(0,30)+'_'+Date.now().toString(36);
-    const {error}=await sb.from('projects').insert({id:pid,...row,created_at:new Date().toISOString()});
-    if(error){toast('Error al crear','err');return;}
+    const d=await api('/api/insert',{table:'projects',values:{id:pid,...row,created_at:new Date().toISOString()}});
+    if(d.error){toast('Error al crear: '+d.error.message,'err');return;}
   }
   closeModal(); toast('Proyecto guardado','ok');
 }
@@ -1259,11 +1280,11 @@ async function saveItem(id){
   if(!name){toast('Ingresa el nombre','err');return;}
   const row = {name,category:cat,unit,quantity:qty,min_stock:min,estado,notes,updated_by:state.userId,updated_at:new Date().toISOString()};
   if(id){
-    const {error}=await sb.from('items').update(row).eq('id',id);
-    if(error){toast('Error al guardar','err');return;}
+    const d=await api('/api/update',{table:'items',values:row,filters:[{col:'id',val:id}]});
+    if(d.error){toast('Error al guardar','err');return;}
   } else {
-    const {error}=await sb.from('items').insert({...row,project_id:state.projectId,created_at:new Date().toISOString()});
-    if(error){toast('Error al crear','err');return;}
+    const d=await api('/api/insert',{table:'items',values:{...row,project_id:state.projectId,created_at:new Date().toISOString()}});
+    if(d.error){toast('Error al crear','err');return;}
   }
   closeModal(); toast('Articulo guardado','ok');
 }
@@ -1285,8 +1306,8 @@ function showDeleteItem(id){
 }
 
 async function deleteItem(id){
-  const {error} = await sb.from('items').delete().eq('id',id);
-  if(error){toast('Error al eliminar','err');return;}
+  const d = await api('/api/delete',{table:'items',filters:[{col:'id',val:id}]});
+  if(d.error){toast('Error al eliminar','err');return;}
   closeModal(); toast('Articulo eliminado');
 }
 
@@ -1332,21 +1353,23 @@ async function doTransfer(){
   if(!item){toast('Selecciona un articulo','err');return;}
   if(qty>item.quantity){toast(`Solo hay ${item.quantity} ${item.unit} disponibles`,'err');return;}
   if(!destId){toast('Selecciona un destino','err');return;}
+  const now = new Date().toISOString();
 
   // Deduct from source
-  const {error:e1}=await sb.from('items').update({quantity:item.quantity-qty,updated_by:state.userId,updated_at:new Date().toISOString()}).eq('id',item.id);
-  if(e1){toast('Error al transferir','err');return;}
+  const r1=await api('/api/update',{table:'items',values:{quantity:item.quantity-qty,updated_by:state.userId,updated_at:now},filters:[{col:'id',val:item.id}]});
+  if(r1.error){toast('Error al transferir','err');return;}
 
   // Add to destination (merge if exists)
-  const {data:dest}=await sb.from('items').select('*').eq('name',item.name).eq('project_id',destId);
-  if(dest&&dest.length>0){
-    await sb.from('items').update({quantity:dest[0].quantity+qty,updated_by:state.userId,updated_at:new Date().toISOString()}).eq('id',dest[0].id);
+  const rDest=await api('/api/select',{table:'items',filters:[{col:'name',val:item.name},{col:'project_id',val:destId}],limit:1});
+  const dest=(rDest.data||[])[0];
+  if(dest){
+    await api('/api/update',{table:'items',values:{quantity:dest.quantity+qty,updated_by:state.userId,updated_at:now},filters:[{col:'id',val:dest.id}]});
   } else {
-    await sb.from('items').insert({name:item.name,category:item.category,unit:item.unit,quantity:qty,min_stock:0,estado:'OPERATIVA',project_id:destId,updated_by:state.userId,updated_at:new Date().toISOString(),created_at:new Date().toISOString()});
+    await api('/api/insert',{table:'items',values:{name:item.name,category:item.category,unit:item.unit,quantity:qty,min_stock:0,estado:'OPERATIVA',project_id:destId,updated_by:state.userId,updated_at:now,created_at:now}});
   }
 
   // Log
-  await sb.from('transfers').insert({item_name:item.name,from_project:item.projectId,to_project:destId,quantity:qty,unit:item.unit,by_user:state.userId,notes,date:new Date().toISOString()});
+  await api('/api/insert',{table:'transfers',values:{item_name:item.name,from_project:item.projectId,to_project:destId,quantity:qty,unit:item.unit,by_user:state.userId,notes,date:now}});
 
   closeModal(); toast('Transferencia completada','ok');
 }
@@ -1396,11 +1419,11 @@ async function saveRuta(id){
   if(!date||!desc){showToast('Completa fecha y descripcion','err');return;}
   const row = {date,hora,origen,destino,conductor,descripcion:desc,status,updated_by:state.userId,updated_at:new Date().toISOString()};
   if(id){
-    const {error}=await sb.from('rutas').update(row).eq('id',id);
-    if(error){showToast('Error al guardar','err');return;}
+    const d=await api('/api/update',{table:'rutas',values:row,filters:[{col:'id',val:id}]});
+    if(d.error){showToast('Error al guardar','err');return;}
   } else {
-    const {error}=await sb.from('rutas').insert({...row,created_at:new Date().toISOString()});
-    if(error){showToast('Error al crear','err');return;}
+    const d=await api('/api/insert',{table:'rutas',values:{...row,created_at:new Date().toISOString()}});
+    if(d.error){showToast('Error al crear','err');return;}
   }
   closeModal(); showToast('Ruta guardada','ok');
   if(email){
@@ -1469,7 +1492,8 @@ async function renderUsers(){
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-sm btn-primary" onclick="sendInventoryReport()">📧 Enviar Reporte</button>`;
   document.getElementById('view').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;padding:40px"><div class="nodata">Cargando usuarios...</div></div>`;
-  const {data:profiles} = await sb.from('profiles').select('*').order('created_at',{ascending:false});
+  const rProf = await api('/api/select',{table:'profiles',order:[{col:'created_at',asc:false}]});
+  const profiles = rProf.data || [];
   const all = profiles || [];
   const pending  = all.filter(p=>p.status==='pending');
   const active   = all.filter(p=>p.status==='active');
@@ -1553,14 +1577,14 @@ async function sendInventoryReport(){
 }
 
 async function approveUser(id){
-  const {error} = await sb.from('profiles').update({status:'active'}).eq('id',id);
-  if(error){showToast('Error al aprobar: '+error.message,'err');}
+  const d = await api('/api/update',{table:'profiles',values:{status:'active'},filters:[{col:'id',val:id}]});
+  if(d.error){showToast('Error al aprobar: '+d.error.message,'err');}
   else{showToast('Usuario aprobado','ok'); renderUsers();}
 }
 
 async function rejectUser(id){
-  const {error} = await sb.from('profiles').update({status:'rejected'}).eq('id',id);
-  if(error){showToast('Error al rechazar: '+error.message,'err');}
+  const d = await api('/api/update',{table:'profiles',values:{status:'rejected'},filters:[{col:'id',val:id}]});
+  if(d.error){showToast('Error al rechazar: '+d.error.message,'err');}
   else{showToast('Usuario rechazado','warn'); renderUsers();}
 }
 
@@ -1569,9 +1593,9 @@ const ROLE_CYCLE = { engineer:'supervisor', supervisor:'admin', admin:'engineer'
 const ROLE_LABEL = { engineer:'Ingeniero', supervisor:'Supervisor', admin:'Admin' };
 async function toggleRole(id, currentRole){
   const newRole = ROLE_CYCLE[currentRole] || 'engineer';
-  const {error} = await sb.from('profiles').update({role: newRole}).eq('id', id);
-  if(error) showToast('Error al cambiar rol: '+error.message, 'err');
-  else { showToast(`Rol cambiado a ${ROLE_LABEL[newRole]}`, 'ok'); renderUsers(); }
+  const d = await api('/api/update',{table:'profiles',values:{role:newRole},filters:[{col:'id',val:id}]});
+  if(d.error) showToast('Error al cambiar rol: '+d.error.message,'err');
+  else { showToast(`Rol cambiado a ${ROLE_LABEL[newRole]}`,'ok'); renderUsers(); }
 }
 
 // ── Profile modal ─────────────────────────────────────────────
@@ -1594,8 +1618,8 @@ function openProfileModal(){
 async function saveProfile(){
   const name = document.getElementById('profileName').value.trim();
   if(!name){ showToast('Ingresa un nombre','err'); return; }
-  const {error} = await sb.from('profiles').update({name}).eq('id', state.userId);
-  if(error){ showToast('Error al guardar','err'); return; }
+  const d = await api('/api/update',{table:'profiles',values:{name},filters:[{col:'id',val:state.userId}]});
+  if(d.error){ showToast('Error al guardar','err'); return; }
   state.userName = name;
   document.getElementById('sbUser').textContent = name + (state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':'');
   closeModal(); showToast('Nombre actualizado','ok');
@@ -1623,8 +1647,8 @@ function renderChat(){
 }
 
 async function loadChatMessages(){
-  const {data} = await sb.from('messages').select('*').order('created_at', {ascending:true}).limit(100);
-  state_chat.messages = data || [];
+  const d = await api('/api/select',{table:'messages',filters:[{col:'room',val:'general'}],order:[{col:'created_at',asc:true}],limit:100});
+  state_chat.messages = d.data || [];
   state_chat.loaded = true;
   drawMessages();
 }
@@ -1665,52 +1689,38 @@ async function sendChatMessage(){
   const content = input.value.trim();
   if(!content) return;
   input.value = '';
-  const {error} = await sb.from('messages').insert({user_id: state.userId, content});
-  if(error) showToast('Error al enviar','err');
-}
-
-function setupChatRealtime(){
-  sb.channel('chat-messages')
-    .on('postgres_changes', {event:'INSERT', schema:'public', table:'messages'}, (p) => {
-      state_chat.messages.push(p.new);
-      if(state.view === 'chat'){
-        drawMessages();
-      } else {
-        const badge = document.getElementById('chatUnread');
-        if(badge) badge.hidden = false;
-      }
-    })
-    .subscribe();
+  const d = await api('/api/insert',{table:'messages',values:{content,room:'general'}});
+  if(d.error) showToast('Error al enviar','err');
 }
 
 // ── App initialization ────────────────────────────────────────
-sb.auth.onAuthStateChange(async (event, session) => {
-  if(event==='SIGNED_IN' && session){
-    state.userId = session.user.id;
-    const {data:profile} = await sb.from('profiles').select('name,role,status').eq('id',session.user.id).single();
-    const status = profile?.status || 'active';
-    if(status === 'pending'){ showPending(false); return; }
-    if(status === 'rejected'){ showPending(true); await sb.auth.signOut(); return; }
-    state.isAdmin      = profile?.role === 'admin';
-    state.isSupervisor = profile?.role === 'supervisor';
-    state.userName     = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
-    showApp();
-    await loadAll();
-    setupRealtime();
-    setupChatRealtime();
-    render();
-  } else if(event==='SIGNED_OUT'){
-    state.userId=null; state.userName=''; state.isAdmin=false;
-    state.projects.clear(); state.items.clear(); state.transfers=[]; state.rutas=[];
-    showLogin();
-  }
-});
+async function initApp(){
+  const tok = getToken();
+  if(!tok){ showLogin(); return; }
+  const me = await api('/api/auth/me',{});
+  if(me.error){ setToken(null); showLogin(); return; }
 
-// Check if Supabase is configured
-if(SUPABASE_URL.includes('YOUR_PROJECT')){
-  document.getElementById('loginErr').style.display='block';
-  document.getElementById('loginErr').textContent='⚠ Configura SUPABASE_URL y SUPABASE_ANON_KEY en index.html';
+  const prR = await api('/api/select',{table:'profiles',columns:['name','role','status'],filters:[{col:'id',val:me.user.id}],single:true});
+  const profile = prR.data;
+  const status = profile?.status || 'pending';
+  if(status==='pending'){ showPending(false); return; }
+  if(status==='rejected'){ showPending(true); setToken(null); return; }
+
+  state.userId      = me.user.id;
+  state.isAdmin     = profile?.role === 'admin';
+  state.isSupervisor= profile?.role === 'supervisor';
+  state.userName    = profile?.name || me.user.email?.split('@')[0] || 'Usuario';
+
+  showApp();
+  await loadAll();
+  setupRealtime();
+  render();
 }
+
+// Alias por compatibilidad interna
+const showToast = toast;
+
+initApp();
 </script>
 </body>
 </html>
