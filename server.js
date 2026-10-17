@@ -10,6 +10,12 @@ const multer = require('multer');
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
+// Remitente de los correos. Por defecto usa el dominio de prueba de Resend
+// (solo entrega al dueño de la cuenta). Cuando verifiques un dominio propio
+// en Resend, basta con definir MAIL_FROM en Railway, sin tocar el codigo.
+// Ej: MAIL_FROM="ObraControl CMI <no-reply@cmipanama.com>"
+const MAIL_FROM = process.env.MAIL_FROM || 'ObraControl CMI <onboarding@resend.dev>';
+
 // ============================================================
 // BASE DE DATOS (SQLite — archivo autónomo)
 // ============================================================
@@ -549,7 +555,7 @@ app.post('/api/auth/forgot', async (req, res) => {
         await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: 'ObraControl CMI <onboarding@resend.dev>', to: [u.email], subject: 'Recuperar contraseña — ObraControl CMI', html })
+          body: JSON.stringify({ from: MAIL_FROM, to: [u.email], subject: 'Recuperar contraseña — ObraControl CMI', html })
         });
       } catch (e) { /* el correo puede fallar; no revelamos nada */ }
     }
@@ -988,7 +994,7 @@ app.post('/api/send-ruta', async (req, res) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'ObraControl CMI <onboarding@resend.dev>',
+        from: MAIL_FROM,
         to: [to],
         subject: `🚛 Ruta asignada: ${descripcion}`,
         html
@@ -1051,7 +1057,7 @@ app.post('/api/send-report', async (req, res) => {
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${RESEND_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'ObraControl CMI <onboarding@resend.dev>', to: [to], subject: `📊 Reporte de Inventario CMI — ${fecha}`, html })
+      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject: `📊 Reporte de Inventario CMI — ${fecha}`, html })
     });
     const data = await resp.json();
     if (!resp.ok) return res.status(400).json(data);
