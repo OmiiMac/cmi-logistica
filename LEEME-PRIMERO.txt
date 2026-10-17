@@ -1,0 +1,24 @@
+===========================================================
+  ObraControl CMI  —  REGLA DE ORO PARA NO ROMPER NADA
+===========================================================
+
+El proyecto se abre en mas de una PC. Para que NO se pisen las
+versiones (fue lo que paso cuando la app quedo tildada), segui
+siempre este orden:
+
+  1) ANTES de empezar a trabajar en cualquier PC:
+     -> Doble clic en  ACTUALIZAR.bat
+
+  2) Cuando terminaste y queres guardar/subir:
+     -> Doble clic en  SUBIR-CAMBIOS.bat
+
+-----------------------------------------------------------
+Proteccion automatica incluida:
+Si intentas subir y GitHub ya tiene algo mas nuevo, el sistema
+DETIENE el envio y te avisa "PUSH DETENIDO". En ese caso hace
+doble clic en ACTUALIZAR.bat y volve a subir. Asi nunca se pisa
+el trabajo de la otra computadora.
+
+Nota: en cada PC nueva, la primera vez corre ACTUALIZAR.bat una
+vez; eso deja activada la proteccion en esa maquina.
+===========================================================

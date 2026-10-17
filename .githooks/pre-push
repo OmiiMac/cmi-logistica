@@ -1,0 +1,25 @@
+#!/bin/sh
+# Guardian anti-desfase: si GitHub tiene commits que esta PC no tiene,
+# DETIENE el push para no pisar el trabajo de la otra computadora.
+git fetch origin main --quiet 2>/dev/null
+
+LOCAL=$(git rev-parse HEAD 2>/dev/null)
+REMOTE=$(git rev-parse origin/main 2>/dev/null)
+BASE=$(git merge-base HEAD origin/main 2>/dev/null)
+
+# Igual que el remoto, o el remoto es ancestro (esta PC va adelante): OK
+[ "$LOCAL" = "$REMOTE" ] && exit 0
+[ "$REMOTE" = "$BASE" ] && exit 0
+
+echo ""
+echo "=================================================================="
+echo "  PUSH DETENIDO"
+echo "  GitHub tiene cambios mas nuevos que los de esta PC."
+echo "  Si subis ahora, podrias romper o pisar el trabajo del otro lado."
+echo ""
+echo "  QUE HACER:"
+echo "   1) Doble clic en  ACTUALIZAR.bat"
+echo "   2) Volve a intentar subir"
+echo "=================================================================="
+echo ""
+exit 1
