@@ -661,7 +661,7 @@ function normalizeProject(r){
 function normalizeItem(r){
   return {id:r.id,name:r.name,category:r.category,unit:r.unit||'unidades',
           quantity:r.quantity||0,minStock:r.min_stock||0,estado:r.estado||'OPERATIVA',
-          notes:r.notes||'',projectId:r.project_id,updatedBy:r.updated_by||null,
+          notes:r.notes||'',photoId:r.photo_id||null,projectId:r.project_id,updatedBy:r.updated_by||null,
           updatedAt:r.updated_at};
 }
 function normalizeTransfer(r){
@@ -1155,7 +1155,7 @@ function renderInventario(){
             ? `<tr><td colspan="6"><div class="empty-state">Sin artículos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
             : items.map(i=>`
               <tr onclick="nav('project','${i.projectId}')" style="cursor:pointer">
-                <td><b style="font-size:13px">${esc(i.name)}</b></td>
+                <td><div style="display:flex;align-items:center;gap:9px">${i.photoId?`<img src="${fileUrl(i.photoId)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(i.name)}</b></div></td>
                 <td style="font-size:12px;color:var(--c-muted)">${esc(projName(i.projectId))}</td>
                 <td>${catChip(i.category)}</td>
                 <td>${i.quantity}${i.minStock>0&&i.quantity<=i.minStock?' <span style="color:#D97706;font-size:11px">⚠</span>':''}</td>
@@ -1211,7 +1211,7 @@ function renderProject(){
           ?`<tr><td colspan="7"><div class="empty-state">Sin articulos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
           :items.map(item=>`
           <tr>
-            <td><b style="font-size:13px">${esc(item.name)}</b></td>
+            <td><div style="display:flex;align-items:center;gap:9px">${item.photoId?`<img src="${fileUrl(item.photoId)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(item.name)}</b></div></td>
             <td>${catChip(item.category)}</td>
             <td><span class="qty-num ${item.minStock>0&&item.quantity<=item.minStock?'qty-low':''}">${item.quantity}</span></td>
             <td style="color:var(--c-muted);font-size:12px">${esc(item.unit)}</td>
@@ -1425,6 +1425,15 @@ function showItemModal(id){
   <div class="modal-head"><h2>${isNew?'Nuevo Articulo':'Editar Articulo'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-group"><label>Nombre</label><input id="iName" value="${esc(item?.name||'')}" placeholder="Nombre del articulo"></div>
+    <div class="form-group">
+      <label>Foto del artículo</label>
+      <div style="display:flex;align-items:center;gap:12px">
+        ${item?.photoId
+          ? `<img src="${fileUrl(item.photoId)}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border)">`
+          : `<div style="width:56px;height:56px;border-radius:8px;border:1px dashed var(--c-border);display:flex;align-items:center;justify-content:center;color:var(--c-muted);font-size:10px;text-align:center">sin<br>foto</div>`}
+        <input type="file" id="iPhoto" accept="image/*" capture="environment" style="flex:1">
+      </div>
+    </div>
     <div class="form-row">
       <div class="form-group"><label>Categoria</label>
         <select id="iCat">${CATS.map(c=>`<option value="${c.id}" ${item?.category===c.id?'selected':''}>${c.label}</option>`).join('')}</select>
@@ -1469,12 +1478,21 @@ async function saveItem(id){
   const notes  = document.getElementById('iNotes').value.trim();
   if(!name){toast('Ingresa el nombre','err');return;}
   const row = {name,category:cat,unit,quantity:qty,min_stock:min,estado,notes,updated_by:state.userId,updated_at:new Date().toISOString()};
+  const photoInput = document.getElementById('iPhoto');
+  const photoFile = photoInput && photoInput.files && photoInput.files[0];
+  let itemId = id;
   if(id){
     const {error}=await sb.from('items').update(row).eq('id',id);
     if(error){toast('Error al guardar','err');return;}
   } else {
-    const {error}=await sb.from('items').insert({...row,project_id:state.projectId,created_at:new Date().toISOString()});
+    const {data,error}=await sb.from('items').insert({...row,project_id:state.projectId,created_at:new Date().toISOString()});
     if(error){toast('Error al crear','err');return;}
+    itemId = data && data[0] && data[0].id;
+  }
+  if(photoFile && itemId){
+    const up = await apiUpload('item', itemId, photoFile);
+    if(up.error){ toast('Articulo guardado (la foto fallo)','err'); }
+    else { await sb.from('items').update({photo_id: up.data.id}).eq('id', itemId); }
   }
   closeModal(); toast('Articulo guardado','ok');
 }

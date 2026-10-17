@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS items (
   min_stock  INTEGER DEFAULT 0,
   estado     TEXT DEFAULT 'OPERATIVA',
   notes      TEXT,
+  photo_id   TEXT,
   project_id TEXT,
   updated_by TEXT,
   updated_at TEXT,
@@ -224,6 +225,7 @@ function ensureColumn(table, col, decl) {
 ensureColumn('messages', 'project_id', 'TEXT');
 ensureColumn('messages', 'room', 'TEXT');
 ensureColumn('messages', 'file_id', 'TEXT');
+ensureColumn('items', 'photo_id', 'TEXT');
 // Backfill idempotente: mensajes previos quedan en su sala correcta.
 db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
 db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
@@ -232,7 +234,7 @@ db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
 const SCHEMA = {
   profiles:  ['id', 'email', 'name', 'role', 'status', 'created_at', 'updated_at'],
   projects:  ['id', 'name', 'address', 'supervisor', 'engineer_id', 'color', 'status', 'notes', 'created_at', 'updated_at'],
-  items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'project_id', 'updated_by', 'updated_at', 'created_at'],
+  items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
   messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'file_id', 'created_at'],
