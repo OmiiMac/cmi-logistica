@@ -872,7 +872,7 @@ function setupRealtime(){
             const b=document.getElementById('chatUnread'); if(b) b.hidden=false;
           }
         }
-      } else if(['asientos','cuentas'].includes(table)){
+      } else if(['asientos','cuentas','compromisos'].includes(table)){
         modRefresh('contabilidad');
       } else if(table==='licitaciones'){
         modRefresh('licitaciones');
@@ -2425,7 +2425,7 @@ function money(n){ n=Number(n||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleS
 function modRefresh(view){ if(state.view!==view) return; if(!document.getElementById('modalWrap').hidden) return; render(); }
 function proyectoOptions(sel){ return [...state.projects.values()].map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join(''); }
 
-const mstate = { cuentas:[], contaTab:'panel', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'campanas' };
+const mstate = { cuentas:[], compromisos:[], contaTab:'panel', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'campanas' };
 const CHART_PALETTE = ['#9B1B30','#1D4ED8','#D97706','#166534','#7C3AED','#0F766E','#BE185D','#C8960C','#4338CA','#DC2626'];
 let _contaCharts = [];
 function destroyContaCharts(){ _contaCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _contaCharts=[]; }
@@ -2438,7 +2438,7 @@ async function renderContabilidad(){
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('contabilidad','contabilidad')">💬 Chat</button><button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
   document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:900px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      ${[['panel','📊 Panel'],['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
+      ${[['panel','📊 Panel'],['compromisos','📅 Pendientes y compromisos'],['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
     </div>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
       <div><label style="font-size:11px;color:var(--c-muted);display:block">Desde</label><input type="date" value="${mstate.contaDesde}" onchange="mstate.contaDesde=this.value;renderContabilidad()"></div>
@@ -2448,6 +2448,7 @@ async function renderContabilidad(){
   </div>`;
   if(!mstate.cuentas.length){ const {data}=await sb.from('cuentas').select('*').order('codigo'); mstate.cuentas=data||[]; }
   if(mstate.contaTab==='panel'){ renderContaPanel(); return; }
+  if(mstate.contaTab==='compromisos'){ renderContaCompromisos(); return; }
   if(mstate.contaTab==='mayor'){ renderContaMayor(); return; }
   const {data:saldos,error}=await apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta});
   const body=document.getElementById('contaBody'); if(!body) return;
@@ -2482,6 +2483,96 @@ async function renderContaPanel(){
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Activo · Pasivo · Patrimonio</h3><canvas id="chAPP" height="190"></canvas></div>
     </div>`;
   drawContaCharts(s,mensual,{activo,pasivo,patr});
+}
+// ── Pendientes y compromisos mensuales ───────────────────────
+async function renderContaCompromisos(){
+  const body=document.getElementById('contaBody'); if(!body) return;
+  const {data,error}=await sb.from('compromisos').select('*').order('vencimiento');
+  if(error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(error.message)}</div>`; return; }
+  const all=data||[]; mstate.compromisos=all;
+  const pend=all.filter(c=>c.estado!=='pagado');
+  const mensuales=all.filter(c=>c.tipo==='mensual');
+  const totPend=pend.reduce((a,c)=>a+(Number(c.monto)||0),0);
+  const totMes=mensuales.reduce((a,c)=>a+(Number(c.monto)||0),0);
+  const totMesPend=mensuales.filter(c=>c.estado!=='pagado').reduce((a,c)=>a+(Number(c.monto)||0),0);
+  const row=c=>{
+    const pagado=c.estado==='pagado';
+    return `<tr style="${pagado?'opacity:.5':''}">
+      <td><b style="font-size:13px">${esc(c.concepto)}</b>${c.notas?`<div style="font-size:11px;color:var(--c-muted)">${esc(c.notas)}</div>`:''}</td>
+      <td><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${c.tipo==='mensual'?'rgba(29,78,216,.2)':'rgba(217,119,6,.2)'};color:${c.tipo==='mensual'?'#60A5FA':'#F59E0B'}">${c.tipo==='mensual'?'MENSUAL':'PENDIENTE'}</span></td>
+      <td style="font-size:12px;color:var(--c-muted)">${esc(c.categoria||'')}${c.proyecto_id?`<div>${esc(projName(c.proyecto_id))}</div>`:''}</td>
+      <td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">${money(c.monto)}</td>
+      <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(c.vencimiento||'—')}</td>
+      <td><span style="font-size:11px;font-weight:700;color:${pagado?'var(--c-ok)':'var(--c-warn)'}">${pagado?'Pagado':'Pendiente'}</span></td>
+      <td style="white-space:nowrap;text-align:right">
+        <button class="act-btn" title="${pagado?'Marcar pendiente':'Marcar pagado'}" onclick="toggleCompromiso('${c.id}')">${pagado?'↩':'✓'}</button>
+        <button class="act-btn" title="Editar" onclick="showCompromisoModal('${c.id}')">✎</button>
+        <button class="act-btn del" title="Eliminar" onclick="delCompromiso('${c.id}')">🗑</button>
+      </td>
+    </tr>`;
+  };
+  body.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Total pendiente',money(totPend),'#F59E0B','rgba(217,119,6,.14)')}
+      ${kpiTile('Compromisos mensuales',money(totMes),'#60A5FA','rgba(29,78,216,.14)')}
+      ${kpiTile('Mensual sin pagar',money(totMesPend),'#F0556A','rgba(220,38,38,.14)')}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+      <h3 style="font-size:13px">Pendientes y compromisos mensuales</h3>
+      <button class="btn btn-sm btn-primary" onclick="showCompromisoModal()">+ Agregar</button>
+    </div>
+    <div class="item-table">
+      <table>
+        <thead><tr><th>Concepto</th><th>Tipo</th><th>Categoría / Proyecto</th><th style="text-align:right">Monto</th><th>Vence</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${all.length?all.map(row).join(''):`<tr><td colspan="7"><div class="empty-state">Sin pendientes ni compromisos. Agregá el primero con "+ Agregar".</div></td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+function showCompromisoModal(id){
+  const c = id ? (mstate.compromisos||[]).find(x=>x.id===id) : null;
+  openModal(`
+  <div class="modal-head"><h2>${c?'Editar':'Nuevo'} pendiente / compromiso</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Concepto</label><input id="cmpConcepto" value="${esc(c?.concepto||'')}" placeholder="Ej: Alquiler bodega, Pago proveedor X…"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Tipo</label><select id="cmpTipo"><option value="pendiente" ${c?.tipo!=='mensual'?'selected':''}>Pendiente (una vez)</option><option value="mensual" ${c?.tipo==='mensual'?'selected':''}>Compromiso mensual</option></select></div>
+      <div class="form-group"><label>Monto</label><input id="cmpMonto" type="number" min="0" step="0.01" value="${c&&c.monto!=null?c.monto:''}" placeholder="0.00"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Categoría</label><input id="cmpCat" value="${esc(c?.categoria||'')}" placeholder="Servicios, Nómina, Proveedores…"></div>
+      <div class="form-group"><label>Vence</label><input id="cmpVence" type="date" value="${esc(c?.vencimiento||'')}"></div>
+    </div>
+    <div class="form-group"><label>Proyecto (opcional)</label><select id="cmpProy"><option value="">— Ninguno —</option>${proyectoOptions(c?.proyecto_id)}</select></div>
+    <div class="form-group"><label>Estado</label><select id="cmpEstado"><option value="pendiente" ${c?.estado!=='pagado'?'selected':''}>Pendiente</option><option value="pagado" ${c?.estado==='pagado'?'selected':''}>Pagado</option></select></div>
+    <div class="form-group"><label>Notas</label><textarea id="cmpNotas" rows="2">${esc(c?.notas||'')}</textarea></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCompromiso(${c?`'${c.id}'`:'null'})">Guardar</button></div>`);
+}
+async function saveCompromiso(id){
+  const g=i=>{const e=document.getElementById(i);return e?e.value.trim():'';};
+  const concepto=g('cmpConcepto'); if(!concepto){ showToast('Poné un concepto','err'); return; }
+  const row={ concepto, tipo:g('cmpTipo')||'pendiente', monto:parseFloat(document.getElementById('cmpMonto').value)||0,
+    categoria:g('cmpCat'), proyecto_id:(document.getElementById('cmpProy').value||null), vencimiento:g('cmpVence'),
+    estado:g('cmpEstado')||'pendiente', notas:g('cmpNotas') };
+  const now=new Date().toISOString();
+  let error;
+  if(id){ ({error}=await sb.from('compromisos').update({...row,updated_at:now}).eq('id',id)); }
+  else { ({error}=await sb.from('compromisos').insert({...row,created_at:now,updated_at:now})); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Guardado','ok'); renderContaCompromisos();
+}
+async function toggleCompromiso(id){
+  const c=(mstate.compromisos||[]).find(x=>x.id===id); if(!c) return;
+  const nuevo=c.estado==='pagado'?'pendiente':'pagado';
+  const {error}=await sb.from('compromisos').update({estado:nuevo,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){ showToast(error.message,'err'); return; }
+  renderContaCompromisos();
+}
+async function delCompromiso(id){
+  if(!confirm('¿Eliminar este registro?')) return;
+  const {error}=await sb.from('compromisos').delete().eq('id',id);
+  if(error){ showToast(error.message,'err'); return; }
+  showToast('Eliminado','ok'); renderContaCompromisos();
 }
 function drawContaCharts(s,mensual,tot){
   destroyContaCharts();

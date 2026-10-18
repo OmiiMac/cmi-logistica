@@ -236,6 +236,22 @@ CREATE TABLE IF NOT EXISTS equipo_movs (
   updated_at      TEXT
 );
 
+-- Pendientes y compromisos mensuales (cuentas por pagar / gastos fijos)
+CREATE TABLE IF NOT EXISTS compromisos (
+  id          TEXT PRIMARY KEY,
+  concepto    TEXT NOT NULL,
+  tipo        TEXT DEFAULT 'pendiente',   -- pendiente | mensual
+  monto       REAL DEFAULT 0,
+  categoria   TEXT,
+  proyecto_id TEXT,
+  vencimiento TEXT,                        -- fecha (YYYY-MM-DD) o dia del mes
+  estado      TEXT DEFAULT 'pendiente',    -- pendiente | pagado
+  notas       TEXT,
+  created_by  TEXT,
+  created_at  TEXT,
+  updated_at  TEXT
+);
+
 -- Tokens de recuperación de contraseña (autoservicio por email)
 CREATE TABLE IF NOT EXISTS password_resets (
   token   TEXT PRIMARY KEY,
@@ -275,7 +291,8 @@ const SCHEMA = {
   licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'moneda', 'estado', 'responsable', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'created_by', 'created_at', 'updated_at'],
   publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'created_by', 'created_at', 'updated_at'],
-  mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'created_by', 'created_at', 'updated_at']
+  mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'created_by', 'created_at', 'updated_at'],
+  compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
@@ -286,7 +303,7 @@ const MODULE_ROLES = {
   mkt:   ['admin', 'mercadeo']
 };
 const TABLE_MODULE = {
-  cuentas: 'conta', asientos: 'conta', movimientos: 'conta',
+  cuentas: 'conta', asientos: 'conta', movimientos: 'conta', compromisos: 'conta',
   licitaciones: 'licit',
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt'
 };
@@ -698,6 +715,7 @@ function canWrite(table, op, user, values, filters) {
     }
     // ── Contabilidad ──
     case 'cuentas':
+    case 'compromisos':
       return roleCan('conta', user);
     case 'asientos':
     case 'movimientos':
