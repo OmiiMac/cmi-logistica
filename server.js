@@ -634,6 +634,23 @@ app.post('/api/admin/set-password', (req, res) => {
   res.json({ data: { id: prof.id, email }, error: null });
 });
 
+// Admin borra TODAS las demás cuentas (login + perfil), conservando SOLO la suya.
+// Los demás deberán registrarse de nuevo y quedarán "pending" para que el admin
+// los apruebe. No toca proyectos, inventario ni rutas: solo usuarios.
+app.post('/api/admin/reset-others', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Solo admin' } });
+  let deleted = 0;
+  tx(() => {
+    deleted = db.prepare('SELECT COUNT(*) AS c FROM profiles WHERE id != ?').get(u.id).c;
+    db.prepare('DELETE FROM auth_users WHERE id != ?').run(u.id);
+    db.prepare('DELETE FROM profiles WHERE id != ?').run(u.id);
+    db.prepare('DELETE FROM password_resets WHERE user_id != ?').run(u.id);
+  });
+  res.json({ data: { deleted, kept: u.id }, error: null });
+});
+
 // ============================================================
 // PERMISOS DE ESCRITURA (equivalente a las políticas RLS)
 // ============================================================

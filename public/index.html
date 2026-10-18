@@ -2119,13 +2119,30 @@ async function renderUsers(){
       ${active.length===0?'<div class="nodata" style="padding:20px">Sin usuarios activos</div>':active.map(p=>userRow(p,false)).join('')}
     </div>
     ${rejected.length>0?`
-    <div class="section-card">
+    <div class="section-card" style="margin-bottom:20px">
       <div class="section-head">
         <h3><span class="section-head-bar"></span>Rechazados</h3>
       </div>
       ${rejected.map(p=>userRow(p,false)).join('')}
     </div>`:''}
+    <div class="section-card" style="border-color:var(--c-err)">
+      <div class="section-head"><h3><span class="section-head-bar" style="background:var(--c-err)"></span>Zona peligrosa</h3></div>
+      <div style="padding:14px 16px">
+        <div style="font-size:13px;color:var(--c-text);margin-bottom:4px"><b>Reiniciar usuarios</b></div>
+        <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Borra <b>todas las demás cuentas</b> (tu cuenta se mantiene). Los demás deberán registrarse de nuevo y vos los aprobás acá. No afecta proyectos, inventario ni rutas. <b>No se puede deshacer.</b></div>
+        <button class="btn btn-danger" onclick="resetOtherUsers()">Borrar los demás usuarios</button>
+      </div>
+    </div>
   </div>`;
+}
+
+async function resetOtherUsers(){
+  if(!confirm('¿Borrar TODAS las demás cuentas? Tu cuenta de admin se mantiene.\n\nLos demás tendrán que registrarse de nuevo y vos los aprobás desde este panel.\n\nEsta acción NO se puede deshacer.')) return;
+  if(!confirm('Última confirmación: se eliminan ahora todas las otras cuentas.')) return;
+  const {data,error}=await apiPost('/api/admin/reset-others',{});
+  if(error){ showToast(error.message,'err'); return; }
+  showToast('Listo: '+((data&&data.deleted)||0)+' cuenta(s) eliminadas. La tuya sigue activa.','ok');
+  renderUsers();
 }
 
 async function sendInventoryReport(){
