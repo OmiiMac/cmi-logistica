@@ -2462,12 +2462,14 @@ function money(n){ n=Number(n||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleS
 function modRefresh(view){ if(state.view!==view) return; if(!document.getElementById('modalWrap').hidden) return; render(); }
 function proyectoOptions(sel){ return [...state.projects.values()].map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join(''); }
 
-const mstate = { cuentas:[], compromisos:[], contaTab:'panel', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'panel', mktMonth:todayStr().slice(0,7) };
+const mstate = { cuentas:[], compromisos:[], contaTab:'panel', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'panel', mktMonth:todayStr().slice(0,7), licTab:'panel', licMonth:todayStr().slice(0,7) };
 const CHART_PALETTE = ['#9B1B30','#1D4ED8','#D97706','#166534','#7C3AED','#0F766E','#BE185D','#C8960C','#4338CA','#DC2626'];
 let _contaCharts = [];
 function destroyContaCharts(){ _contaCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _contaCharts=[]; }
 let _mktCharts = [];
 function destroyMktCharts(){ _mktCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _mktCharts=[]; }
+let _licCharts = [];
+function destroyLicCharts(){ _licCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _licCharts=[]; }
 function tuneChartsDark(){ if(typeof Chart!=='undefined'){ Chart.defaults.color='#C9A8AE'; Chart.defaults.borderColor='rgba(198,32,64,.15)'; } }
 function chartOpts(extra){ return Object.assign({responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}}}, extra||{}); }
 
@@ -2733,18 +2735,121 @@ function licBadge(e){ const c=LIC_COLOR[e]||['#eee','#555']; return `<span style
 async function renderLicitaciones(){
   if(!canModule('licit')){ nav('dashboard'); return; }
   setTopbar('Licitaciones');
-  document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-ghost" onclick="goChat('licitaciones','licitaciones')">💬 Chat</button>`+((state.isAdmin||state.isLicitaciones)?`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`:'');
-  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:860px"><div id="licList"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
-  const {data,error}=await sb.from('licitaciones').select('*').order('created_at',{ascending:false});
-  const list=document.getElementById('licList'); if(!list) return;
-  if(error){ list.innerHTML=`<div class="nodata" style="padding:20px">${esc(error.message)}</div>`; return; }
+  const tab=mstate.licTab||'panel';
+  const canNew=state.isAdmin||state.isLicitaciones;
+  const addBtn=(tab==='lista'&&canNew)?`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`:'';
+  document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-ghost" onclick="goChat('licitaciones','licitaciones')">💬 Chat</button>`+addBtn;
+  const tabs=[['panel','📊 Panel'],['calendario','📅 Calendario'],['lista','Licitaciones'],['biblioteca','🗂️ Biblioteca']];
+  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1000px">
+    <div class="filter-chips" style="margin-bottom:16px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" onclick="mstate.licTab='${k}';renderLicitaciones()">${l}</span>`).join('')}</div>
+    <div id="licBody"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
+  const {data}=await sb.from('licitaciones').select('*').order('created_at',{ascending:false});
   mstate.lics=data||[];
+  if(tab==='panel') renderLicPanel();
+  else if(tab==='calendario') renderLicCalendario();
+  else if(tab==='biblioteca') renderLicBiblioteca();
+  else renderLicList();
+}
+function renderLicList(){
+  const list=document.getElementById('licBody'); if(!list) return;
+  const data=mstate.lics||[];
   if(!data.length){ list.innerHTML='<div class="nodata" style="padding:30px">Sin licitaciones aún.</div>'; return; }
   list.innerHTML=data.map(l=>`<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openLicDetail('${l.id}')">
     <div style="display:flex;justify-content:space-between;align-items:start;gap:10px"><div><div style="font-weight:700">${esc(l.titulo)}</div><div style="font-size:12px;color:var(--c-muted)">${esc(l.entidad||'')} ${l.numero?'· '+esc(l.numero):''}</div></div>${licBadge(l.estado)}</div>
     <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.monto_estimado?`<span>💰 ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}</div>
   </div>`).join('');
 }
+function renderLicPanel(){
+  const b=document.getElementById('licBody'); if(!b) return;
+  const lics=mstate.lics||[];
+  const activos=['borrador','en_revision','presentada','aprobada'];
+  const enJuego=lics.filter(l=>activos.includes(l.estado));
+  const montoJuego=enJuego.reduce((a,l)=>a+(Number(l.monto_estimado)||0),0);
+  const hoy=todayStr(), en15=ymd(new Date(Date.now()+15*86400000));
+  const prox=lics.filter(l=>l.fecha_limite&&l.fecha_limite>=hoy&&l.fecha_limite<=en15&&activos.includes(l.estado)).length;
+  b.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Total',lics.length,'#60A5FA','rgba(29,78,216,.14)')}
+      ${kpiTile('En juego',enJuego.length,'#F59E0B','rgba(217,119,6,.14)')}
+      ${kpiTile('Monto en juego',money(montoJuego),'#34D77F','rgba(34,197,94,.14)')}
+      ${kpiTile('Vencen en 15 días',prox,prox?'#F0556A':'#34D77F',prox?'rgba(220,38,38,.14)':'rgba(34,197,94,.14)')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Licitaciones por estado</h3><canvas id="chLicEstado" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Cierres por mes (fecha límite)</h3><canvas id="chLicMes" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Monto estimado por estado</h3><canvas id="chLicMonto" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Adjudicadas vs perdidas</h3><canvas id="chLicWin" height="190"></canvas></div>
+    </div>`;
+  drawLicCharts(lics);
+}
+function drawLicCharts(lics){
+  destroyLicCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
+  const byEst={}; lics.forEach(l=>{ const s=l.estado||'borrador'; byEst[s]=(byEst[s]||0)+1; });
+  const le=Object.keys(byEst);
+  const e1=document.getElementById('chLicEstado');
+  if(e1){ if(le.length) _licCharts.push(new Chart(e1,{type:'doughnut',data:{labels:le.map(s=>LIC_ESTADOS[s]||s),datasets:[{data:le.map(s=>byEst[s]),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
+  const byMes={}; lics.forEach(l=>{ if(l.fecha_limite){ const m=l.fecha_limite.slice(0,7); byMes[m]=(byMes[m]||0)+1; } });
+  const ml=Object.keys(byMes).sort();
+  const e2=document.getElementById('chLicMes');
+  if(e2) _licCharts.push(new Chart(e2,{type:'bar',data:{labels:ml,datasets:[{label:'Cierres',data:ml.map(m=>byMes[m]),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  const montoEst={}; lics.forEach(l=>{ const s=l.estado||'borrador'; montoEst[s]=(montoEst[s]||0)+(Number(l.monto_estimado)||0); });
+  const lm=Object.keys(montoEst);
+  const e3=document.getElementById('chLicMonto');
+  if(e3) _licCharts.push(new Chart(e3,{type:'bar',data:{labels:lm.map(s=>LIC_ESTADOS[s]||s),datasets:[{label:'Monto',data:lm.map(s=>montoEst[s]),backgroundColor:'#60A5FA'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  const win=lics.filter(l=>l.estado==='adjudicada').length, loss=lics.filter(l=>l.estado==='perdida').length;
+  const e4=document.getElementById('chLicWin');
+  if(e4) _licCharts.push(new Chart(e4,{type:'doughnut',data:{labels:['Adjudicadas','Perdidas'],datasets:[{data:[win,loss],backgroundColor:['#22C55E','#F0556A']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
+}
+function renderLicCalendario(){
+  const b=document.getElementById('licBody'); if(!b) return;
+  const lics=mstate.lics||[];
+  const ym=mstate.licMonth||todayStr().slice(0,7);
+  const [Y,M]=ym.split('-').map(Number);
+  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7;
+  const days=new Date(Y,M,0).getDate();
+  const byDay={}; lics.forEach(l=>{ if((l.fecha_limite||'').slice(0,7)===ym){ const d=+l.fecha_limite.slice(8,10); (byDay[d]=byDay[d]||[]).push(l); } });
+  const hoy=todayStr(); let cells='';
+  for(let i=0;i<startDow;i++) cells+=`<div></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=ym+'-'+String(d).padStart(2,'0'); const list=byDay[d]||[]; const esHoy=ds===hoy;
+    cells+=`<div style="min-height:86px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden">
+      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
+      ${list.slice(0,3).map(l=>`<div onclick="openLicDetail('${l.id}')" title="${esc(l.titulo)}" style="cursor:pointer;font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:rgba(198,32,64,.28);color:#F5E9EC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">⏰ ${esc(l.titulo)}</div>`).join('')}
+      ${list.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${list.length-3} más</div>`:''}
+    </div>`;
+  }
+  const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  b.innerHTML=`<div class="date-strip-wrap" style="justify-content:space-between;margin-bottom:12px">
+      <button class="nav-arrow" onclick="shiftLicMonth(-1)">‹‹</button>
+      <div style="flex:1;text-align:center;font-weight:700;text-transform:capitalize">${MESES_ES[M-1]} ${Y}</div>
+      <button class="nav-arrow" onclick="shiftLicMonth(1)">>>></button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
+    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Cada licitación aparece en su <b>fecha límite</b>. Tocá una para ver el detalle.</div>`;
+}
+function shiftLicMonth(dir){ const ym=mstate.licMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.licMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderLicCalendario(); }
+async function renderLicBiblioteca(){
+  const b=document.getElementById('licBody'); if(!b) return;
+  const {data}=await sb.from('files').select('*').eq('scope','licitacion').eq('ref_id','biblioteca');
+  const files=(data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
+  const canUp=state.isAdmin||state.isLicitaciones;
+  b.innerHTML=`
+    ${canUp?`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
+      <input type="file" id="licBibFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
+      <button class="btn btn-sm btn-primary" onclick="uploadLicFile()">Subir foto / archivo / video</button>
+      <span style="font-size:11px;color:var(--c-muted)">Hasta 100 MB</span>
+    </div>`:''}
+    ${mediaGridHtml(files,'delLicFile')}`;
+}
+async function uploadLicFile(){
+  const inp=document.getElementById('licBibFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
+  showToast('Subiendo…','ok');
+  const {error}=await apiUpload('licitacion','biblioteca',inp.files[0]);
+  if(error){ showToast(error.message||'Error al subir','err'); return; }
+  showToast('Archivo subido','ok'); renderLicBiblioteca();
+}
+async function delLicFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderLicBiblioteca(); }
 function openLicModal(lic){
   lic=lic||{};
   openModal(`
@@ -2909,7 +3014,8 @@ async function renderMktCalendario(){
 function shiftMktMonth(dir){ const ym=mstate.mktMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.mktMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderMktCalendario(); }
 
 // ── Biblioteca de medios (fotos / archivos / videos) ───────────
-function mediaGridHtml(files){
+function mediaGridHtml(files, delFn){
+  delFn=delFn||'delMktFile';
   if(!files||!files.length) return '<div class="nodata" style="padding:20px">Sin archivos todavía. Subí el primero.</div>';
   return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">${files.map(f=>{
     const url=fileUrl(f.id), mime=f.mime||''; let media;
@@ -2921,7 +3027,7 @@ function mediaGridHtml(files){
         <div style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(f.name)}">${esc(f.name)}</div>
         <div style="display:flex;justify-content:space-between;margin-top:6px">
           <a href="${fileUrl(f.id,true)}" style="font-size:11px;color:var(--c-muted);text-decoration:none">descargar</a>
-          <button onclick="delMktFile('${f.id}')" style="border:none;background:none;color:var(--c-err);cursor:pointer;font-size:11px">eliminar</button>
+          <button onclick="${delFn}('${f.id}')" style="border:none;background:none;color:var(--c-err);cursor:pointer;font-size:11px">eliminar</button>
         </div>
       </div></div>`;
   }).join('')}</div>`;
