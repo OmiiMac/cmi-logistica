@@ -308,7 +308,7 @@ const TABLE_MODULE = {
   licitaciones: 'licit',
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt'
 };
-const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt' };
+const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt' };
 // Salas de chat restringidas (heredan el permiso del módulo). Las demás
 // (general, inventario, rutas, proyecto:*) son abiertas a todo usuario activo.
 const CHAT_ROOM_MODULE = { contabilidad: 'conta', licitaciones: 'licit', mercadeo: 'mkt' };
@@ -891,7 +891,7 @@ app.post('/api/delete', (req, res) => {
 // ============================================================
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(path.dirname(DB_PATH), 'uploads');
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-const upload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 25 * 1024 * 1024 } });
+const upload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 100 * 1024 * 1024 } }); // hasta 100MB (permite videos cortos)
 
 app.post('/api/upload', upload.single('file'), (req, res) => {
   const u = getUser(req);

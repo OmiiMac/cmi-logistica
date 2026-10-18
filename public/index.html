@@ -2462,10 +2462,13 @@ function money(n){ n=Number(n||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleS
 function modRefresh(view){ if(state.view!==view) return; if(!document.getElementById('modalWrap').hidden) return; render(); }
 function proyectoOptions(sel){ return [...state.projects.values()].map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join(''); }
 
-const mstate = { cuentas:[], compromisos:[], contaTab:'panel', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'campanas' };
+const mstate = { cuentas:[], compromisos:[], contaTab:'panel', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'panel', mktMonth:todayStr().slice(0,7) };
 const CHART_PALETTE = ['#9B1B30','#1D4ED8','#D97706','#166534','#7C3AED','#0F766E','#BE185D','#C8960C','#4338CA','#DC2626'];
 let _contaCharts = [];
 function destroyContaCharts(){ _contaCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _contaCharts=[]; }
+let _mktCharts = [];
+function destroyMktCharts(){ _mktCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _mktCharts=[]; }
+function tuneChartsDark(){ if(typeof Chart!=='undefined'){ Chart.defaults.color='#C9A8AE'; Chart.defaults.borderColor='rgba(198,32,64,.15)'; } }
 function chartOpts(extra){ return Object.assign({responsive:true,maintainAspectRatio:true,plugins:{legend:{labels:{font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}}}, extra||{}); }
 
 /* ================= CONTABILIDAD ================= */
@@ -2808,20 +2811,141 @@ async function delLic(id){ if(!confirm('¿Eliminar esta licitación?')) return; 
 async function renderMercadeo(){
   if(!canModule('mkt')){ nav('dashboard'); return; }
   setTopbar('Mercadeo');
-  const tab=mstate.mktTab||'campanas';
+  const tab=mstate.mktTab||'panel';
+  let addBtn='';
+  if(tab==='campanas') addBtn=`<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`;
+  else if(tab==='tareas') addBtn=`<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Pendiente</button>`;
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`
-    + (tab==='campanas'
-      ? `<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`
-      : `<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Pendiente</button>`);
-  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:960px">
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <button class="btn btn-sm ${tab==='campanas'?'btn-primary':'btn-ghost'}" onclick="mstate.mktTab='campanas';renderMercadeo()">Campañas</button>
-      <button class="btn btn-sm ${tab==='tareas'?'btn-primary':'btn-ghost'}" onclick="mstate.mktTab='tareas';renderMercadeo()">Tablero de pendientes</button>
-    </div>
+    `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`+addBtn;
+  const tabs=[['panel','📊 Panel'],['calendario','📅 Calendario'],['campanas','Campañas'],['tareas','Pendientes'],['biblioteca','🖼️ Biblioteca']];
+  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1000px">
+    <div class="filter-chips" style="margin-bottom:16px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" onclick="mstate.mktTab='${k}';renderMercadeo()">${l}</span>`).join('')}</div>
     <div id="mktBody"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
-  if(tab==='campanas') renderCampanas(); else renderTareas();
+  if(tab==='panel') renderMktPanel();
+  else if(tab==='calendario') renderMktCalendario();
+  else if(tab==='campanas') renderCampanas();
+  else if(tab==='biblioteca') renderMktBiblioteca();
+  else renderTareas();
 }
+
+// ── Panel con gráficas ─────────────────────────────────────────
+async function renderMktPanel(){
+  const b=document.getElementById('mktBody'); if(!b) return;
+  const [rc,rp,rt]=await Promise.all([
+    sb.from('campanas').select('*'),
+    sb.from('publicaciones').select('*'),
+    sb.from('mercadeo_tareas').select('*')
+  ]);
+  const camps=rc.data||[], pubs=rp.data||[], tareas=rt.data||[];
+  mstate.campanas=camps;
+  const mesAct=todayStr().slice(0,7);
+  const pubsMes=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
+  const campActivas=camps.filter(c=>c.estado==='activa').length;
+  const pendAbiertos=tareas.filter(t=>t.estado!=='hecho').length;
+  b.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Campañas activas',campActivas,'#60A5FA','rgba(29,78,216,.14)')}
+      ${kpiTile('Publicaciones (mes)',pubsMes,'#34D77F','rgba(34,197,94,.14)')}
+      ${kpiTile('Pendientes abiertos',pendAbiertos,'#F59E0B','rgba(217,119,6,.14)')}
+      ${kpiTile('Total publicaciones',pubs.length,'#E8384A','rgba(232,56,74,.14)')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por mes</h3><canvas id="chPubMes" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por canal</h3><canvas id="chPubCanal" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Estado de publicaciones</h3><canvas id="chPubEstado" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Tablero de pendientes</h3><canvas id="chTareas" height="190"></canvas></div>
+    </div>`;
+  drawMktCharts(pubs,tareas);
+}
+function drawMktCharts(pubs,tareas){
+  destroyMktCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
+  const byMes={}; pubs.forEach(p=>{ const m=(p.fecha||'').slice(0,7)||'s/f'; byMes[m]=(byMes[m]||0)+1; });
+  const ml=Object.keys(byMes).sort();
+  const e1=document.getElementById('chPubMes');
+  if(e1) _mktCharts.push(new Chart(e1,{type:'bar',data:{labels:ml,datasets:[{label:'Publicaciones',data:ml.map(m=>byMes[m]),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  const byCanal={}; pubs.forEach(p=>{ const c=(p.canal||'').trim()||'Sin canal'; byCanal[c]=(byCanal[c]||0)+1; });
+  const e2=document.getElementById('chPubCanal'), lc=Object.keys(byCanal);
+  if(e2){ if(lc.length) _mktCharts.push(new Chart(e2,{type:'doughnut',data:{labels:lc,datasets:[{data:lc.map(c=>byCanal[c]),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e2.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
+  const byEst={}; pubs.forEach(p=>{ const s=p.estado||'planificada'; byEst[s]=(byEst[s]||0)+1; });
+  const e3=document.getElementById('chPubEstado'), le=Object.keys(byEst);
+  if(e3){ if(le.length) _mktCharts.push(new Chart(e3,{type:'doughnut',data:{labels:le,datasets:[{data:le.map(s=>byEst[s]),backgroundColor:['#F59E0B','#22C55E','#60A5FA','#E8384A','#7C3AED']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
+  const cols=['pendiente','en_progreso','hecho'], lbl={pendiente:'Pendiente',en_progreso:'En progreso',hecho:'Hecho'};
+  const e4=document.getElementById('chTareas');
+  if(e4) _mktCharts.push(new Chart(e4,{type:'bar',data:{labels:cols.map(c=>lbl[c]),datasets:[{label:'Pendientes',data:cols.map(c=>tareas.filter(t=>t.estado===c).length),backgroundColor:['#F59E0B','#60A5FA','#22C55E']}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+}
+
+// ── Calendario mensual de publicaciones ────────────────────────
+async function renderMktCalendario(){
+  const b=document.getElementById('mktBody'); if(!b) return;
+  const {data}=await sb.from('publicaciones').select('*');
+  const pubs=data||[];
+  const ym=mstate.mktMonth||todayStr().slice(0,7);
+  const [Y,M]=ym.split('-').map(Number);
+  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7; // lunes=0
+  const days=new Date(Y,M,0).getDate();
+  const byDay={}; pubs.forEach(p=>{ if((p.fecha||'').slice(0,7)===ym){ const d=+p.fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push(p); } });
+  const hoy=todayStr();
+  let cells='';
+  for(let i=0;i<startDow;i++) cells+=`<div></div>`;
+  for(let d=1;d<=days;d++){
+    const ds=ym+'-'+String(d).padStart(2,'0'); const list=byDay[d]||[]; const esHoy=ds===hoy;
+    cells+=`<div style="min-height:86px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden">
+      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
+      ${list.slice(0,3).map(p=>`<div title="${esc((p.canal?p.canal+': ':'')+(p.contenido||''))}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${p.estado==='publicada'?'rgba(34,197,94,.25)':'rgba(198,32,64,.28)'};color:#F5E9EC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.canal||p.contenido||'Publicación')}</div>`).join('')}
+      ${list.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${list.length-3} más</div>`:''}
+    </div>`;
+  }
+  const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  b.innerHTML=`
+    <div class="date-strip-wrap" style="justify-content:space-between;margin-bottom:12px">
+      <button class="nav-arrow" onclick="shiftMktMonth(-1)">‹‹</button>
+      <div style="flex:1;text-align:center;font-weight:700;text-transform:capitalize">${MESES_ES[M-1]} ${Y}</div>
+      <button class="nav-arrow" onclick="shiftMktMonth(1)">>>></button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
+    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Las publicaciones se cargan dentro de cada campaña. <span style="color:#22C55E">Verde</span> = publicada · <span style="color:#F0556A">Rojo</span> = planificada.</div>`;
+}
+function shiftMktMonth(dir){ const ym=mstate.mktMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.mktMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderMktCalendario(); }
+
+// ── Biblioteca de medios (fotos / archivos / videos) ───────────
+function mediaGridHtml(files){
+  if(!files||!files.length) return '<div class="nodata" style="padding:20px">Sin archivos todavía. Subí el primero.</div>';
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px">${files.map(f=>{
+    const url=fileUrl(f.id), mime=f.mime||''; let media;
+    if(mime.startsWith('image/')) media=`<a href="${url}" target="_blank"><img src="${url}" loading="lazy" style="width:100%;height:120px;object-fit:cover;display:block"></a>`;
+    else if(mime.startsWith('video/')) media=`<video src="${url}" controls preload="metadata" style="width:100%;height:120px;object-fit:cover;background:#000;display:block"></video>`;
+    else media=`<a href="${url}" target="_blank" style="height:120px;display:flex;align-items:center;justify-content:center;font-size:34px;background:var(--c-bg);text-decoration:none">📄</a>`;
+    return `<div class="section-card" style="overflow:hidden;padding:0">${media}
+      <div style="padding:8px">
+        <div style="font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(f.name)}">${esc(f.name)}</div>
+        <div style="display:flex;justify-content:space-between;margin-top:6px">
+          <a href="${fileUrl(f.id,true)}" style="font-size:11px;color:var(--c-muted);text-decoration:none">descargar</a>
+          <button onclick="delMktFile('${f.id}')" style="border:none;background:none;color:var(--c-err);cursor:pointer;font-size:11px">eliminar</button>
+        </div>
+      </div></div>`;
+  }).join('')}</div>`;
+}
+async function renderMktBiblioteca(){
+  const b=document.getElementById('mktBody'); if(!b) return;
+  const {data}=await sb.from('files').select('*').eq('scope','mercadeo');
+  const files=(data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
+  b.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
+      <input type="file" id="mktFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
+      <button class="btn btn-sm btn-primary" onclick="uploadMktFile()">Subir foto / archivo / video</button>
+      <span style="font-size:11px;color:var(--c-muted)">Hasta 100 MB</span>
+    </div>
+    ${mediaGridHtml(files)}`;
+}
+async function uploadMktFile(){
+  const inp=document.getElementById('mktFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
+  showToast('Subiendo…','ok');
+  const {error}=await apiUpload('mercadeo','mercadeo',inp.files[0]);
+  if(error){ showToast(error.message||'Error al subir','err'); return; }
+  showToast('Archivo subido','ok'); renderMktBiblioteca();
+}
+async function delMktFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderMktBiblioteca(); }
 async function renderCampanas(){
   const {data}=await sb.from('campanas').select('*').order('created_at',{ascending:false});
   const b=document.getElementById('mktBody'); if(!b) return;
