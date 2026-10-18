@@ -2794,8 +2794,9 @@ function drawLicCharts(lics){
   destroyLicCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
   const byEst={}; lics.forEach(l=>{ const s=l.estado||'borrador'; byEst[s]=(byEst[s]||0)+1; });
   const le=Object.keys(byEst);
+  const estColor=s=>(LIC_COLOR[s]||['','#9B1B30'])[1];   // color propio de cada estado
   const e1=document.getElementById('chLicEstado');
-  if(e1){ if(le.length) _licCharts.push(new Chart(e1,{type:'doughnut',data:{labels:le.map(s=>LIC_ESTADOS[s]||s),datasets:[{data:le.map(s=>byEst[s]),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
+  if(e1){ if(le.length) _licCharts.push(new Chart(e1,{type:'doughnut',data:{labels:le.map(s=>LIC_ESTADOS[s]||s),datasets:[{data:le.map(s=>byEst[s]),backgroundColor:le.map(estColor)}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
   const byMes={}; lics.forEach(l=>{ if(l.fecha_limite){ const m=l.fecha_limite.slice(0,7); byMes[m]=(byMes[m]||0)+1; } });
   const ml=Object.keys(byMes).sort();
   const e2=document.getElementById('chLicMes');
@@ -2803,7 +2804,7 @@ function drawLicCharts(lics){
   const montoEst={}; lics.forEach(l=>{ const s=l.estado||'borrador'; montoEst[s]=(montoEst[s]||0)+(Number(l.monto_estimado)||0); });
   const lm=Object.keys(montoEst);
   const e3=document.getElementById('chLicMonto');
-  if(e3) _licCharts.push(new Chart(e3,{type:'bar',data:{labels:lm.map(s=>LIC_ESTADOS[s]||s),datasets:[{label:'Monto',data:lm.map(s=>montoEst[s]),backgroundColor:'#60A5FA'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  if(e3) _licCharts.push(new Chart(e3,{type:'bar',data:{labels:lm.map(s=>LIC_ESTADOS[s]||s),datasets:[{label:'Monto',data:lm.map(s=>montoEst[s]),backgroundColor:lm.map(estColor)}]},options:chartOpts({plugins:{legend:{display:false}}})}));
   const win=lics.filter(l=>l.estado==='adjudicada').length, loss=lics.filter(l=>l.estado==='perdida').length;
   const e4=document.getElementById('chLicWin');
   if(e4) _licCharts.push(new Chart(e4,{type:'doughnut',data:{labels:['Adjudicadas','Perdidas'],datasets:[{data:[win,loss],backgroundColor:['#22C55E','#F0556A']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
