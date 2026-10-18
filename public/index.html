@@ -1949,8 +1949,12 @@ async function doTransfer(){
 }
 
 // Ruta modal
-function showRutaModal(id){
+async function showRutaModal(id){
   const r = id ? state.rutas.find(rt=>rt.id===id) : null;
+  if(!state.regEmails){
+    const er = await api('/api/select',{table:'profiles',columns:['name','email']});
+    state.regEmails = (er.data||[]).filter(p=>p && p.email);
+  }
   openModal(`
   <div class="modal-head"><h2>${r?'Editar Ruta':'Nueva Ruta'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
@@ -1968,7 +1972,10 @@ function showRutaModal(id){
     </div>
     <div class="form-row">
       <div class="form-group"><label>Conductor</label><input id="rConductor" value="${esc(r?.conductor||'Gabriel / Martin')}" placeholder="Nombre del conductor"></div>
-      <div class="form-group"><label>Email del Conductor</label><input type="email" id="rEmail" value="${esc(r?.conductorEmail||'')}" placeholder="correo@ejemplo.com"></div>
+      <div class="form-group"><label>Email del Conductor</label>
+        <input type="email" id="rEmail" list="emailList" value="${esc(r?.conductorEmail||'')}" placeholder="Escribí para buscar o elegí de la lista…">
+        <datalist id="emailList">${(state.regEmails||[]).map(p=>`<option value="${esc(p.email)}">${esc(p.name||'')}</option>`).join('')}</datalist>
+      </div>
     </div>
     <div class="form-group"><label>Descripcion</label><textarea id="rDesc" rows="2">${esc(r?.descripcion||'')}</textarea></div>
     <div class="form-group"><label>Estado</label>
