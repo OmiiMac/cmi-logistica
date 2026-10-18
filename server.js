@@ -651,6 +651,25 @@ app.post('/api/admin/reset-others', (req, res) => {
   res.json({ data: { deleted, kept: u.id }, error: null });
 });
 
+// Admin elimina UN usuario puntual (login + perfil). No puede eliminarse a si mismo.
+app.post('/api/admin/delete-user', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Solo admin' } });
+  const { userId } = req.body || {};
+  if (!userId) return res.json({ error: { message: 'Falta el usuario' } });
+  if (userId === u.id) return res.json({ error: { message: 'No podés eliminar tu propia cuenta' } });
+  const prof = db.prepare('SELECT id, email FROM profiles WHERE id = ?').get(userId);
+  const email = prof ? String(prof.email || '').trim().toLowerCase() : '';
+  tx(() => {
+    db.prepare('DELETE FROM auth_users WHERE id = ?').run(userId);
+    if (email) db.prepare('DELETE FROM auth_users WHERE lower(trim(email)) = ?').run(email);
+    db.prepare('DELETE FROM profiles WHERE id = ?').run(userId);
+    db.prepare('DELETE FROM password_resets WHERE user_id = ?').run(userId);
+  });
+  res.json({ data: { deleted: prof ? 1 : 0, id: userId }, error: null });
+});
+
 // ============================================================
 // PERMISOS DE ESCRITURA (equivalente a las políticas RLS)
 // ============================================================

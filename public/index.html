@@ -2097,6 +2097,7 @@ async function renderUsers(){
             <option value="admin"      ${p.role==='admin'?'selected':''}>Admin</option>
           </select>` : ''}
         ${!isSelf ? `<button onclick="setUserPassword('${p.id}')" title="Fijar/resetear contraseña" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">Clave</button>` : ''}
+        ${!isSelf ? `<button onclick="deleteUser('${p.id}','${esc((p.name||p.email||'').replace(/['"\\]/g,''))}')" title="Eliminar usuario" style="background:none;border:1px solid var(--c-err);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-err)">Eliminar</button>` : ''}
       </div>
     </div>`;
   }
@@ -2134,6 +2135,14 @@ async function renderUsers(){
       </div>
     </div>
   </div>`;
+}
+
+async function deleteUser(id, name){
+  if(!confirm('¿Eliminar al usuario "'+(name||'')+'"?\n\nSe borra su acceso y perfil. Si lo necesita de nuevo, deberá registrarse otra vez. No se puede deshacer.')) return;
+  const {error}=await apiPost('/api/admin/delete-user',{userId:id});
+  if(error){ showToast(error.message,'err'); return; }
+  showToast('Usuario eliminado','ok');
+  renderUsers();
 }
 
 async function resetOtherUsers(){
