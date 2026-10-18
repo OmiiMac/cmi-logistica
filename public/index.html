@@ -1431,7 +1431,7 @@ function renderRutas(){
 
   const mode = state.rutaMode || 'dia';
   const toggle = `<div class="filter-chips" style="margin-bottom:14px">
-    ${[['dia','Día'],['semana','Semana'],['mes','Mes']].map(([m,l])=>`<span class="chip ${mode===m?'active':''}" onclick="setRutaMode('${m}')">${l}</span>`).join('')}
+    ${[['dia','Día'],['semana','Semana'],['mes','Mes'],['graficas','📊 Gráficas'],['archivos','🗂️ Archivos']].map(([m,l])=>`<span class="chip ${mode===m?'active':''}" onclick="setRutaMode('${m}')">${l}</span>`).join('')}
   </div>`;
 
   let body;
@@ -1458,11 +1458,66 @@ function renderRutas(){
         <div class="ruta-day-head"><span>${fmtDateLong(state.rutaDate)}</span><span style="font-size:11px">${selRutas.length} ruta(s)</span></div>
         ${selRutas.map(rutaRowHtml).join('')}
       </div>`}`;
-  } else {
+  } else if(mode==='semana'||mode==='mes'){
     body = rutaRegistroHtml(mode);
+  } else {
+    body = `<div id="rutaBody"><div class="nodata" style="padding:20px">Cargando…</div></div>`;
   }
   document.getElementById('view').innerHTML = toggle + body;
+  if(mode==='graficas') renderRutaGraficas();
+  else if(mode==='archivos') renderRutaArchivos();
 }
+// ── Rutas: gráficas y biblioteca ──────────────────────────────
+let _rutaCharts=[]; function destroyRutaCharts(){ _rutaCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _rutaCharts=[]; }
+function renderRutaGraficas(){
+  const b=document.getElementById('rutaBody'); if(!b) return;
+  const rutas=state.rutas||[];
+  b.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por estado</h3><canvas id="chRutaEstado" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por día de la semana</h3><canvas id="chRutaDow" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por conductor</h3><canvas id="chRutaCond" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Destinos más frecuentes</h3><canvas id="chRutaDest" height="190"></canvas></div>
+  </div>`;
+  destroyRutaCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
+  // por estado
+  const est={pendiente:0,en_ruta:0,completada:0}; rutas.forEach(r=>{ if(est[r.status]!=null) est[r.status]++; });
+  const e1=document.getElementById('chRutaEstado');
+  if(e1) _rutaCharts.push(new Chart(e1,{type:'doughnut',data:{labels:['Pendiente','En ruta','Completada'],datasets:[{data:[est.pendiente,est.en_ruta,est.completada],backgroundColor:['#F59E0B','#60A5FA','#22C55E']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
+  // por día de la semana (Lun..Dom)
+  const dow=[0,0,0,0,0,0,0]; rutas.forEach(r=>{ if(r.date){ const idx=(_ymdToDate(r.date).getDay()+6)%7; dow[idx]++; } });
+  const e2=document.getElementById('chRutaDow');
+  if(e2) _rutaCharts.push(new Chart(e2,{type:'bar',data:{labels:['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'],datasets:[{label:'Rutas',data:dow,backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  // por conductor (top 8)
+  const cond={}; rutas.forEach(r=>{ const c=(r.conductor||'').trim()||'Sin asignar'; cond[c]=(cond[c]||0)+1; });
+  const cp=Object.entries(cond).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const e3=document.getElementById('chRutaCond');
+  if(e3) _rutaCharts.push(new Chart(e3,{type:'bar',data:{labels:cp.map(x=>x[0]),datasets:[{label:'Rutas',data:cp.map(x=>x[1]),backgroundColor:'#60A5FA'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})}));
+  // destinos frecuentes (top 8)
+  const dest={}; rutas.forEach(r=>{ const d=(r.destino||'').trim()||'—'; dest[d]=(dest[d]||0)+1; });
+  const dp=Object.entries(dest).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const e4=document.getElementById('chRutaDest');
+  if(e4) _rutaCharts.push(new Chart(e4,{type:'bar',data:{labels:dp.map(x=>x[0]),datasets:[{label:'Rutas',data:dp.map(x=>x[1]),backgroundColor:'#22C55E'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})}));
+}
+async function renderRutaArchivos(){
+  const b=document.getElementById('rutaBody'); if(!b) return;
+  const {data}=await sb.from('files').select('*').eq('scope','rutas');
+  const files=(data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
+  b.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
+      <input type="file" id="rutaFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
+      <button class="btn btn-sm btn-primary" onclick="uploadRutaFile()">Subir foto / archivo / video</button>
+      <span style="font-size:11px;color:var(--c-muted)">Guías, fotos de carga, remitos… hasta 100 MB</span>
+    </div>
+    ${mediaGridHtml(files,'delRutaFile')}`;
+}
+async function uploadRutaFile(){
+  const inp=document.getElementById('rutaFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
+  showToast('Subiendo…','ok');
+  const {error}=await apiUpload('rutas','biblioteca',inp.files[0]);
+  if(error){ showToast(error.message||'Error al subir','err'); return; }
+  showToast('Archivo subido','ok'); renderRutaArchivos();
+}
+async function delRutaFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderRutaArchivos(); }
 
 // Registro semanal / mensual de salidas: totales + lista agrupada por día.
 function rutaRegistroHtml(mode){
