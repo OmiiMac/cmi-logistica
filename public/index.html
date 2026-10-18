@@ -1049,6 +1049,12 @@ function renderDashboard(){
       <div class="stat-val" id="dashMkt" style="color:#BE185D">…</div>
       <div class="stat-label">Campañas</div>
     </div>` : ''}
+    ${canModule('conta') ? `
+    <div class="stat-card" style="--stat-color:#22C55E">
+      <div class="stat-icon" style="background:rgba(34,197,94,.12);color:#22C55E"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>
+      <div class="stat-val" id="dashConta" style="color:#22C55E;font-size:22px">…</div>
+      <div class="stat-label">Pendiente por pagar</div>
+    </div>` : ''}
   </div>
 
   <div class="two-col">
@@ -1134,11 +1140,41 @@ function renderDashboard(){
           </div>`).join('')}
       </div>
     </div>
+  </div>
+  <div class="section-head" style="margin:22px 0 10px;border:none;padding:0;background:none"><h3><span class="section-head-bar"></span>Panel dinámico</h3></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px">
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por estado</h3><canvas id="chDashRuta" height="180"></canvas></div>
+    ${canModule('conta')?`<div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Compromisos: pendiente vs pagado</h3><canvas id="chDashConta" height="180"></canvas></div>`:''}
+    ${canModule('licit')?`<div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Licitaciones por estado</h3><canvas id="chDashLicit" height="180"></canvas></div>`:''}
+    ${canModule('mkt')?`<div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por mes</h3><canvas id="chDashMkt" height="180"></canvas></div>`:''}
   </div>`;
 
   // Conteos de modulos (async, solo para quien tiene acceso)
   if(canModule('licit')) sb.from('licitaciones').select('id').then(({data})=>{ const el=document.getElementById('dashLicit'); if(el) el.textContent=(data||[]).length; });
   if(canModule('mkt'))   sb.from('campanas').select('id').then(({data})=>{ const el=document.getElementById('dashMkt'); if(el) el.textContent=(data||[]).length; });
+
+  // Panel dinámico: gráficas resumen (según acceso del usuario)
+  (function(){
+    if(typeof Chart==='undefined') return; if(typeof tuneChartsDark==='function') tuneChartsDark();
+    window._dashCharts=(window._dashCharts||[]); window._dashCharts.forEach(c=>{try{c.destroy()}catch(e){}}); window._dashCharts=[];
+    const push=c=>window._dashCharts.push(c);
+    const est={pendiente:0,en_ruta:0,completada:0}; (state.rutas||[]).forEach(r=>{ if(est[r.status]!=null) est[r.status]++; });
+    const er=document.getElementById('chDashRuta');
+    if(er) push(new Chart(er,{type:'doughnut',data:{labels:['Pendiente','En ruta','Completada'],datasets:[{data:[est.pendiente,est.en_ruta,est.completada],backgroundColor:['#F59E0B','#60A5FA','#22C55E']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
+    if(canModule('conta')) sb.from('compromisos').select('*').then(({data})=>{
+      const cs=data||[]; const pend=cs.filter(c=>c.estado!=='pagado').reduce((a,c)=>a+(Number(c.monto)||0),0); const pag=cs.filter(c=>c.estado==='pagado').reduce((a,c)=>a+(Number(c.monto)||0),0);
+      const dc=document.getElementById('dashConta'); if(dc) dc.textContent=money(pend);
+      const e=document.getElementById('chDashConta'); if(e&&(pend||pag)) push(new Chart(e,{type:'doughnut',data:{labels:['Pendiente','Pagado'],datasets:[{data:[pend,pag],backgroundColor:['#F59E0B','#22C55E']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else if(e) e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin compromisos cargados</div>';
+    });
+    if(canModule('licit')) sb.from('licitaciones').select('*').then(({data})=>{
+      const ls=data||[]; const by={}; ls.forEach(l=>{ const s=l.estado||'borrador'; by[s]=(by[s]||0)+1; }); const ks=Object.keys(by);
+      const e=document.getElementById('chDashLicit'); if(e&&ks.length) push(new Chart(e,{type:'doughnut',data:{labels:ks.map(s=>(LIC_ESTADOS[s]||s)),datasets:[{data:ks.map(s=>by[s]),backgroundColor:ks.map(s=>(LIC_COLOR[s]||['','#9B1B30'])[1])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else if(e) e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin licitaciones</div>';
+    });
+    if(canModule('mkt')) sb.from('publicaciones').select('*').then(({data})=>{
+      const ps=data||[]; const by={}; ps.forEach(p=>{ const m=(p.fecha||'').slice(0,7)||'s/f'; by[m]=(by[m]||0)+1; }); const ms=Object.keys(by).sort();
+      const e=document.getElementById('chDashMkt'); if(e&&ms.length) push(new Chart(e,{type:'bar',data:{labels:ms,datasets:[{label:'Publicaciones',data:ms.map(m=>by[m]),backgroundColor:'#C62040'}]},options:(typeof chartOpts==='function'?chartOpts({plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else if(e) e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>';
+    });
+  })();
 
   // Gráfica de barras — items por proyecto
   requestAnimationFrame(()=>{
