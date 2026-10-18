@@ -271,13 +271,14 @@ ensureColumn('messages', 'file_id', 'TEXT');
 ensureColumn('items', 'photo_id', 'TEXT');
 ensureColumn('equipo_movs', 'origen_id', 'TEXT');
 ensureColumn('equipo_movs', 'destino_id', 'TEXT');
+ensureColumn('profiles', 'restrict_mods', 'TEXT'); // módulos ocultos para este usuario (ej: 'conta,licit')
 // Backfill idempotente: mensajes previos quedan en su sala correcta.
 db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
 db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
 
 // Columnas permitidas por tabla (whitelist anti-inyección e integridad)
 const SCHEMA = {
-  profiles:  ['id', 'email', 'name', 'role', 'status', 'created_at', 'updated_at'],
+  profiles:  ['id', 'email', 'name', 'role', 'status', 'restrict_mods', 'created_at', 'updated_at'],
   projects:  ['id', 'name', 'address', 'supervisor', 'engineer_id', 'color', 'status', 'notes', 'created_at', 'updated_at'],
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
@@ -319,8 +320,15 @@ function fileModule(scope, refId) {
   return SCOPE_MODULE[scope] || null;
 }
 
+function isFullAdmin(user) {
+  return !!user && user.role === 'admin' && !(user.restrict_mods && String(user.restrict_mods).trim());
+}
 function roleCan(module, user) {
   if (!module) return true;               // tabla no restringida
+  if (!user) return false;
+  // Restricción por usuario: oculta el módulo aunque sea admin.
+  const blocked = String(user.restrict_mods || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (blocked.includes(module)) return false;
   const roles = MODULE_ROLES[module];
   return roles ? roles.includes(user.role) : false;
 }
@@ -509,7 +517,7 @@ function userFromToken(token) {
   if (!token) return null;
   let decoded;
   try { decoded = jwt.verify(token, JWT_SECRET); } catch (e) { return null; }
-  return db.prepare('SELECT id, email, name, role, status FROM profiles WHERE id = ?').get(decoded.sub) || null;
+  return db.prepare('SELECT id, email, name, role, status, restrict_mods FROM profiles WHERE id = ?').get(decoded.sub) || null;
 }
 
 function getUser(req) {
@@ -633,7 +641,7 @@ app.post('/api/auth/reset', (req, res) => {
 app.post('/api/admin/set-password', (req, res) => {
   const u = getUser(req);
   if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
-  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Solo admin' } });
+  if (!isFullAdmin(u)) return res.status(403).json({ error: { message: 'Solo el administrador principal' } });
   const { userId, password } = req.body || {};
   if (!userId || !password) return res.json({ error: { message: 'Falta usuario o contraseña' } });
   if (String(password).length < 6) return res.json({ error: { message: 'La contraseña debe tener al menos 6 caracteres' } });
@@ -657,7 +665,7 @@ app.post('/api/admin/set-password', (req, res) => {
 app.post('/api/admin/reset-others', (req, res) => {
   const u = getUser(req);
   if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
-  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Solo admin' } });
+  if (!isFullAdmin(u)) return res.status(403).json({ error: { message: 'Solo el administrador principal' } });
   let deleted = 0;
   tx(() => {
     deleted = db.prepare('SELECT COUNT(*) AS c FROM profiles WHERE id != ?').get(u.id).c;
@@ -672,7 +680,7 @@ app.post('/api/admin/reset-others', (req, res) => {
 app.post('/api/admin/delete-user', (req, res) => {
   const u = getUser(req);
   if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
-  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Solo admin' } });
+  if (!isFullAdmin(u)) return res.status(403).json({ error: { message: 'Solo el administrador principal' } });
   const { userId } = req.body || {};
   if (!userId) return res.json({ error: { message: 'Falta el usuario' } });
   if (userId === u.id) return res.json({ error: { message: 'No podés eliminar tu propia cuenta' } });
@@ -708,8 +716,8 @@ function canWrite(table, op, user, values, filters) {
     case 'profiles': {
       if (op !== 'update') return false;
       const keys = Object.keys(values || {});
-      const touchesPriv = keys.includes('role') || keys.includes('status');
-      if (touchesPriv) return user.role === 'admin';
+      const touchesPriv = keys.includes('role') || keys.includes('status') || keys.includes('restrict_mods');
+      if (touchesPriv) return isFullAdmin(user); // rol/estado/permisos: solo Admin 1 (admin sin restricciones)
       const idf = (filters || []).find(f => f.col === 'id');
       return user.role === 'admin' || (idf && idf.val === user.id); // nombre propio
     }

@@ -731,7 +731,7 @@ async function doLogin(){
 
 async function doLogout(){
   setToken(null);
-  state.userId=null;state.userName='';state.isAdmin=false;state.isSupervisor=false;
+  state.userId=null;state.userName='';state.isAdmin=false;state.isSupervisor=false;state.restrict='';
   state.projects.clear();state.items.clear();state.transfers=[];state.rutas=[];
   closeSSE();
   showLogin();
@@ -911,12 +911,15 @@ function render(){
 
 // Acceso a módulos por rol (espejo de MODULE_ROLES del servidor)
 function canModule(m){
+  // Restricción por usuario: oculta el módulo aunque sea admin.
+  if(state.restrict && state.restrict.split(',').map(s=>s.trim()).includes(m)) return false;
   if(state.isAdmin) return true;
   if(m==='conta') return state.isContador;
   if(m==='licit') return state.isLicitaciones;
   if(m==='mkt')   return state.isMercadeo;
   return false;
 }
+function isFullAdmin(){ return state.isAdmin && !(state.restrict && state.restrict.trim()); }
 function roleLabel(){
   return state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':state.isContador?' (Contador)':state.isMercadeo?' (Mercadeo)':state.isLicitaciones?' (Licitaciones)':'';
 }
@@ -2068,6 +2071,8 @@ async function renderUsers(){
   const rProf = await api('/api/select',{table:'profiles',order:[{col:'created_at',asc:false}]});
   const profiles = rProf.data || [];
   const all = profiles || [];
+  state.usersCache = all;
+  const full = isFullAdmin();   // solo el admin principal gestiona accesos
   const pending  = all.filter(p=>p.status==='pending');
   const active   = all.filter(p=>p.status==='active');
   const rejected = all.filter(p=>p.status==='rejected');
@@ -2083,11 +2088,11 @@ async function renderUsers(){
         <div class="user-email">${esc(email)}</div>
       </div>
       <div class="user-actions">
-        ${showActions && p.status==='pending' ? `
+        ${showActions && full && p.status==='pending' ? `
           <button class="btn-approve" onclick="approveUser('${p.id}')">Aprobar</button>
           <button class="btn-reject"  onclick="rejectUser('${p.id}')">Rechazar</button>` :
           `<span class="status-badge ${p.status||'active'}">${p.status==='active'?'Activo':p.status==='pending'?'Pendiente':'Rechazado'}</span>`}
-        ${!isSelf && p.status==='active' ? `
+        ${full && !isSelf && p.status==='active' ? `
           <select onchange="setUserRole('${p.id}', this.value)" title="Cambiar rol" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">
             <option value="engineer"   ${p.role==='engineer'?'selected':''}>Ingeniero</option>
             <option value="supervisor" ${p.role==='supervisor'?'selected':''}>Supervisor</option>
@@ -2096,8 +2101,9 @@ async function renderUsers(){
             <option value="licitaciones" ${p.role==='licitaciones'?'selected':''}>Licitaciones</option>
             <option value="admin"      ${p.role==='admin'?'selected':''}>Admin</option>
           </select>` : ''}
-        ${!isSelf ? `<button onclick="setUserPassword('${p.id}')" title="Fijar/resetear contraseña" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">Clave</button>` : ''}
-        ${!isSelf ? `<button onclick="deleteUser('${p.id}','${esc((p.name||p.email||'').replace(/['"\\]/g,''))}')" title="Eliminar usuario" style="background:none;border:1px solid var(--c-err);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-err)">Eliminar</button>` : ''}
+        ${full && !isSelf && p.status==='active' && p.role==='admin' ? `<button onclick="showPermisosModal('${p.id}')" title="Qué módulos puede ver" style="background:none;border:1px solid var(--c-primary);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-primary)">Permisos</button>` : ''}
+        ${full && !isSelf ? `<button onclick="setUserPassword('${p.id}')" title="Fijar/resetear contraseña" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">Clave</button>` : ''}
+        ${full && !isSelf ? `<button onclick="deleteUser('${p.id}','${esc((p.name||p.email||'').replace(/['"\\]/g,''))}')" title="Eliminar usuario" style="background:none;border:1px solid var(--c-err);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-err)">Eliminar</button>` : ''}
       </div>
     </div>`;
   }
@@ -2126,15 +2132,38 @@ async function renderUsers(){
       </div>
       ${rejected.map(p=>userRow(p,false)).join('')}
     </div>`:''}
-    <div class="section-card" style="border-color:var(--c-err)">
+    ${full?`<div class="section-card" style="border-color:var(--c-err)">
       <div class="section-head"><h3><span class="section-head-bar" style="background:var(--c-err)"></span>Zona peligrosa</h3></div>
       <div style="padding:14px 16px">
         <div style="font-size:13px;color:var(--c-text);margin-bottom:4px"><b>Reiniciar usuarios</b></div>
         <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Borra <b>todas las demás cuentas</b> (tu cuenta se mantiene). Los demás deberán registrarse de nuevo y vos los aprobás acá. No afecta proyectos, inventario ni rutas. <b>No se puede deshacer.</b></div>
         <button class="btn btn-danger" onclick="resetOtherUsers()">Borrar los demás usuarios</button>
       </div>
-    </div>
+    </div>`:''}
   </div>`;
+}
+
+function showPermisosModal(id){
+  const p=(state.usersCache||[]).find(x=>x.id===id); if(!p) return;
+  const blocked=String(p.restrict_mods||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const modRow=(key,label)=>`<label style="display:flex;align-items:center;gap:10px;padding:10px 0;cursor:pointer;border-bottom:1px solid var(--c-border)">
+    <input type="checkbox" id="perm_${key}" ${blocked.includes(key)?'':'checked'} style="width:18px;height:18px"> <span style="font-size:14px">${label}</span></label>`;
+  openModal(`
+  <div class="modal-head"><h2>Permisos de ${esc(p.name||p.email||'usuario')}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div style="font-size:12px;color:var(--c-muted);margin-bottom:8px">Marcá los módulos que <b>puede ver</b>. Si lo desmarcás, se le oculta por completo (menú y datos), <b>aunque sea administrador</b>.</div>
+    ${modRow('conta','Contabilidad')}
+    ${modRow('licit','Licitaciones')}
+    ${modRow('mkt','Mercadeo')}
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePermisos('${id}')">Guardar</button></div>`);
+}
+async function savePermisos(id){
+  const mods=['conta','licit','mkt'];
+  const blocked=mods.filter(m=>{ const el=document.getElementById('perm_'+m); return el && !el.checked; });
+  const d=await api('/api/update',{table:'profiles',values:{restrict_mods:blocked.join(',')},filters:[{col:'id',val:id}]});
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  closeModal(); showToast('Permisos actualizados','ok'); renderUsers();
 }
 
 async function deleteUser(id, name){
@@ -2368,7 +2397,7 @@ async function initApp(){
   const me = await api('/api/auth/me',{});
   if(me.error){ setToken(null); showLogin(); return; }
 
-  const prR = await api('/api/select',{table:'profiles',columns:['name','role','status'],filters:[{col:'id',val:me.user.id}],single:true});
+  const prR = await api('/api/select',{table:'profiles',columns:['name','role','status','restrict_mods'],filters:[{col:'id',val:me.user.id}],single:true});
   const profile = prR.data;
   if(!profile){ setToken(null); showLogin(); return; }
   const status = profile.status || 'pending';
@@ -2376,6 +2405,7 @@ async function initApp(){
   if(status==='rejected'){ showPending(true); setToken(null); return; }
 
   state.userId         = me.user.id;
+  state.restrict       = profile?.restrict_mods || '';
   state.role           = profile?.role || 'engineer';
   state.isAdmin        = profile?.role === 'admin';
   state.isSupervisor   = profile?.role === 'supervisor';
