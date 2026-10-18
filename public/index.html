@@ -1169,6 +1169,16 @@ function renderDashboard(){
 function renderInventario(){
   setTopbar('Inventario');
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('inventario','inventario')">💬 Chat</button>`;
+  const tab=state.invTab||'lista';
+  const tabs=[['lista','📋 Lista'],['graficas','📊 Gráficas'],['archivos','🗂️ Archivos']];
+  document.getElementById('view').innerHTML=`<div style="padding:20px 24px">
+    <div class="filter-chips" style="margin-bottom:14px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" onclick="state.invTab='${k}';renderInventario()">${l}</span>`).join('')}</div>
+    <div id="invBody"></div></div>`;
+  if(tab==='graficas'){ renderInvGraficas(); return; }
+  if(tab==='archivos'){ renderInvArchivos(); return; }
+  renderInvLista();
+}
+function renderInvLista(){
   const all = [...state.items.values()];
   const items = all
     .filter(i=>state.cat==='all'||i.category===state.cat)
@@ -1190,8 +1200,7 @@ function renderInventario(){
   });
   const summary=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
   const projBreak=g=>Object.keys(g.proj).map(pid=>esc((projName(pid)||pid)+': '+g.proj[pid])).join(' · ');
-  document.getElementById('view').innerHTML = `
-  <div style="padding:20px 24px">
+  document.getElementById('invBody').innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px">
       ${tile('Artículos', all.length, '#1D4ED8', '#DBEAFE')}
       ${tile('Stock bajo', low, low?'#D97706':'#166534', low?'#FEF3C7':'#DCFCE7')}
@@ -1243,9 +1252,62 @@ function renderInventario(){
               </tr>`).join('')}
         </tbody>
       </table>
-    </div>
-  </div>`;
+    </div>`;
 }
+// ── Inventario: gráficas y biblioteca ─────────────────────────
+let _invCharts=[]; function destroyInvCharts(){ _invCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _invCharts=[]; }
+function renderInvGraficas(){
+  const b=document.getElementById('invBody'); if(!b) return;
+  const all=[...state.items.values()];
+  b.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Artículos por categoría</h3><canvas id="chInvCat" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Unidades por ubicación</h3><canvas id="chInvUbic" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Estado de los equipos</h3><canvas id="chInvEstado" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Unidades por categoría</h3><canvas id="chInvUniCat" height="190"></canvas></div>
+  </div>`;
+  destroyInvCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
+  // por categoría (cantidad de artículos)
+  const catCount={}; all.forEach(i=>{ catCount[i.category]=(catCount[i.category]||0)+1; });
+  const cats=Object.keys(catCount);
+  const e1=document.getElementById('chInvCat');
+  if(e1){ if(cats.length) _invCharts.push(new Chart(e1,{type:'doughnut',data:{labels:cats.map(c=>(CATS.find(x=>x.id===c)||{}).label||c),datasets:[{data:cats.map(c=>catCount[c]),backgroundColor:cats.map(c=>CAT_COLOR[c]||'#9B1B30')}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin artículos</div>'; }
+  // unidades por ubicación (top 8)
+  const ubic={}; all.forEach(i=>{ const p=projName(i.projectId)||i.projectId||'—'; ubic[p]=(ubic[p]||0)+(i.quantity||0); });
+  const up=Object.entries(ubic).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const e2=document.getElementById('chInvUbic');
+  if(e2) _invCharts.push(new Chart(e2,{type:'bar',data:{labels:up.map(x=>x[0]),datasets:[{label:'Unidades',data:up.map(x=>x[1]),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  // por estado
+  const EST={OPERATIVA:['Operativa','#22C55E'],MANTENIMIENTO:['Mantenimiento','#F59E0B'],NO_OPERATIVA:['No operativa','#F0556A']};
+  const estCount={}; all.forEach(i=>{ const s=i.estado||'OPERATIVA'; estCount[s]=(estCount[s]||0)+1; });
+  const es=Object.keys(estCount);
+  const e3=document.getElementById('chInvEstado');
+  if(e3){ if(es.length) _invCharts.push(new Chart(e3,{type:'doughnut',data:{labels:es.map(s=>(EST[s]||[s])[0]),datasets:[{data:es.map(s=>estCount[s]),backgroundColor:es.map(s=>(EST[s]||['', '#60A5FA'])[1])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
+  // unidades por categoría
+  const uniCat={}; all.forEach(i=>{ uniCat[i.category]=(uniCat[i.category]||0)+(i.quantity||0); });
+  const uc=Object.keys(uniCat);
+  const e4=document.getElementById('chInvUniCat');
+  if(e4) _invCharts.push(new Chart(e4,{type:'bar',data:{labels:uc.map(c=>(CATS.find(x=>x.id===c)||{}).label||c),datasets:[{label:'Unidades',data:uc.map(c=>uniCat[c]),backgroundColor:uc.map(c=>CAT_COLOR[c]||'#9B1B30')}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+}
+async function renderInvArchivos(){
+  const b=document.getElementById('invBody'); if(!b) return;
+  const {data}=await sb.from('files').select('*').eq('scope','inventario');
+  const files=(data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
+  b.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
+      <input type="file" id="invFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
+      <button class="btn btn-sm btn-primary" onclick="uploadInvFile()">Subir foto / archivo / video</button>
+      <span style="font-size:11px;color:var(--c-muted)">Manuales, garantías, fotos… hasta 100 MB</span>
+    </div>
+    ${mediaGridHtml(files,'delInvFile')}`;
+}
+async function uploadInvFile(){
+  const inp=document.getElementById('invFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
+  showToast('Subiendo…','ok');
+  const {error}=await apiUpload('inventario','biblioteca',inp.files[0]);
+  if(error){ showToast(error.message||'Error al subir','err'); return; }
+  showToast('Archivo subido','ok'); renderInvArchivos();
+}
+async function delInvFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderInvArchivos(); }
 
 function renderProject(){
   const proj = state.projects.get(state.projectId);
@@ -1307,8 +1369,30 @@ function renderProject(){
           </tr>`).join('')}
       </tbody>
     </table>
-  </div>`;
+  </div>
+  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:22px 0 10px">Archivos del proyecto</h3>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
+    <input type="file" id="projFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
+    <button class="btn btn-sm btn-primary" onclick="uploadProjFile('${proj.id}')">Subir foto / archivo / video</button>
+    <span style="font-size:11px;color:var(--c-muted)">Planos, fotos de avance, contratos… hasta 100 MB</span>
+  </div>
+  <div id="projFiles"><div class="nodata" style="padding:16px">Cargando archivos…</div></div>`;
+  loadProjectFiles(proj.id);
 }
+async function loadProjectFiles(pid){
+  const cont=document.getElementById('projFiles'); if(!cont) return;
+  const {data}=await sb.from('files').select('*').eq('scope','proyecto').eq('ref_id',pid);
+  const files=(data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
+  cont.innerHTML=mediaGridHtml(files,'delProjFile');
+}
+async function uploadProjFile(pid){
+  const inp=document.getElementById('projFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
+  showToast('Subiendo…','ok');
+  const {error}=await apiUpload('proyecto',pid,inp.files[0]);
+  if(error){ showToast(error.message||'Error al subir','err'); return; }
+  showToast('Archivo subido','ok'); loadProjectFiles(pid);
+}
+async function delProjFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); loadProjectFiles(state.projectId); }
 
 // ── Rutas ─────────────────────────────────────────────────────
 function rutaRowHtml(r){

@@ -845,7 +845,8 @@ app.post('/api/select', (req, res) => {
   const { table } = req.body || {};
   if (!SCHEMA[table]) return res.json({ data: null, error: { message: 'Tabla inválida' } });
   const module = moduleFor(table, req.body);
-  if (table === 'files' && !module) return res.status(403).json({ data: null, error: { message: 'Falta scope' } });
+  if (table === 'files' && !((req.body.filters || []).some(f => f.col === 'scope')))
+    return res.status(403).json({ data: null, error: { message: 'Falta scope' } });
   if (table === 'messages' && !((req.body.filters || []).some(f => f.col === 'room')))
     return res.status(400).json({ data: null, error: { message: 'Falta la sala del chat' } });
   if (!roleCan(module, u)) return res.status(403).json({ data: null, error: { message: 'No autorizado' } });
