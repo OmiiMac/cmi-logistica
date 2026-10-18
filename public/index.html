@@ -422,6 +422,17 @@ html{height:100%}
   .modal-body [style*="repeat(2,1fr)"], .modal-body [style*="repeat(3,1fr)"]{grid-template-columns:1fr!important}
 }
 
+/* ── Pantallas anchas / panorámicas: usar el ancho disponible ── */
+@media (min-width:1300px){
+  #view > div[style*="max-width"]{ max-width:1200px!important; }
+}
+@media (min-width:1600px){
+  #view > div[style*="max-width"]{ max-width:1480px!important; }
+}
+@media (min-width:1920px){
+  #view > div[style*="max-width"]{ max-width:1760px!important; }
+}
+
 /* ── CHAT ── */
 #chatWrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
 #chatMessages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px}
