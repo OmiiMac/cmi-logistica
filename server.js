@@ -269,6 +269,53 @@ CREATE TABLE IF NOT EXISTS caja_chica (
   updated_at   TEXT
 );
 
+-- Salidas de material por proyecto (trazabilidad: a qué actividad/área se usó)
+CREATE TABLE IF NOT EXISTS salidas_material (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL,
+  item_id     TEXT,
+  item_name   TEXT,
+  cantidad    REAL DEFAULT 0,
+  unidad      TEXT,
+  actividad   TEXT,                        -- a qué actividad se destinó
+  area        TEXT,                        -- edificación / área
+  fecha       TEXT,
+  notas       TEXT,
+  created_by  TEXT,
+  created_at  TEXT,
+  updated_at  TEXT
+);
+
+-- Compras y cotizaciones por proyecto (solicitud -> cotizada -> aprobada -> entregada)
+CREATE TABLE IF NOT EXISTS compras (
+  id            TEXT PRIMARY KEY,
+  project_id    TEXT NOT NULL,
+  descripcion   TEXT NOT NULL,
+  cantidad      TEXT,
+  proveedor     TEXT,
+  monto         REAL DEFAULT 0,
+  estado        TEXT DEFAULT 'solicitud',  -- solicitud | cotizada | aprobada | en_camino | entregada
+  fecha_solicitud TEXT,
+  fecha_entrega TEXT,
+  aprobado_por  TEXT,
+  factura_file  TEXT,
+  notas         TEXT,
+  created_by    TEXT,
+  created_at    TEXT,
+  updated_at    TEXT
+);
+
+-- Resumen gerencial por proyecto (avance físico y presupuesto). Una fila por proyecto (id = project_id).
+CREATE TABLE IF NOT EXISTS obra_resumen (
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT,
+  avance_pct   REAL DEFAULT 0,
+  presupuesto  REAL DEFAULT 0,
+  notas        TEXT,
+  updated_by   TEXT,
+  updated_at   TEXT
+);
+
 -- Tokens de recuperación de contraseña (autoservicio por email)
 CREATE TABLE IF NOT EXISTS password_resets (
   token   TEXT PRIMARY KEY,
@@ -313,7 +360,10 @@ const SCHEMA = {
   publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'created_by', 'created_at', 'updated_at'],
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
-  caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at']
+  caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  salidas_material: ['id', 'project_id', 'item_id', 'item_name', 'cantidad', 'unidad', 'actividad', 'area', 'fecha', 'notas', 'created_by', 'created_at', 'updated_at'],
+  compras:      ['id', 'project_id', 'descripcion', 'cantidad', 'proveedor', 'monto', 'estado', 'fecha_solicitud', 'fecha_entrega', 'aprobado_por', 'factura_file', 'notas', 'created_by', 'created_at', 'updated_at'],
+  obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
@@ -864,7 +914,11 @@ function canWrite(table, op, user, values, filters) {
     case 'equipo_movs':
       return op === 'delete' ? user.role === 'admin' : true; // crear/editar: cualquier activo; borrar: admin
     case 'caja_chica':
+    case 'salidas_material':
+    case 'compras':
       return op === 'delete' ? user.role === 'admin' : true; // registrar/editar: cualquier activo; borrar: admin
+    case 'obra_resumen':
+      return op !== 'delete'; // crear/actualizar: cualquier activo; no se borra
     case 'messages':
       if (op !== 'insert') return false;
       return roleCan(chatRoomModule(values && values.room), user); // sala restringida → rol del módulo
