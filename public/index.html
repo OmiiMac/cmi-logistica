@@ -624,7 +624,7 @@ html{height:100%}
         Panel Admin
       </div>
     </div>
-    <div class="sb-section">Proyectos</div>
+    <div class="sb-section" id="sbProjSection">Proyectos</div>
     <div class="sb-projects" id="sbProjects"></div>
     <div class="sb-foot">
       <button class="btn-logout" onclick="doLogout()">
@@ -1261,6 +1261,11 @@ function asistResumen(){
 // ── Navigation ────────────────────────────────────────────────
 function nav(view, projectId){
   if(typeof stopChatPoll==='function') stopChatPoll();   // corta el respaldo del chat al navegar
+  // Usuarios que solo ven su área: cualquier vista de logística los regresa a lo suyo.
+  const solo = soloModulo();
+  if(solo && ['dashboard','inventario','rutas','transfers','project'].includes(view)){
+    view = soloView(); projectId = null;
+  }
   state.view = view;
   state.projectId = projectId||null;
   state.search = ''; state.cat = 'all';
@@ -1294,6 +1299,10 @@ function canModule(m){
   return false;
 }
 function isFullAdmin(){ return state.isAdmin && !(state.restrict && state.restrict.trim()); }
+// Roles que SOLO ven su propia área (no logística: proyectos, inventario, rutas…).
+const SOLO_ROLE_MODULE = { mercadeo:'mkt' };
+function soloModulo(){ return state.isAdmin ? null : (SOLO_ROLE_MODULE[state.role] || null); }
+function soloView(){ const m=soloModulo(); return m==='mkt'?'mercadeo':m==='conta'?'contabilidad':m==='licit'?'licitaciones':null; }
 function roleLabel(){
   return state.isAdmin?' (Admin)':state.isSupervisor?' (Supervisor)':state.isContador?' (Contador)':state.isMercadeo?' (Mercadeo)':state.isLicitaciones?' (Licitaciones)':'';
 }
@@ -1316,11 +1325,20 @@ function renderSidebar(){
     if(el) el.style.display = canModule(m) ? 'flex' : 'none';
   });
 
+  // Usuarios que solo ven su área: se ocultan logística, proyectos y asistente.
+  const solo = soloModulo();
+  ['dashboard','inventario','rutas','transfers'].forEach(v=>{
+    const el=document.getElementById('nav-'+v); if(el) el.style.display = solo ? 'none' : 'flex';
+  });
+  const asist=document.getElementById('nav-asistente'); if(asist) asist.style.display = solo ? 'none' : 'flex';
+  const projSec=document.getElementById('sbProjSection'); if(projSec) projSec.style.display = solo ? 'none' : 'block';
+
   // Projects list
   renderSidebarProjects();
 }
 function renderSidebarProjects(){
   const cont = document.getElementById('sbProjects'); if(!cont) return;
+  if(soloModulo()){ cont.innerHTML=''; return; }   // estos usuarios no ven proyectos
   const u = state.chatUnread||{};
   const projects = sortedProjects();
   cont.innerHTML = projects.map(p=>{
@@ -3125,6 +3143,9 @@ async function initApp(){
   state.userName       = profile?.name || me.user.email?.split('@')[0] || 'Usuario';
   state.phone          = profile?.phone || '';
   state.waOptin        = !!profile?.wa_optin;
+
+  // Los usuarios que solo ven su área inician en su módulo, no en el dashboard.
+  if(soloView()) state.view = soloView();
 
   showApp();
   document.addEventListener('pointerdown', initAudio);   // desbloquea el sonido al primer toque
