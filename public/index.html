@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&family=Orbitron:wght@500;700&display=swap">
 <script src="/sb-lite.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
 :root {
@@ -631,6 +633,7 @@ html{height:100%}
       </button>
       <span class="topbar-title" id="topbarTitle">Dashboard</span>
       <span class="topbar-badge" id="topbarBadge" hidden></span>
+      <button id="captureBtn" class="btn btn-sm btn-ghost" title="Capturar esta pantalla (foto o PDF)" onclick="openCaptureMenu()">📸 Capturar</button>
       <div id="topbarActions"></div>
     </div>
     <div id="view"></div>
@@ -1021,6 +1024,83 @@ function soundBtnIcon(){
   return on
     ? '<svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>'
     : '<svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>';
+}
+
+// ── Captura de pantalla (foto / PDF / compartir) ──────────────
+function captureName(ext){
+  const t=((document.getElementById('topbarTitle')||{}).textContent||'pantalla').trim().replace(/[^\w\-]+/g,'_');
+  return 'CMI-'+t+'-'+todayStr()+'.'+ext;
+}
+function downloadBlob(blob, name){
+  const url=URL.createObjectURL(blob); const a=document.createElement('a');
+  a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+// Toma la imagen del contenido actual (expande #view para capturarlo completo).
+async function doCapture(){
+  const el=document.getElementById('view');
+  if(!el || typeof html2canvas==='undefined') throw new Error('sin-captura');
+  const bg=getComputedStyle(document.body).backgroundColor || '#111827';
+  const prev={ flex:el.style.flex, height:el.style.height, overflow:el.style.overflow, maxHeight:el.style.maxHeight };
+  el.style.flex='none'; el.style.height='auto'; el.style.maxHeight='none'; el.style.overflow='visible';
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  try{
+    return await html2canvas(el, { backgroundColor:bg, scale:Math.min(2,(window.devicePixelRatio||1)+0.5), useCORS:true, logging:false, scrollX:0, scrollY:0, windowWidth:el.scrollWidth });
+  } finally {
+    el.style.flex=prev.flex; el.style.height=prev.height; el.style.maxHeight=prev.maxHeight; el.style.overflow=prev.overflow;
+  }
+}
+function openCaptureMenu(){
+  const titulo=((document.getElementById('topbarTitle')||{}).textContent||'').trim();
+  openModal(`
+  <div class="modal-head"><h2>Capturar pantalla</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <p style="color:var(--c-muted);font-size:13px;margin-bottom:14px">Toma una imagen de <b>${esc(titulo||'esta pantalla')}</b> tal como la ves ahora y guárdala o compártela.</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-primary" onclick="capturePNG()">📷 Descargar como foto (PNG)</button>
+      <button class="btn btn-primary" onclick="capturePDF()">📄 Descargar como PDF</button>
+      <button class="btn btn-ghost" onclick="captureShare()">📤 Compartir…</button>
+    </div>
+  </div>`);
+}
+async function capturePNG(){
+  closeModal(); showToast('Capturando…','ok');
+  try{
+    const canvas=await doCapture();
+    canvas.toBlob(b=>{ if(!b){showToast('No se pudo capturar','err');return;} downloadBlob(b,captureName('png')); showToast('Imagen lista','ok'); },'image/png');
+  }catch(e){ showToast('Error al capturar','err'); }
+}
+async function capturePDF(){
+  closeModal(); showToast('Generando PDF…','ok');
+  try{
+    const canvas=await doCapture();
+    const JsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
+    if(!JsPDF){ showToast('PDF no disponible','err'); return; }
+    const img=canvas.toDataURL('image/png');
+    const pdf=new JsPDF({orientation:'portrait',unit:'pt',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const iw=pw, ih=canvas.height*(pw/canvas.width);
+    if(ih<=ph){ pdf.addImage(img,'PNG',0,0,iw,ih); }
+    else { let y=0, rem=ih; while(rem>0){ pdf.addImage(img,'PNG',0,y,iw,ih); rem-=ph; if(rem>0){ pdf.addPage(); y-=ph; } } }
+    pdf.save(captureName('pdf'));
+    showToast('PDF listo','ok');
+  }catch(e){ showToast('Error al generar PDF','err'); }
+}
+async function captureShare(){
+  closeModal(); showToast('Preparando para compartir…','ok');
+  try{
+    const canvas=await doCapture();
+    canvas.toBlob(async b=>{
+      if(!b){ showToast('No se pudo capturar','err'); return; }
+      const file=new File([b], captureName('png'), {type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        try{ await navigator.share({ files:[file], title:'Captura CMI' }); }catch(e){}
+      } else {
+        downloadBlob(b, captureName('png'));
+        showToast('Compartir no disponible aquí: se descargó la imagen','ok');
+      }
+    },'image/png');
+  }catch(e){ showToast('Error al compartir','err'); }
 }
 
 // ── Navigation ────────────────────────────────────────────────
