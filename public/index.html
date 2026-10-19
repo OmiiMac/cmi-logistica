@@ -680,7 +680,7 @@ const MONTHS_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Ago
 const state = {
   userId: null, userName: '', role: '', isAdmin: false, isSupervisor: false, isContador: false, isMercadeo: false, isLicitaciones: false,
   view: 'dashboard', projectId: null,
-  search: '', cat: 'all',
+  search: '', cat: 'all', invOpenCats: {},
   projects: new Map(), items: new Map(), transfers: [], rutas: [],
   profiles: {}, sidebarOpen: false, rutaDate: todayStr()
 };
@@ -1257,6 +1257,37 @@ function renderInvLista(){
   });
   const summary=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
   const projBreak=g=>Object.keys(g.proj).map(pid=>esc((projName(pid)||pid)+': '+g.proj[pid])).join(' · ');
+  // ── Detalle agrupado en carpetas plegables por categoría ──────
+  const catOrder = CATS.map(c=>c.id);
+  const byCat = new Map();
+  items.forEach(i=>{ const k=i.category||'otros'; if(!byCat.has(k)) byCat.set(k,[]); byCat.get(k).push(i); });
+  const catKeys = [...byCat.keys()].sort((a,b)=>{ const ia=catOrder.indexOf(a), ib=catOrder.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
+  const open = state.invOpenCats || (state.invOpenCats={});
+  const estadoCell = i=>`<span style="font-size:11px;font-weight:700;color:${i.estado==='NO_OPERATIVA'?'var(--c-err)':i.estado==='MANTENIMIENTO'?'var(--c-warn)':'var(--c-ok)'}">${(i.estado||'OPERATIVA').replace('_',' ')}</span>`;
+  const foldersHtml = catKeys.length===0
+    ? `<div class="empty-state">Sin artículos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div>`
+    : catKeys.map(k=>{
+        const list=byCat.get(k), isOpen=!!open[k];
+        const label=(CATS.find(c=>c.id===k)||{}).label||k, color=CAT_COLOR[k]||'#6B6B78';
+        return `<div style="border:1px solid var(--c-border);border-radius:10px;margin-bottom:8px;overflow:hidden">
+          <div onclick="toggleInvCat('${k}')" style="display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;user-select:none">
+            <span style="display:inline-block;transition:transform .15s;transform:rotate(${isOpen?90:0}deg);color:var(--c-muted);font-size:11px">▶</span>
+            <span style="width:11px;height:11px;border-radius:3px;background:${color};flex:none"></span>
+            <b style="font-size:13px;flex:1">${esc(label)}</b>
+            <span style="font-size:11px;font-weight:700;color:var(--c-muted);background:var(--c-bg);border:1px solid var(--c-border);border-radius:20px;padding:2px 9px">${list.length}</span>
+          </div>
+          ${isOpen?`<div class="item-table" style="border:none;border-radius:0;margin:0"><table>
+            <thead><tr><th>Artículo</th><th>Proyecto</th><th>Cantidad</th><th>Unidad</th><th>Estado</th></tr></thead>
+            <tbody>${list.map(i=>`
+              <tr onclick="nav('project','${i.projectId}')" style="cursor:pointer">
+                <td><div style="display:flex;align-items:center;gap:9px">${i.photoId?`<img src="${fileUrl(i.photoId)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(i.name)}</b></div></td>
+                <td style="font-size:12px;color:var(--c-muted)">${esc(projName(i.projectId))}</td>
+                <td>${i.quantity}${i.minStock>0&&i.quantity<=i.minStock?' <span style="color:#D97706;font-size:11px">⚠</span>':''}</td>
+                <td style="font-size:12px;color:var(--c-muted)">${esc(i.unit)}</td>
+                <td>${estadoCell(i)}</td>
+              </tr>`).join('')}</tbody></table></div>`:''}
+        </div>`;
+      }).join('');
   document.getElementById('invBody').innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px">
       ${tile('Artículos', all.length, '#1D4ED8', '#DBEAFE')}
@@ -1291,25 +1322,21 @@ function renderInvLista(){
         </tbody>
       </table>
     </div>
-    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Detalle por ubicación</h3>
-    <div class="item-table">
-      <table>
-        <thead><tr><th>Artículo</th><th>Proyecto</th><th>Categoría</th><th>Cantidad</th><th>Unidad</th><th>Estado</th></tr></thead>
-        <tbody>
-          ${items.length===0
-            ? `<tr><td colspan="6"><div class="empty-state">Sin artículos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
-            : items.map(i=>`
-              <tr onclick="nav('project','${i.projectId}')" style="cursor:pointer">
-                <td><div style="display:flex;align-items:center;gap:9px">${i.photoId?`<img src="${fileUrl(i.photoId)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(i.name)}</b></div></td>
-                <td style="font-size:12px;color:var(--c-muted)">${esc(projName(i.projectId))}</td>
-                <td>${catChip(i.category)}</td>
-                <td>${i.quantity}${i.minStock>0&&i.quantity<=i.minStock?' <span style="color:#D97706;font-size:11px">⚠</span>':''}</td>
-                <td style="font-size:12px;color:var(--c-muted)">${esc(i.unit)}</td>
-                <td><span style="font-size:11px;font-weight:700;color:${i.estado==='NO_OPERATIVA'?'var(--c-err)':i.estado==='MANTENIMIENTO'?'var(--c-warn)':'var(--c-ok)'}">${(i.estado||'OPERATIVA').replace('_',' ')}</span></td>
-              </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;flex-wrap:wrap">
+      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0">Detalle por categoría</h3>
+      ${catKeys.length?`<div style="display:flex;gap:6px">
+        <span class="chip" onclick="invToggleAllCats(true)">Abrir todo</span>
+        <span class="chip" onclick="invToggleAllCats(false)">Cerrar todo</span>
+      </div>`:''}
+    </div>
+    ${foldersHtml}`;
+}
+// Abre/cierra una carpeta de categoría del inventario
+function toggleInvCat(catId){ state.invOpenCats=state.invOpenCats||{}; state.invOpenCats[catId]=!state.invOpenCats[catId]; renderInventario(); }
+// Abre o cierra todas las carpetas visibles de inventario
+function invToggleAllCats(openAll){
+  const o={}; if(openAll) CATS.forEach(c=>o[c.id]=true);
+  state.invOpenCats=openAll?o:{}; renderInventario();
 }
 // ── Inventario: gráficas y biblioteca ─────────────────────────
 let _invCharts=[]; function destroyInvCharts(){ _invCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _invCharts=[]; }
