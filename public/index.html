@@ -1399,6 +1399,11 @@ function renderDashboard(){
         <div class="greeting-kpi-val" id="gkLic">…</div>
         <div class="greeting-kpi-label">Licitaciones</div>
       </div>`:''}
+      ${canModule('conta')?`
+      <div class="greeting-kpi">
+        <div class="greeting-kpi-val" id="gkConta">…</div>
+        <div class="greeting-kpi-label">Contabilidad</div>
+      </div>`:''}
     </div>
   </div>
   ${alerts}
@@ -1539,6 +1544,7 @@ function renderDashboard(){
   // Conteos de modulos (async, solo para quien tiene acceso)
   if(canModule('licit')) sb.from('licitaciones').select('id').then(({data})=>{ const n=(data||[]).length; const a=document.getElementById('dashLicit'); if(a) a.textContent=n; const b=document.getElementById('gkLic'); if(b) b.textContent=n; });
   if(canModule('mkt'))   sb.from('campanas').select('id').then(({data})=>{ const n=(data||[]).length; const a=document.getElementById('dashMkt'); if(a) a.textContent=n; const b=document.getElementById('gkMkt'); if(b) b.textContent=n; });
+  if(canModule('conta')) sb.from('asientos').select('id').then(({data})=>{ const el=document.getElementById('gkConta'); if(el) el.textContent=(data||[]).length; });
 
   // Listado de licitaciones en el panel lateral (para quien tenga acceso)
   if(canModule('licit')) sb.from('licitaciones').select('*').order('created_at',{ascending:false}).then(({data})=>{
