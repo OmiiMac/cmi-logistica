@@ -2784,9 +2784,9 @@ function renderRoomChat(){
   ensureNotifPermission();                  // pide permiso de notificaciones una vez
   setTopbar(chatTitle(room), room==='general'?null:'Chat');
   const b = state.chatBack;
-  document.getElementById('topbarActions').innerHTML = b
-    ? `<button class="btn btn-sm btn-ghost" onclick="nav('${b.view}'${b.projectId?",'"+b.projectId+"'":''})">← Volver</button>`
-    : '';
+  const backBtn = b ? `<button class="btn btn-sm btn-ghost" onclick="nav('${b.view}'${b.projectId?",'"+b.projectId+"'":''})">← Volver</button>` : '';
+  const waBtn = canWaSend() ? `<button class="btn btn-sm btn-primary" onclick="openWaSendModal('${room}')">📢 WhatsApp</button>` : '';
+  document.getElementById('topbarActions').innerHTML = backBtn + waBtn;
   document.getElementById('view').innerHTML = chatUIHtml();
   loadChatMessages();
 }
@@ -2837,6 +2837,59 @@ async function sendChatMessage(){
   input.value = '';
   const d = await api('/api/insert',{table:'messages',values:{content,room:state_chat.scope||'general'}});
   if(d.error) showToast('Error al enviar','err');
+}
+
+// ── Enviar mensaje por WhatsApp a los miembros (admin/supervisor/ingeniero) ──
+function canWaSend(){ return ['admin','supervisor','engineer'].includes(state.role); }
+function openWaSendModal(presetRoom){
+  const room = presetRoom || state_chat.scope || 'general';
+  const areaLbl = chatTitle(room);
+  const people = Object.entries(state.profiles||{}).filter(([id])=>id!==state.userId);
+  openModal(`
+  <div class="modal-head"><h2>Enviar por WhatsApp</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>¿A quién le llega?</label>
+      <select id="waScope" onchange="waScopeChanged()">
+        <option value="room">Miembros de: ${esc(areaLbl)}</option>
+        <option value="all">Todos los usuarios</option>
+        <option value="users">Personas específicas…</option>
+      </select>
+    </div>
+    <div id="waUsers" style="display:none;max-height:180px;overflow:auto;border:1px solid var(--c-border);border-radius:8px;padding:8px">
+      ${people.length ? people.map(([id,name])=>`<label style="display:flex;align-items:center;gap:8px;padding:3px 2px;font-size:13px;cursor:pointer"><input type="checkbox" class="waUser" value="${id}" style="width:15px;height:15px">${esc(name)}</label>`).join('') : '<div style="color:var(--c-muted);font-size:12px">No hay otros usuarios</div>'}
+    </div>
+    <div class="form-group" style="margin-top:12px"><label>Mensaje</label>
+      <textarea id="waText" rows="4" placeholder="Escribe el mensaje que recibirán por WhatsApp…"></textarea>
+    </div>
+    <div style="font-size:11px;color:var(--c-muted)">Solo le llega a quien tenga su teléfono y el aviso de WhatsApp activado en su perfil.</div>
+  </div>
+  <div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="waSend('${room}')">📤 Enviar</button>
+  </div>`);
+}
+function waScopeChanged(){
+  const s=document.getElementById('waScope').value;
+  document.getElementById('waUsers').style.display = s==='users' ? 'block' : 'none';
+}
+async function waSend(room){
+  const scope=document.getElementById('waScope').value;
+  const text=document.getElementById('waText').value.trim();
+  if(!text){ showToast('Escribe el mensaje','err'); return; }
+  const body={ scope, text };
+  if(scope==='room') body.room=room;
+  if(scope==='users'){
+    body.userIds=[...document.querySelectorAll('.waUser:checked')].map(c=>c.value);
+    if(!body.userIds.length){ showToast('Elige al menos una persona','err'); return; }
+  }
+  showToast('Enviando…','ok');
+  const r=await apiPost('/api/wa-send', body);
+  if(r.error){ showToast(r.error.message||'Error al enviar','err'); return; }
+  const d=r.data||{};
+  closeModal();
+  if(d.dry) showToast(`Modo prueba: se avisaría a ${d.total} persona(s). Falta activar Twilio para enviar de verdad.`,'ok');
+  else if(d.total===0) showToast('Nadie tiene WhatsApp activado para ese destino','err');
+  else showToast(`Enviado a ${d.sent} de ${d.total}${d.failed?` · ${d.failed} fallaron`:''}`,'ok');
 }
 
 async function sendChatPhoto(input){

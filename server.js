@@ -534,31 +534,32 @@ function waRoomLabel(room) {
   return 'Chat';
 }
 
-// Usuarios que deben recibir el aviso de un mensaje en `room` (miembros del
-// canal/proyecto), activos, con teléfono y con opt-in, excluyendo al autor.
-function waRecipients(room, senderId) {
-  const users = db.prepare(
+// Todos los usuarios activos con teléfono y opt-in.
+function waOptinUsers() {
+  return db.prepare(
     "SELECT id, name, phone, role, restrict_mods FROM profiles " +
     "WHERE status = 'active' AND wa_optin = 1 AND phone IS NOT NULL AND TRIM(phone) <> ''"
   ).all();
+}
+// Miembros de una sala (canal/proyecto) dentro de un conjunto de usuarios.
+function waMembers(room, users) {
   const mod = chatRoomModule(room);
-  let list;
   if (mod) {
-    // Sala de módulo: solo quienes pueden entrar a ese módulo (rol + no bloqueado).
     const roles = MODULE_ROLES[mod] || [];
-    list = users.filter(u => {
+    return users.filter(u => {
       const blocked = String(u.restrict_mods || '').split(',').map(s => s.trim()).filter(Boolean);
       return roles.includes(u.role) && !blocked.includes(mod);
     });
-  } else if (room && room.indexOf('proyecto:') === 0) {
-    // Sala de proyecto: equipo del proyecto (ingeniero asignado) + admins + supervisores.
-    const proj = db.prepare('SELECT engineer_id FROM projects WHERE id = ?').get(room.slice(9));
-    list = users.filter(u => u.role === 'admin' || u.role === 'supervisor' || (proj && u.id === proj.engineer_id));
-  } else {
-    // Salas abiertas (general, inventario, rutas): todo usuario activo.
-    list = users;
   }
-  return list.filter(u => u.id !== senderId);
+  if (room && room.indexOf('proyecto:') === 0) {
+    const proj = db.prepare('SELECT engineer_id FROM projects WHERE id = ?').get(room.slice(9));
+    return users.filter(u => u.role === 'admin' || u.role === 'supervisor' || (proj && u.id === proj.engineer_id));
+  }
+  return users; // salas abiertas (general, inventario, rutas): todos
+}
+// Destinatarios del aviso automático de un mensaje en `room` (excluye al autor).
+function waRecipients(room, senderId) {
+  return waMembers(room, waOptinUsers()).filter(u => u.id !== senderId);
 }
 
 async function waSendTwilio(phone, body) {
@@ -590,6 +591,24 @@ async function waSendMeta(phone, name, area) {
     body: JSON.stringify(payload)
   });
   if (!r.ok) throw new Error('Meta HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+}
+
+// Envía un texto libre a un número (para los envíos manuales del admin).
+async function waSendMetaText(phone, text) {
+  const token = process.env.WHATSAPP_TOKEN, phoneId = process.env.WHATSAPP_PHONE_ID;
+  if (!token || !phoneId) throw new Error('Faltan credenciales de Meta');
+  const to = String(phone).replace(/[^\d]/g, '');
+  const r = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } })
+  });
+  if (!r.ok) throw new Error('Meta HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+}
+async function waSendText(phone, text) {
+  if (WA_PROVIDER === 'twilio') return waSendTwilio(phone, text);
+  if (WA_PROVIDER === 'meta')   return waSendMetaText(phone, text);
+  console.log(`[WhatsApp:dry] enviaría a ${phone}: ${text}`);
 }
 
 // Dispara los avisos de WhatsApp para un mensaje recién insertado (no bloquea).
@@ -973,6 +992,38 @@ app.post('/api/insert', (req, res) => {
   if (!canWrite(table, 'insert', u, values, [])) return res.status(403).json({ data: null, error: { message: 'No autorizado' } });
   try { res.json({ data: [doInsert(table, values, u)], error: null }); }
   catch (e) { res.json({ data: null, error: { message: e.message } }); }
+});
+
+// Envío manual de mensajes por WhatsApp a los miembros de un canal/proyecto,
+// a todos, o a personas específicas. Pueden enviar admin, supervisor e ingenieros.
+app.post('/api/wa-send', async (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ data: null, error: { message: 'No autenticado' } });
+  if (u.status !== 'active') return res.status(403).json({ data: null, error: { message: 'Cuenta no activa' } });
+  if (!['admin', 'supervisor', 'engineer'].includes(u.role))
+    return res.status(403).json({ data: null, error: { message: 'No autorizado para enviar avisos' } });
+  const { scope, room, userIds, text } = req.body || {};
+  const msg = String(text || '').trim();
+  if (!msg) return res.json({ data: null, error: { message: 'Escribe un mensaje' } });
+
+  const base = waOptinUsers();
+  let list;
+  if (scope === 'all') list = base;
+  else if (scope === 'users') { const set = new Set(userIds || []); list = base.filter(x => set.has(x.id)); }
+  else if (scope === 'room') {
+    if (!room) return res.json({ data: null, error: { message: 'Falta el canal' } });
+    const mod = chatRoomModule(room);
+    if (mod && !roleCan(mod, u)) return res.status(403).json({ data: null, error: { message: 'No tienes acceso a ese canal' } });
+    list = waMembers(room, base);
+  } else return res.json({ data: null, error: { message: 'Destino inválido' } });
+
+  list = list.filter(x => x.id !== u.id);   // no enviárselo a sí mismo
+  if (!list.length) return res.json({ data: { total: 0, sent: 0, failed: 0, dry: WA_PROVIDER === 'dry' }, error: null });
+  const body = `*ObraControl CMI* — ${u.name || 'Equipo'}:\n${msg}`;
+  const results = await Promise.allSettled(list.map(x => waSendText(String(x.phone).trim(), body)));
+  const sent = results.filter(r => r.status === 'fulfilled').length;
+  results.forEach(r => { if (r.status === 'rejected') console.error('wa-send:', r.reason && r.reason.message); });
+  res.json({ data: { total: list.length, sent, failed: list.length - sent, dry: WA_PROVIDER === 'dry' }, error: null });
 });
 
 app.post('/api/update', (req, res) => {
