@@ -434,8 +434,11 @@ html{height:100%}
 }
 
 /* ── CHAT ── */
-#chatWrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
-#chatMessages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px}
+#chatWrap{display:flex;flex-direction:column;height:100%;overflow:hidden;position:relative}
+/* Marca de agua: logo de la torre CMI, tenue y centrado detrás de los mensajes */
+#chatWrap::before{content:"";position:absolute;inset:0;background-image:url('/cmi-logo.svg');background-repeat:no-repeat;background-position:center 42%;background-size:min(300px,46%);opacity:.05;pointer-events:none;z-index:0}
+#chatMessages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;position:relative;z-index:1}
+#chatInputBar{position:relative;z-index:1}
 .msg-row{display:flex;gap:10px;align-items:flex-end;max-width:75%}
 .msg-row.mine{align-self:flex-end;flex-direction:row-reverse}
 .msg-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
@@ -886,7 +889,9 @@ function setupRealtime(){
             state.chatUnread[msgRoom] = (state.chatUnread[msgRoom]||0)+1;
             updateChatBadges();
             const quien = state.profiles[p.new.user_id] || 'Alguien';
+            chatBeep();                                   // sonido suave
             showToast('💬 '+quien+' escribió en '+chatTitle(msgRoom), 'ok');
+            notifyDesktop('💬 '+chatTitle(msgRoom), quien+': '+(p.new.content||'(foto)'), msgRoom);
           }
         }
       } else if(['asientos','cuentas','compromisos'].includes(table)){
@@ -961,6 +966,61 @@ function updateChatBadges(){
   if(typeof renderSidebarProjects==='function') renderSidebarProjects();
   const total = Object.values(u).reduce((a,b)=>a+(b||0),0);
   document.title = (total>0 ? '('+(total>99?'99+':total)+') ' : '') + 'ObraControl CMI';
+}
+
+// ── Sonido + notificaciones del navegador ─────────────────────
+function getPref(k,def){ try{ const v=localStorage.getItem(k); return v===null?def:v; }catch(e){ return def; } }
+function setPref(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+let _audioCtx = null;
+// El audio debe desbloquearse con un gesto del usuario (política del navegador).
+function initAudio(){
+  try{
+    if(!_audioCtx){ const AC=window.AudioContext||window.webkitAudioContext; if(AC) _audioCtx=new AC(); }
+    if(_audioCtx && _audioCtx.state==='suspended') _audioCtx.resume();
+  }catch(e){}
+}
+// Beep corto y suave (dos tonos) cuando llega un mensaje.
+function chatBeep(){
+  if(getPref('cmi_chat_sound','1')!=='1') return;
+  try{
+    initAudio(); if(!_audioCtx) return;
+    const t=_audioCtx.currentTime;
+    const o=_audioCtx.createOscillator(), g=_audioCtx.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(880,t); o.frequency.setValueAtTime(660,t+0.12);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.14,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.35);
+    o.connect(g); g.connect(_audioCtx.destination);
+    o.start(t); o.stop(t+0.36);
+  }catch(e){}
+}
+// Pide permiso para notificaciones del navegador (una sola vez).
+function ensureNotifPermission(){
+  try{ if('Notification' in window && Notification.permission==='default') Notification.requestPermission(); }catch(e){}
+}
+// Muestra una notificación del sistema solo si la pestaña NO está visible.
+function notifyDesktop(title, body, room){
+  try{
+    if(!('Notification' in window) || Notification.permission!=='granted') return;
+    if(!document.hidden) return;
+    const n=new Notification(title,{ body, tag:'cmi-chat-'+room });
+    n.onclick=()=>{ try{ window.focus(); state.chatRoom=room; state.chatBack=null; nav('roomchat'); }catch(e){} n.close(); };
+  }catch(e){}
+}
+// Botón de silenciar/activar sonido dentro del chat.
+function toggleChatSound(){
+  const on = getPref('cmi_chat_sound','1')==='1';
+  setPref('cmi_chat_sound', on?'0':'1');
+  if(!on) chatBeep();                      // al reactivar, suena de muestra
+  const btn=document.getElementById('chatSoundBtn'); if(btn) btn.innerHTML = soundBtnIcon();
+  showToast(on?'Sonido del chat silenciado':'Sonido del chat activado','ok');
+}
+function soundBtnIcon(){
+  const on = getPref('cmi_chat_sound','1')==='1';
+  return on
+    ? '<svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg>'
+    : '<svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5z"/><line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>';
 }
 
 // ── Navigation ────────────────────────────────────────────────
@@ -2580,6 +2640,7 @@ function chatUIHtml(){
     <div id="chatMessages"><div class="nodata" style="padding:30px;text-align:center">Cargando mensajes...</div></div>
     <div id="chatInputBar">
       <input type="file" id="chatPhoto" accept="image/*" capture="environment" style="display:none" onchange="sendChatPhoto(this)">
+      <button id="chatSoundBtn" class="chat-send-btn" title="Activar/silenciar sonido" onclick="toggleChatSound()" style="background:var(--c-border);color:var(--c-muted)">${soundBtnIcon()}</button>
       <button class="chat-send-btn" title="Adjuntar foto" onclick="document.getElementById('chatPhoto').click()" style="background:var(--c-border);color:var(--c-muted)">
         <svg width="17" height="17" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.2"/><path d="M8 5l1.5-2h5L16 5"/></svg>
       </button>
@@ -2613,6 +2674,8 @@ function renderRoomChat(){
   const room = state.chatRoom || 'general';
   state_chat.scope = room;
   markRoomRead(room);                       // abrir un canal lo marca como leído
+  initAudio();                              // desbloquea el sonido (gesto del usuario)
+  ensureNotifPermission();                  // pide permiso de notificaciones una vez
   setTopbar(chatTitle(room), room==='general'?null:'Chat');
   const b = state.chatBack;
   document.getElementById('topbarActions').innerHTML = b
@@ -2707,6 +2770,7 @@ async function initApp(){
   state.userName       = profile?.name || me.user.email?.split('@')[0] || 'Usuario';
 
   showApp();
+  document.addEventListener('pointerdown', initAudio);   // desbloquea el sonido al primer toque
   await loadAll();
   await refreshChatUnread();
   setupRealtime();
