@@ -909,6 +909,10 @@ function setupRealtime(){
         }
       } else if(['asientos','cuentas','compromisos'].includes(table)){
         modRefresh('contabilidad');
+      } else if(['caja_chica','salidas_material','compras','obra_resumen'].includes(table)){
+        // Movimientos de proyecto: refrescar la vista si se está viendo
+        if(state.view==='project') renderProject();
+        else if(state.view==='contabilidad' && typeof mstate!=='undefined' && (mstate.contaTab==='caja'||mstate.contaTab==='panel')) renderContabilidad();
       } else if(table==='licitaciones'){
         modRefresh('licitaciones');
       } else if(['campanas','publicaciones','mercadeo_tareas'].includes(table)){
@@ -3547,22 +3551,28 @@ function goProjCaja(pid){ nav('project',pid); state.projTab='caja'; render(); }
 async function renderContaCaja(){
   const body=document.getElementById('contaBody'); if(!body) return;
   body.innerHTML='<div class="nodata" style="padding:20px">Cargando caja chica…</div>';
-  const d=await api('/api/select',{table:'caja_chica',order:[{col:'fecha',asc:false}],limit:5000});
+  const d=await api('/api/select',{table:'caja_chica',order:[{col:'created_at',asc:false}],limit:5000});
   if(mstate.contaTab!=='caja') return;
   const movs=d.data||[];
   const byProj={};
   movs.forEach(m=>{ const p=m.project_id||'—'; const o=(byProj[p]=byProj[p]||{ing:0,gas:0,n:0}); if(m.tipo==='ingreso') o.ing+=(+m.monto||0); else o.gas+=(+m.monto||0); o.n++; });
-  const rows=Object.entries(byProj).map(([pid,o])=>({pid,name:projName(pid)||pid,ing:o.ing,gas:o.gas,n:o.n,saldo:o.ing-o.gas})).sort((a,b)=>a.name.localeCompare(b.name));
+  // Todos los proyectos existentes (aunque no tengan movimientos aún) + cualquiera con caja
+  const projMap=new Map();
+  [...state.projects.values()].filter(p=>p.id!=='bodega'&&p.status!=='archived').sort((a,b)=>a.name.localeCompare(b.name)).forEach(p=>projMap.set(p.id,p.name));
+  Object.keys(byProj).forEach(pid=>{ if(!projMap.has(pid)) projMap.set(pid, projName(pid)||pid); });
+  const rows=[...projMap.entries()].map(([pid,name])=>{ const o=byProj[pid]||{ing:0,gas:0,n:0}; return {pid,name,ing:o.ing,gas:o.gas,n:o.n,saldo:o.ing-o.gas}; });
   const tIng=rows.reduce((s,r)=>s+r.ing,0), tGas=rows.reduce((s,r)=>s+r.gas,0);
+  const recientes=movs.slice(0,80);
   body.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
       ${kpiTile('Fondos (todos)', cajaMoney(tIng), '#166534','#DCFCE7')}
       ${kpiTile('Gastos (todos)', cajaMoney(tGas), '#DC2626','#FEE2E2')}
       ${kpiTile('Saldo total', cajaMoney(tIng-tGas), '#1D4ED8','#DBEAFE')}
     </div>
-    <div class="item-table"><table>
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Saldo por proyecto</h3>
+    <div class="item-table" style="margin-bottom:18px"><table>
       <thead><tr><th>Proyecto</th><th style="text-align:right">Fondos</th><th style="text-align:right">Gastos</th><th style="text-align:right">Saldo</th><th style="text-align:center">Mov.</th></tr></thead>
-      <tbody>${rows.length===0?`<tr><td colspan="5"><div class="empty-state">Sin movimientos de caja en ningún proyecto</div></td></tr>`:rows.map(r=>`
+      <tbody>${rows.length===0?`<tr><td colspan="5"><div class="empty-state">No hay proyectos</div></td></tr>`:rows.map(r=>`
         <tr style="cursor:pointer" onclick="goProjCaja('${r.pid}')" title="Ver la caja de este proyecto">
           <td><b style="font-size:13px">${esc(r.name)}</b></td>
           <td style="text-align:right;color:var(--c-ok)">${cajaMoney(r.ing)}</td>
@@ -3571,16 +3581,32 @@ async function renderContaCaja(){
           <td style="text-align:center;color:var(--c-muted)">${r.n}</td>
         </tr>`).join('')}</tbody>
     </table></div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Toca un proyecto para ver y gestionar su caja chica.</div>`;
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Movimientos recientes (seguimiento en vivo)</h3>
+    <div class="item-table"><table>
+      <thead><tr><th>Fecha</th><th>Proyecto</th><th>Concepto</th><th>Registró</th><th>Tipo</th><th style="text-align:right">Monto</th><th>Comprob.</th></tr></thead>
+      <tbody>${recientes.length===0?`<tr><td colspan="7"><div class="empty-state">Aún no hay movimientos de caja. Cuando un ingeniero registre un gasto o fondo, aparecerá aquí.</div></td></tr>`:recientes.map(m=>`
+        <tr>
+          <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(m.fecha||'')}</td>
+          <td style="font-size:12px">${esc(projName(m.project_id)||m.project_id||'—')}</td>
+          <td><b style="font-size:13px">${esc(m.concepto)}</b>${m.categoria?`<div style="font-size:10px;color:var(--c-muted)">${esc(m.categoria)}</div>`:''}</td>
+          <td style="font-size:11px;color:var(--c-muted)">${esc(state.profiles[m.created_by]||'')}</td>
+          <td><span style="font-size:11px;font-weight:700;color:${m.tipo==='ingreso'?'var(--c-ok)':'var(--c-err)'}">${m.tipo==='ingreso'?'Fondo':'Gasto'}</span></td>
+          <td style="text-align:right;font-weight:700;white-space:nowrap;color:${m.tipo==='ingreso'?'var(--c-ok)':'var(--c-err)'}">${m.tipo==='ingreso'?'+':'−'}${cajaMoney(m.monto)}</td>
+          <td>${m.comprobante_file?`<a href="${fileUrl(m.comprobante_file)}" target="_blank" style="color:var(--c-primary);font-size:12px">ver</a>`:'<span style="color:var(--c-muted);font-size:11px">—</span>'}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>`;
 }
 async function renderContaPanel(){
   const body=document.getElementById('contaBody'); if(!body) return;
-  const [rs,rm]=await Promise.all([
+  const [rs,rm,rc]=await Promise.all([
     apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
-    apiPost('/api/conta/mensual',{desde:mstate.contaDesde,hasta:mstate.contaHasta})
+    apiPost('/api/conta/mensual',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
+    api('/api/select',{table:'caja_chica',limit:5000})
   ]);
   if(rs.error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(rs.error.message)}</div>`; return; }
   const s=rs.data||[], mensual=rm.data||[];
+  const cajaByProj={}; (rc.data||[]).forEach(m=>{ if(m.tipo!=='ingreso'){ const p=m.project_id||'—'; cajaByProj[p]=(cajaByProj[p]||0)+(+m.monto||0); } });
+  const cajaRows=Object.entries(cajaByProj).map(([pid,g])=>({name:projName(pid)||pid,gas:g})).filter(r=>r.gas>0).sort((a,b)=>b.gas-a.gas).slice(0,10);
   const sum=(tipo,signo)=>s.filter(c=>c.tipo===tipo).reduce((a,c)=>a+(signo==='d'?(c.debe-c.haber):(c.haber-c.debe)),0);
   const totIng=sum('ingreso','h'), totGas=sum('gasto','d'), util=totIng-totGas;
   const activo=sum('activo','d'), pasivo=sum('pasivo','h'), patr=sum('patrimonio','h')+util;
@@ -3596,8 +3622,14 @@ async function renderContaPanel(){
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Utilidad acumulada</h3><canvas id="chUtil" height="190"></canvas></div>
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Composición de gastos</h3><canvas id="chGastos" height="190"></canvas></div>
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Activo · Pasivo · Patrimonio</h3><canvas id="chAPP" height="190"></canvas></div>
+      <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Gastos de caja chica por proyecto</h3><canvas id="chCajaProj" height="190"></canvas></div>
     </div>`;
   drawContaCharts(s,mensual,{activo,pasivo,patr});
+  const elCaja=document.getElementById('chCajaProj');
+  if(elCaja && typeof Chart!=='undefined'){
+    if(cajaRows.length) _contaCharts.push(new Chart(elCaja,{type:'bar',data:{labels:cajaRows.map(r=>r.name),datasets:[{label:'Gastos caja',data:cajaRows.map(r=>r.gas),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+    else elCaja.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin gastos de caja chica aún</div>';
+  }
 }
 // ── Pendientes y compromisos mensuales ───────────────────────
 async function renderContaCompromisos(){
