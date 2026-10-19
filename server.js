@@ -252,6 +252,23 @@ CREATE TABLE IF NOT EXISTS compromisos (
   updated_at  TEXT
 );
 
+-- Caja chica por proyecto (ingresos de fondo y gastos con comprobante)
+CREATE TABLE IF NOT EXISTS caja_chica (
+  id           TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL,
+  fecha        TEXT,                        -- YYYY-MM-DD
+  concepto     TEXT NOT NULL,
+  tipo         TEXT DEFAULT 'gasto',        -- ingreso (fondo/reembolso) | gasto
+  monto        REAL DEFAULT 0,
+  categoria    TEXT,
+  comprobante_file TEXT,                    -- id de archivo (foto/factura)
+  estado       TEXT DEFAULT 'registrado',   -- registrado | reembolsado | pendiente
+  notas        TEXT,
+  created_by   TEXT,
+  created_at   TEXT,
+  updated_at   TEXT
+);
+
 -- Tokens de recuperación de contraseña (autoservicio por email)
 CREATE TABLE IF NOT EXISTS password_resets (
   token   TEXT PRIMARY KEY,
@@ -295,7 +312,8 @@ const SCHEMA = {
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'created_by', 'created_at', 'updated_at'],
   publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'created_by', 'created_at', 'updated_at'],
-  compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at']
+  compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
@@ -845,6 +863,8 @@ function canWrite(table, op, user, values, filters) {
       return op === 'insert';
     case 'equipo_movs':
       return op === 'delete' ? user.role === 'admin' : true; // crear/editar: cualquier activo; borrar: admin
+    case 'caja_chica':
+      return op === 'delete' ? user.role === 'admin' : true; // registrar/editar: cualquier activo; borrar: admin
     case 'messages':
       if (op !== 'insert') return false;
       return roleCan(chatRoomModule(values && values.room), user); // sala restringida → rol del módulo

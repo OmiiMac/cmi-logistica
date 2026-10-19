@@ -1269,6 +1269,7 @@ function nav(view, projectId){
   state.view = view;
   state.projectId = projectId||null;
   state.search = ''; state.cat = 'all';
+  if(view==='project') state.projTab='inventario';   // abrir un proyecto empieza en Inventario
   closeSidebar(); render();
 }
 
@@ -1779,23 +1780,30 @@ async function delInvFile(id){ if(!confirm('¿Eliminar este archivo?')) return; 
 function renderProject(){
   const proj = state.projects.get(state.projectId);
   if(!proj){setTopbar('Proyecto no encontrado');document.getElementById('view').innerHTML='<div class="nodata">Proyecto no encontrado</div>';return;}
-
   setTopbar(proj.name, proj.supervisor);
-
-  const items = [...state.items.values()]
-    .filter(i=>i.projectId===state.projectId)
-    .filter(i=>state.cat==='all'||i.category===state.cat)
-    .filter(i=>!state.search||i.name.toLowerCase().includes(state.search.toLowerCase()))
-    .sort((a,b)=>a.name.localeCompare(b.name));
-
   const engineerName = proj.engineerId ? (state.profiles[proj.engineerId]||'Asignado') : '';
-
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-sm btn-ghost" onclick="goChat('proyecto:${proj.id}','project','${proj.id}')">💬 Chat</button>`
     + (state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'');
-
+  const tab = state.projTab||'inventario';
+  const tabs=[['inventario','📦 Inventario'],['caja','💵 Caja Chica'],['archivos','📎 Archivos']];
   document.getElementById('view').innerHTML = `
-  ${engineerName?`<div style="font-size:12px;color:var(--c-muted);margin-bottom:14px">Ingeniero asignado: <b>${esc(engineerName)}</b></div>`:''}
+    ${engineerName?`<div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Ingeniero asignado: <b>${esc(engineerName)}</b></div>`:''}
+    <div class="filter-chips" style="margin-bottom:14px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" onclick="state.projTab='${k}';renderProject()">${l}</span>`).join('')}</div>
+    <div id="projBody"></div>`;
+  if(tab==='caja') renderProjCaja(proj);
+  else if(tab==='archivos') renderProjArchivos(proj);
+  else renderProjInventario(proj);
+}
+
+function renderProjInventario(proj){
+  const b=document.getElementById('projBody'); if(!b) return;
+  const items = [...state.items.values()]
+    .filter(i=>i.projectId===proj.id)
+    .filter(i=>state.cat==='all'||i.category===state.cat)
+    .filter(i=>!state.search||i.name.toLowerCase().includes(state.search.toLowerCase()))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  b.innerHTML = `
   <div class="toolbar">
     <div class="search-wrap">
       <span class="search-icon"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
@@ -1836,8 +1844,12 @@ function renderProject(){
           </tr>`).join('')}
       </tbody>
     </table>
-  </div>
-  <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:22px 0 10px">Archivos del proyecto</h3>
+  </div>`;
+}
+
+function renderProjArchivos(proj){
+  const b=document.getElementById('projBody'); if(!b) return;
+  b.innerHTML = `
   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
     <input type="file" id="projFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
     <button class="btn btn-sm btn-primary" onclick="uploadProjFile('${proj.id}')">Subir foto / archivo / video</button>
@@ -1845,6 +1857,84 @@ function renderProject(){
   </div>
   <div id="projFiles"><div class="nodata" style="padding:16px">Cargando archivos…</div></div>`;
   loadProjectFiles(proj.id);
+}
+
+// ── Caja Chica por proyecto ───────────────────────────────────
+function cajaMoney(n){ return '$'+(Math.round((+n||0)*100)/100).toLocaleString('es-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+async function renderProjCaja(proj){
+  const b=document.getElementById('projBody'); if(!b) return;
+  b.innerHTML = `<div class="nodata" style="padding:20px">Cargando caja chica…</div>`;
+  const d = await api('/api/select',{table:'caja_chica',filters:[{col:'project_id',val:proj.id}],order:[{col:'fecha',asc:false}],limit:500});
+  if(state.view!=='project' || state.projectId!==proj.id || (state.projTab||'inventario')!=='caja') return;
+  const movs = d.data || [];
+  const ing = movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(+m.monto||0),0);
+  const gas = movs.filter(m=>m.tipo!=='ingreso').reduce((s,m)=>s+(+m.monto||0),0);
+  const saldo = ing - gas;
+  b.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
+      <div class="section-card" style="padding:14px;text-align:center"><div style="font-size:11px;color:var(--c-muted)">Saldo disponible</div><div style="font-size:21px;font-weight:800;color:${saldo<0?'var(--c-err)':'var(--c-ok)'}">${cajaMoney(saldo)}</div></div>
+      <div class="section-card" style="padding:14px;text-align:center"><div style="font-size:11px;color:var(--c-muted)">Fondos ingresados</div><div style="font-size:18px;font-weight:700">${cajaMoney(ing)}</div></div>
+      <div class="section-card" style="padding:14px;text-align:center"><div style="font-size:11px;color:var(--c-muted)">Gastos</div><div style="font-size:18px;font-weight:700">${cajaMoney(gas)}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-primary" onclick="showCajaModal('${proj.id}','gasto')">− Registrar gasto</button>
+      <button class="btn btn-sm btn-ghost" onclick="showCajaModal('${proj.id}','ingreso')">+ Agregar fondo</button>
+    </div>
+    <div class="item-table"><table>
+      <thead><tr><th>Fecha</th><th>Concepto</th><th>Tipo</th><th style="text-align:right">Monto</th><th>Comprob.</th><th>Estado</th>${state.isAdmin?'<th></th>':''}</tr></thead>
+      <tbody>${movs.length===0?`<tr><td colspan="7"><div class="empty-state">Sin movimientos de caja aún. Agrega un fondo o registra un gasto.</div></td></tr>`:movs.map(m=>`
+        <tr>
+          <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(m.fecha||'')}</td>
+          <td><b style="font-size:13px">${esc(m.concepto)}</b>${m.categoria?`<div style="font-size:10px;color:var(--c-muted)">${esc(m.categoria)}</div>`:''}</td>
+          <td><span style="font-size:11px;font-weight:700;color:${m.tipo==='ingreso'?'var(--c-ok)':'var(--c-err)'}">${m.tipo==='ingreso'?'Fondo':'Gasto'}</span></td>
+          <td style="text-align:right;font-weight:700;white-space:nowrap;color:${m.tipo==='ingreso'?'var(--c-ok)':'var(--c-err)'}">${m.tipo==='ingreso'?'+':'−'}${cajaMoney(m.monto)}</td>
+          <td>${m.comprobante_file?`<a href="${fileUrl(m.comprobante_file)}" target="_blank" style="color:var(--c-primary);font-size:12px">ver</a>`:'<span style="color:var(--c-muted);font-size:11px">—</span>'}</td>
+          <td><span style="font-size:11px">${esc(m.estado||'registrado')}</span></td>
+          ${state.isAdmin?`<td style="text-align:right"><button class="act-btn del" onclick="deleteCaja('${m.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button></td>`:''}
+        </tr>`).join('')}</tbody>
+    </table></div>`;
+}
+function showCajaModal(projectId, tipo){
+  const esGasto = tipo!=='ingreso';
+  openModal(`
+  <div class="modal-head"><h2>${esGasto?'Registrar gasto':'Agregar fondo'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Concepto</label><input id="cajaConcepto" placeholder="${esGasto?'Ej: Compra de clavos':'Ej: Fondo inicial / Reembolso'}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto</label><input id="cajaMonto" type="number" min="0" step="0.01" value=""></div>
+      <div class="form-group"><label>Fecha</label><input id="cajaFecha" type="date" value="${todayStr()}"></div>
+    </div>
+    <div class="form-group"><label>Categoría (opcional)</label><input id="cajaCategoria" placeholder="Ej: Materiales, Transporte, Comida"></div>
+    ${esGasto?`<div class="form-group"><label>Comprobante / factura (foto, opcional)</label><input type="file" id="cajaFoto" accept="image/*"></div>`:''}
+    <div class="form-group"><label>Notas (opcional)</label><textarea id="cajaNotas" rows="2"></textarea></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCaja('${projectId}','${tipo}')">Guardar</button></div>`);
+}
+async function saveCaja(projectId, tipo){
+  const concepto=document.getElementById('cajaConcepto').value.trim();
+  const monto=parseFloat(document.getElementById('cajaMonto').value)||0;
+  if(!concepto){ showToast('Escribe el concepto','err'); return; }
+  if(monto<=0){ showToast('Ingresa un monto válido','err'); return; }
+  const fecha=document.getElementById('cajaFecha').value||todayStr();
+  const categoria=document.getElementById('cajaCategoria').value.trim();
+  const notas=document.getElementById('cajaNotas').value.trim();
+  const row={project_id:projectId,fecha,concepto,tipo:tipo==='ingreso'?'ingreso':'gasto',monto,categoria,notas,estado:'registrado',created_at:new Date().toISOString()};
+  const d=await api('/api/insert',{table:'caja_chica',values:row});
+  if(d.error){ showToast('Error al guardar: '+d.error.message,'err'); return; }
+  const created=d.data && d.data[0];
+  const fin=document.getElementById('cajaFoto');
+  if(fin && fin.files && fin.files[0] && created){
+    showToast('Subiendo comprobante…','ok');
+    const up=await apiUpload('caja', created.id, fin.files[0]);
+    if(!up.error) await api('/api/update',{table:'caja_chica',values:{comprobante_file:up.data.id},filters:[{col:'id',val:created.id}]});
+  }
+  closeModal(); showToast('Guardado','ok'); renderProject();
+}
+async function deleteCaja(id){
+  if(!confirm('¿Eliminar este movimiento de caja?')) return;
+  const d=await api('/api/delete',{table:'caja_chica',filters:[{col:'id',val:id}]});
+  if(d.error){ showToast('Error al eliminar','err'); return; }
+  showToast('Eliminado','ok'); renderProject();
 }
 async function loadProjectFiles(pid){
   const cont=document.getElementById('projFiles'); if(!cont) return;
