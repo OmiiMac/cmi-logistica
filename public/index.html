@@ -580,11 +580,11 @@ html{height:100%}
       </div>
       <div class="sb-nav-item" id="nav-inventario" onclick="nav('inventario')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
-        Inventario
+        Inventario <span id="unread-inventario" hidden class="unread-badge">!</span>
       </div>
       <div class="sb-nav-item" id="nav-rutas" onclick="nav('rutas')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        Rutas del Camion
+        Rutas del Camion <span id="unread-rutas" hidden class="unread-badge">!</span>
       </div>
       <div class="sb-nav-item" id="nav-transfers" onclick="nav('transfers')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M7 16V4m0 0L3 8m4-4 4 4M17 8v12m0 0 4-4m-4 4-4-4"/></svg>
@@ -596,15 +596,15 @@ html{height:100%}
       </div>
       <div class="sb-nav-item" id="nav-contabilidad" onclick="nav('contabilidad')" style="display:none">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h5"/></svg>
-        Contabilidad
+        Contabilidad <span id="unread-contabilidad" hidden class="unread-badge">!</span>
       </div>
       <div class="sb-nav-item" id="nav-licitaciones" onclick="nav('licitaciones')" style="display:none">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13l2 2 4-4"/></svg>
-        Licitaciones
+        Licitaciones <span id="unread-licitaciones" hidden class="unread-badge">!</span>
       </div>
       <div class="sb-nav-item" id="nav-mercadeo" onclick="nav('mercadeo')" style="display:none">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg>
-        Mercadeo
+        Mercadeo <span id="unread-mercadeo" hidden class="unread-badge">!</span>
       </div>
       <div class="sb-nav-item" id="nav-users" onclick="nav('users')" style="display:none">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -682,7 +682,8 @@ const state = {
   view: 'dashboard', projectId: null,
   search: '', cat: 'all', invOpenCats: {},
   projects: new Map(), items: new Map(), transfers: [], rutas: [],
-  profiles: {}, sidebarOpen: false, rutaDate: todayStr()
+  profiles: {}, sidebarOpen: false, rutaDate: todayStr(),
+  chatUnread: {}
 };
 
 // ── Normalizers (snake_case → camelCase) ─────────────────────
@@ -847,6 +848,7 @@ function setupRealtime(){
   const tok=getToken(); if(!tok) return;
   closeSSE();
   _sse = new EventSource('/api/realtime?token='+encodeURIComponent(tok));
+  _sse.onopen = () => { refreshChatUnread(); };   // al (re)conectar, recalcular no leídos
   _sse.onmessage = (e) => {
     const raw=e.data; if(!raw||raw.trim().startsWith(':')) return;
     try {
@@ -875,12 +877,16 @@ function setupRealtime(){
       } else if(table==='messages'){
         if(type==='INSERT'){
           const msgRoom = p.new.room || 'general';
-          const viewingChat = (state.view === 'chat' || state.view === 'roomchat');
-          if(viewingChat && msgRoom === state_chat.scope){
+          const viewingThis = (state.view === 'chat' || state.view === 'roomchat') && msgRoom === state_chat.scope;
+          if(viewingThis){
             if(!state_chat.messages.find(m=>m.id===p.new.id)) state_chat.messages.push(p.new);
             drawMessages();
-          } else if(msgRoom === 'general' && state.view !== 'chat'){
-            const b=document.getElementById('chatUnread'); if(b) b.hidden=false;
+            markRoomRead(msgRoom);                       // lo estoy viendo → leído
+          } else if(p.new.user_id !== state.userId){     // mensaje de otro, en otro canal
+            state.chatUnread[msgRoom] = (state.chatUnread[msgRoom]||0)+1;
+            updateChatBadges();
+            const quien = state.profiles[p.new.user_id] || 'Alguien';
+            showToast('💬 '+quien+' escribió en '+chatTitle(msgRoom), 'ok');
           }
         }
       } else if(['asientos','cuentas','compromisos'].includes(table)){
@@ -895,6 +901,67 @@ function setupRealtime(){
   _sse.onerror=()=>{ closeSSE(); setTimeout(setupRealtime,8000); };
 }
 function closeSSE(){ if(_sse){_sse.close();_sse=null;} }
+
+// ── Notificaciones de chat sin leer ───────────────────────────
+// Canales fijos con badge en el menú (ademas de 'general' y los de proyecto).
+const CHAT_MOD_ROOMS = ['inventario','rutas','contabilidad','licitaciones','mercadeo'];
+// La "última lectura" por canal se guarda por usuario en este navegador.
+function chatReadKey(){ return 'cmi_chat_read_'+(state.userId||'anon'); }
+function getChatRead(){ try{ return JSON.parse(localStorage.getItem(chatReadKey())||'{}'); }catch(e){ return {}; } }
+// Marca un canal como leído (ahora) y limpia su contador.
+function markRoomRead(room){
+  if(!room) return;
+  try{ const m=getChatRead(); m[room]=new Date().toISOString(); localStorage.setItem(chatReadKey(), JSON.stringify(m)); }catch(e){}
+  if(state.chatUnread) delete state.chatUnread[room];
+  updateChatBadges();
+}
+// Canales que este usuario puede ver (el servidor exige sala y valida rol).
+function accessibleChatRooms(){
+  const rooms = ['general','inventario','rutas'];   // abiertos a todo usuario activo
+  if(canModule('conta')) rooms.push('contabilidad');
+  if(canModule('licit')) rooms.push('licitaciones');
+  if(canModule('mkt'))   rooms.push('mercadeo');
+  [...state.projects.values()].forEach(p=> rooms.push('proyecto:'+p.id));
+  return rooms;
+}
+// Recalcula los no leídos consultando cada canal (persiste entre sesiones).
+async function refreshChatUnread(){
+  const rooms = accessibleChatRooms();
+  let read = getChatRead();
+  // Primer ingreso en este navegador: marca el historial como leído para no
+  // mostrar un contador enorme; a partir de ahora sí avisa de lo nuevo.
+  if(Object.keys(read).length === 0){
+    const seed = {}; const now = new Date().toISOString();
+    rooms.forEach(r=> seed[r] = now);
+    try{ localStorage.setItem(chatReadKey(), JSON.stringify(seed)); }catch(e){}
+    state.chatUnread = {}; updateChatBadges(); return;
+  }
+  const counts = {};
+  await Promise.all(rooms.map(async room=>{
+    try{
+      const d = await api('/api/select',{table:'messages',columns:['id','room','created_at','user_id'],filters:[{col:'room',val:room}],order:[{col:'created_at',asc:false}],limit:60});
+      const last = read[room] || '';
+      let n = 0;
+      (d.data||[]).forEach(m=>{ if(m.user_id !== state.userId && (!last || m.created_at > last)) n++; });
+      if(n>0) counts[room] = n;
+    }catch(e){}
+  }));
+  state.chatUnread = counts;
+  updateChatBadges();
+}
+function _setBadge(id, n){
+  const el=document.getElementById(id); if(!el) return;
+  if(n>0){ el.hidden=false; el.textContent = n>99?'99+':String(n); } else { el.hidden=true; el.textContent=''; }
+}
+// Refresca todos los badges (menú lateral + título de la pestaña).
+function updateChatBadges(){
+  const u = state.chatUnread||{};
+  _setBadge('chatUnread', u['general']||0);
+  CHAT_MOD_ROOMS.forEach(r=> _setBadge('unread-'+r, u[r]||0));
+  if(typeof renderSidebarProjects==='function') renderSidebarProjects();
+  const total = Object.values(u).reduce((a,b)=>a+(b||0),0);
+  document.title = (total>0 ? '('+(total>99?'99+':total)+') ' : '') + 'ObraControl CMI';
+}
 
 // ── Navigation ────────────────────────────────────────────────
 function nav(view, projectId){
@@ -954,13 +1021,21 @@ function renderSidebar(){
   });
 
   // Projects list
+  renderSidebarProjects();
+}
+function renderSidebarProjects(){
+  const cont = document.getElementById('sbProjects'); if(!cont) return;
+  const u = state.chatUnread||{};
   const projects = sortedProjects();
-  document.getElementById('sbProjects').innerHTML = projects.map(p=>`
-    <div class="sb-proj ${(state.view==='project'&&state.projectId===p.id)||(state.view==='roomchat'&&state.chatRoom==='proyecto:'+p.id)?'active':''}"
+  cont.innerHTML = projects.map(p=>{
+    const n = u['proyecto:'+p.id]||0;
+    return `<div class="sb-proj ${(state.view==='project'&&state.projectId===p.id)||(state.view==='roomchat'&&state.chatRoom==='proyecto:'+p.id)?'active':''}"
          onclick="nav('project','${p.id}')">
       <span class="sb-proj-dot" style="background:${p.color}"></span>
       <span class="sb-proj-name">${esc(p.name)}</span>
-    </div>`).join('');
+      ${n>0?`<span class="unread-badge" style="margin-left:auto">${n>99?'99+':n}</span>`:''}
+    </div>`;
+  }).join('');
 }
 
 function sortedProjects(){
@@ -2532,13 +2607,12 @@ function goChat(room, backView, backProjectId){
 function renderChat(){
   state.chatRoom = 'general'; state.chatBack = null;
   renderRoomChat();
-  const badge = document.getElementById('chatUnread');
-  if(badge) badge.hidden = true;
 }
 
 function renderRoomChat(){
   const room = state.chatRoom || 'general';
   state_chat.scope = room;
+  markRoomRead(room);                       // abrir un canal lo marca como leído
   setTopbar(chatTitle(room), room==='general'?null:'Chat');
   const b = state.chatBack;
   document.getElementById('topbarActions').innerHTML = b
@@ -2634,6 +2708,7 @@ async function initApp(){
 
   showApp();
   await loadAll();
+  await refreshChatUnread();
   setupRealtime();
   render();
 }
