@@ -3686,6 +3686,18 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
   background-size:min(62vw,460px); opacity:.05;
 }
 #main::before{ opacity:.06; }
+/* Marca de agua global: sello tenue del logo de la torre ENCIMA del contenido,
+   visible en todas las areas (proyectos, inventario, rutas, transferencias,
+   contabilidad, licitaciones, mercadeo…) aunque las tablas/tarjetas sean opacas.
+   No estorba: pointer-events:none deja pasar los clics. */
+#main::after{
+  content:''; position:absolute; left:0; right:0; top:58px; bottom:0; z-index:4;
+  pointer-events:none;
+  background:url('/cmi-logo.svg') no-repeat center;
+  background-size:min(48vw,400px);
+  opacity:.055;
+}
+@media (max-width:600px){ #main::after{ top:96px; background-size:min(70vw,300px); opacity:.05; } }
 /* Login: logo como marca de agua en la esquina inferior derecha */
 #loginWrap::before, #resetWrap::before, #pendingWrap::before{
   background-image:url('/cmi-logo-light.svg');
