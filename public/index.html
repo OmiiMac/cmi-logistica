@@ -2708,6 +2708,15 @@ function openProfileModal(){
       <input id="profileName" value="${esc(state.userName)}" placeholder="Tu nombre">
     </div>
     <div style="font-size:12px;color:var(--c-muted);margin-top:4px">Este nombre aparece en el chat y en el sistema.</div>
+    <div class="form-group" style="margin-top:16px">
+      <label>Teléfono con WhatsApp</label>
+      <input id="profilePhone" value="${esc(state.phone||'')}" placeholder="+503 7000 0000" inputmode="tel">
+    </div>
+    <div style="font-size:12px;color:var(--c-muted);margin-top:-4px">Incluye el código de país (ej: +503). Se usa solo para los avisos del chat.</div>
+    <label style="display:flex;align-items:center;gap:9px;margin-top:12px;cursor:pointer;font-size:13px">
+      <input type="checkbox" id="profileWaOptin" ${state.waOptin?'checked':''} style="width:16px;height:16px">
+      Quiero recibir avisos del chat por WhatsApp
+    </label>
   </div>
   <div class="modal-foot">
     <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
@@ -2718,11 +2727,14 @@ function openProfileModal(){
 async function saveProfile(){
   const name = document.getElementById('profileName').value.trim();
   if(!name){ showToast('Ingresa un nombre','err'); return; }
-  const d = await api('/api/update',{table:'profiles',values:{name},filters:[{col:'id',val:state.userId}]});
+  const phone = document.getElementById('profilePhone').value.trim();
+  const optin = document.getElementById('profileWaOptin').checked ? 1 : 0;
+  if(optin && !phone){ showToast('Para recibir avisos por WhatsApp, ingresa tu teléfono','err'); return; }
+  const d = await api('/api/update',{table:'profiles',values:{name,phone,wa_optin:optin},filters:[{col:'id',val:state.userId}]});
   if(d.error){ showToast('Error al guardar','err'); return; }
-  state.userName = name;
+  state.userName = name; state.phone = phone; state.waOptin = !!optin;
   document.getElementById('sbUser').textContent = name + roleLabel();
-  closeModal(); showToast('Nombre actualizado','ok');
+  closeModal(); showToast('Perfil actualizado','ok');
 }
 
 // ── Chat ──────────────────────────────────────────────────────
@@ -2846,7 +2858,7 @@ async function initApp(){
   const me = await api('/api/auth/me',{});
   if(me.error){ setToken(null); showLogin(); return; }
 
-  const prR = await api('/api/select',{table:'profiles',columns:['name','role','status','restrict_mods'],filters:[{col:'id',val:me.user.id}],single:true});
+  const prR = await api('/api/select',{table:'profiles',columns:['name','role','status','restrict_mods','phone','wa_optin'],filters:[{col:'id',val:me.user.id}],single:true});
   const profile = prR.data;
   if(!profile){ setToken(null); showLogin(); return; }
   const status = profile.status || 'pending';
@@ -2862,6 +2874,8 @@ async function initApp(){
   state.isMercadeo     = profile?.role === 'mercadeo';
   state.isLicitaciones = profile?.role === 'licitaciones';
   state.userName       = profile?.name || me.user.email?.split('@')[0] || 'Usuario';
+  state.phone          = profile?.phone || '';
+  state.waOptin        = !!profile?.wa_optin;
 
   showApp();
   document.addEventListener('pointerdown', initAudio);   // desbloquea el sonido al primer toque

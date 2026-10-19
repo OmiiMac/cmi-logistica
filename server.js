@@ -272,13 +272,15 @@ ensureColumn('items', 'photo_id', 'TEXT');
 ensureColumn('equipo_movs', 'origen_id', 'TEXT');
 ensureColumn('equipo_movs', 'destino_id', 'TEXT');
 ensureColumn('profiles', 'restrict_mods', 'TEXT'); // módulos ocultos para este usuario (ej: 'conta,licit')
+ensureColumn('profiles', 'phone', 'TEXT');          // teléfono para avisos por WhatsApp (formato +503...)
+ensureColumn('profiles', 'wa_optin', 'INTEGER DEFAULT 0'); // 1 = acepta recibir avisos por WhatsApp
 // Backfill idempotente: mensajes previos quedan en su sala correcta.
 db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
 db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
 
 // Columnas permitidas por tabla (whitelist anti-inyección e integridad)
 const SCHEMA = {
-  profiles:  ['id', 'email', 'name', 'role', 'status', 'restrict_mods', 'created_at', 'updated_at'],
+  profiles:  ['id', 'email', 'name', 'role', 'status', 'restrict_mods', 'phone', 'wa_optin', 'created_at', 'updated_at'],
   projects:  ['id', 'name', 'address', 'supervisor', 'engineer_id', 'color', 'status', 'notes', 'created_at', 'updated_at'],
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
@@ -509,6 +511,113 @@ app.get('/api/realtime', (req, res) => {
   const hb = setInterval(() => { try { res.write(':hb\n\n'); } catch (e) {} }, 25000);
   req.on('close', () => { clearInterval(hb); sseClients.delete(res); });
 });
+
+// ============================================================
+// NOTIFICACIONES POR WHATSAPP (mensajes de chat)
+// ============================================================
+// Configuración por variables de entorno (Railway):
+//   WHATSAPP_PROVIDER = 'twilio' | 'meta' | 'dry'  (default: 'dry' = no envía, solo log)
+//   Twilio: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM (ej: +14155238886)
+//   Meta:   WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_TEMPLATE (plantilla aprobada), WHATSAPP_LANG (ej: es)
+const WA_PROVIDER = (process.env.WHATSAPP_PROVIDER || 'dry').toLowerCase();
+const WA_COOLDOWN_MS = 60 * 1000;       // máx. 1 aviso por sala por minuto (anti-spam)
+const _waLastByRoom = new Map();
+
+function waRoomLabel(room) {
+  const fixed = { general: 'Chat general', inventario: 'Inventario', rutas: 'Rutas',
+                  contabilidad: 'Contabilidad', licitaciones: 'Licitaciones', mercadeo: 'Mercadeo' };
+  if (fixed[room]) return fixed[room];
+  if (room && room.indexOf('proyecto:') === 0) {
+    const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(room.slice(9));
+    return p ? p.name : 'Proyecto';
+  }
+  return 'Chat';
+}
+
+// Usuarios que deben recibir el aviso de un mensaje en `room` (miembros del
+// canal/proyecto), activos, con teléfono y con opt-in, excluyendo al autor.
+function waRecipients(room, senderId) {
+  const users = db.prepare(
+    "SELECT id, name, phone, role, restrict_mods FROM profiles " +
+    "WHERE status = 'active' AND wa_optin = 1 AND phone IS NOT NULL AND TRIM(phone) <> ''"
+  ).all();
+  const mod = chatRoomModule(room);
+  let list;
+  if (mod) {
+    // Sala de módulo: solo quienes pueden entrar a ese módulo (rol + no bloqueado).
+    const roles = MODULE_ROLES[mod] || [];
+    list = users.filter(u => {
+      const blocked = String(u.restrict_mods || '').split(',').map(s => s.trim()).filter(Boolean);
+      return roles.includes(u.role) && !blocked.includes(mod);
+    });
+  } else if (room && room.indexOf('proyecto:') === 0) {
+    // Sala de proyecto: equipo del proyecto (ingeniero asignado) + admins + supervisores.
+    const proj = db.prepare('SELECT engineer_id FROM projects WHERE id = ?').get(room.slice(9));
+    list = users.filter(u => u.role === 'admin' || u.role === 'supervisor' || (proj && u.id === proj.engineer_id));
+  } else {
+    // Salas abiertas (general, inventario, rutas): todo usuario activo.
+    list = users;
+  }
+  return list.filter(u => u.id !== senderId);
+}
+
+async function waSendTwilio(phone, body) {
+  const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_WHATSAPP_FROM;
+  if (!sid || !tok || !from) throw new Error('Faltan credenciales de Twilio');
+  const params = new URLSearchParams({ From: `whatsapp:${from}`, To: `whatsapp:${phone}`, Body: body });
+  const auth = Buffer.from(`${sid}:${tok}`).toString('base64');
+  const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params
+  });
+  if (!r.ok) throw new Error('Twilio HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+}
+
+async function waSendMeta(phone, name, area) {
+  const token = process.env.WHATSAPP_TOKEN, phoneId = process.env.WHATSAPP_PHONE_ID;
+  const tpl = process.env.WHATSAPP_TEMPLATE, lang = process.env.WHATSAPP_LANG || 'es';
+  if (!token || !phoneId || !tpl) throw new Error('Faltan credenciales/plantilla de Meta');
+  const to = String(phone).replace(/[^\d]/g, '');
+  const payload = {
+    messaging_product: 'whatsapp', to, type: 'template',
+    template: { name: tpl, language: { code: lang },
+      components: [{ type: 'body', parameters: [{ type: 'text', text: name }, { type: 'text', text: area }] }] }
+  };
+  const r = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!r.ok) throw new Error('Meta HTTP ' + r.status + ': ' + (await r.text()).slice(0, 200));
+}
+
+// Dispara los avisos de WhatsApp para un mensaje recién insertado (no bloquea).
+function notifyWhatsApp(msg) {
+  try {
+    const room = msg.room || 'general';
+    const now = Date.now();
+    const last = _waLastByRoom.get(room) || 0;
+    if (now - last < WA_COOLDOWN_MS) return;   // anti-spam por sala
+    const recips = waRecipients(room, msg.user_id);
+    if (!recips.length) return;
+    _waLastByRoom.set(room, now);
+    const senderName = (db.prepare('SELECT name FROM profiles WHERE id = ?').get(msg.user_id) || {}).name || 'Alguien';
+    const area = waRoomLabel(room);
+    const preview = msg.content ? String(msg.content).slice(0, 160) : '(foto)';
+    const body = `*ObraControl CMI*\n${senderName} escribió en *${area}*:\n${preview}`;
+    recips.forEach(u => {
+      const p = String(u.phone).trim();
+      if (WA_PROVIDER === 'twilio') {
+        waSendTwilio(p, body).catch(e => console.error('WhatsApp(Twilio) a', p, '-', e.message));
+      } else if (WA_PROVIDER === 'meta') {
+        waSendMeta(p, senderName, area).catch(e => console.error('WhatsApp(Meta) a', p, '-', e.message));
+      } else {
+        console.log(`[WhatsApp:dry] avisaría a ${u.name} (${p}) · ${area}: ${preview}`);
+      }
+    });
+  } catch (e) { console.error('notifyWhatsApp:', e.message); }
+}
 
 // ============================================================
 // AUTENTICACIÓN
@@ -803,6 +912,7 @@ function doInsert(table, values, user) {
   db.prepare(sql).run(...keys.map(k => v[k]));
   const row = db.prepare(`SELECT * FROM "${table}" WHERE id = ?`).get(v.id);
   broadcast({ table, eventType: 'INSERT', new: row, old: null });
+  if (table === 'messages') notifyWhatsApp(row);   // aviso por WhatsApp a los miembros del canal
   return row;
 }
 
