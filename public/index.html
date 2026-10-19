@@ -632,9 +632,11 @@ html{height:100%}
       </button>
       <span class="topbar-title" id="topbarTitle">Dashboard</span>
       <span class="topbar-badge" id="topbarBadge" hidden></span>
+      <button id="printBtn" class="btn btn-sm btn-ghost" title="Imprimir esta pantalla" onclick="printView()">🖨 Imprimir</button>
       <button id="captureBtn" class="btn btn-sm btn-ghost" title="Capturar esta pantalla (foto o PDF)" onclick="openCaptureMenu()">📸 Capturar</button>
       <div id="topbarActions"></div>
     </div>
+    <div id="printHeader" aria-hidden="true"></div>
     <div id="view"></div>
   </main>
 </div>
@@ -1100,6 +1102,19 @@ async function captureShare(){
       }
     },'image/png');
   }catch(e){ showToast('Error al compartir','err'); }
+}
+// Imprime la pantalla actual con membrete (logo + empresa + área + fecha).
+function printView(){
+  // En Inventario, abrir todas las carpetas para que salga la lista completa.
+  if(state.view==='inventario' && typeof invToggleAllCats==='function') invToggleAllCats(true);
+  const title=((document.getElementById('topbarTitle')||{}).textContent||'').trim();
+  const h=document.getElementById('printHeader');
+  if(h){
+    h.innerHTML = '<img src="/cmi-logo.svg" alt="">'
+      + '<div><div class="ph-co">CMI Construction Corp</div><div class="ph-title">'+esc(title)+'</div></div>'
+      + '<div class="ph-date">'+esc(fmtDateLong(todayStr()))+'</div>';
+  }
+  setTimeout(()=>{ try{ window.print(); }catch(e){} }, 150);
 }
 
 // ── Navigation ────────────────────────────────────────────────
@@ -3715,6 +3730,42 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
 #main > *{ position:relative; z-index:1; }
 .dash-fx > *{ position:relative; z-index:1; }
 .login-card{ z-index:1; }
+
+/* ── Membrete de impresión (solo visible al imprimir) ── */
+#printHeader{ display:none; }
+#printHeader img{ width:46px; height:42px; object-fit:contain; }
+#printHeader .ph-co{ font-weight:800; font-size:15px; color:#111; }
+#printHeader .ph-title{ font-size:12px; color:#555; }
+#printHeader .ph-date{ margin-left:auto; font-size:12px; color:#555; text-align:right; }
+
+/* ── IMPRESIÓN: cada área sale en hoja blanca, con membrete y tablas limpias ── */
+@media print{
+  /* Paleta clara para papel (la app usa variables, así que todo cambia a la vez) */
+  :root{
+    --c-bg:#fff; --c-card:#fff; --c-text:#111; --c-muted:#555;
+    --c-border:#c7c7c7; --c-side:#fff; --c-side2:#fff;
+    --c-primary-lt:#f3e9eb; --c-accent-lt:#f7f0dd;
+    color-scheme: light;
+  }
+  html,body{ height:auto !important; overflow:visible !important; background:#fff !important; color:#111 !important; display:block !important; }
+  /* Ocultar todo lo que no es contenido */
+  #sidebar, .topbar, #toast, #modalWrap, .hamburger, #printBtn, #captureBtn, .chat-send-btn, #chatInputBar{ display:none !important; }
+  #main{ display:block !important; height:auto !important; overflow:visible !important; }
+  #main::after{ display:none !important; }          /* sin marca de agua en papel */
+  #view{ position:static !important; height:auto !important; max-height:none !important; overflow:visible !important; padding:0 !important; background:#fff !important; }
+  .dash-fx{ background:#fff !important; }
+  /* Membrete arriba de la hoja */
+  #printHeader{ display:flex !important; align-items:center; gap:12px; padding:0 0 10px; margin-bottom:12px; border-bottom:2px solid #9B1B30; }
+  /* Tablas legibles y con encabezado repetido por página */
+  table{ border-collapse:collapse !important; width:100% !important; }
+  th,td{ border:1px solid #bbb !important; color:#111 !important; padding:5px 7px !important; }
+  thead{ display:table-header-group; }
+  tr,.msg-row,.section-card{ break-inside:avoid; }
+  .section-card,.item-table{ box-shadow:none !important; border:1px solid #ddd !important; }
+  /* Conservar los colores de chips/badges/estados al imprimir */
+  *{ -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+  @page{ margin:14mm 12mm; }
+}
 </style>
 </body>
 </html>
