@@ -177,6 +177,8 @@ html{height:100%}
   color:rgba(255,255,255,.05);letter-spacing:.05em;pointer-events:none;
   user-select:none;
 }
+.greeting-action{position:relative;z-index:1;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.24);color:#fff;border-radius:10px;padding:7px 13px;font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;backdrop-filter:blur(8px);transition:background .15s}
+.greeting-action:hover{background:rgba(255,255,255,.26)}
 .greeting-hi{font-family:var(--font-num);font-size:20px;font-weight:700;color:#fff;margin-bottom:4px;letter-spacing:.03em}
 .greeting-date{font-size:13px;color:rgba(255,255,255,.6);letter-spacing:.01em}
 .greeting-kpis{display:flex;gap:10px;position:relative;z-index:1}
@@ -632,7 +634,6 @@ html{height:100%}
       </button>
       <span class="topbar-title" id="topbarTitle">Dashboard</span>
       <span class="topbar-badge" id="topbarBadge" hidden></span>
-      <button id="assistBtn" class="btn btn-sm btn-ghost" title="Asistente: pregúntame sobre la página" onclick="openAssistant()">🤖 Asistente</button>
       <button id="printBtn" class="btn btn-sm btn-ghost" title="Imprimir esta pantalla" onclick="printView()">🖨 Imprimir</button>
       <button id="captureBtn" class="btn btn-sm btn-ghost" title="Capturar esta pantalla (foto o PDF)" onclick="openCaptureMenu()">📸 Capturar</button>
       <div id="topbarActions"></div>
@@ -1375,6 +1376,11 @@ function renderDashboard(){
       <div>
         <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
         <div class="greeting-date">${fmtDateLong(state.rutaDate)} · CMI Construction Corp</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+          <button onclick="openAssistant()" class="greeting-action">🤖 Asistente</button>
+          ${canModule('mkt')?`<button onclick="nav('mercadeo')" class="greeting-action">📣 Mercadeo</button>`:''}
+          ${canModule('mkt')?`<button onclick="mstate.mktTab='campanas';nav('mercadeo')" class="greeting-action">📅 Campañas</button>`:''}
+        </div>
       </div>
     </div>
     <div class="greeting-kpis">
