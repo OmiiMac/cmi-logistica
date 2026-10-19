@@ -39,6 +39,8 @@
 [hidden]{display:none!important}
 body{font-family:var(--font);background:var(--c-bg);color:var(--c-text);font-size:14px;line-height:1.5;display:flex;height:100%;overflow:hidden}
 html{height:100%}
+/* Alto real del teléfono (descuenta la barra del navegador) para que no se corte el pie (p.ej. la barra de escribir del chat) */
+@supports (height:100dvh){ html,body{height:100dvh} }
 
 /* ── LOGIN SCREEN ── */
 #loginWrap{
@@ -422,6 +424,9 @@ html{height:100%}
   #view > div[style*="padding:24px 28px"]{padding-left:6px!important;padding-right:6px!important}
   /* Grids de 2/3 columnas dentro de modales -> una sola columna */
   .modal-body [style*="repeat(2,1fr)"], .modal-body [style*="repeat(3,1fr)"]{grid-template-columns:1fr!important}
+  /* Chat: la barra de escribir no queda tapada por el borde inferior del teléfono */
+  #chatInputBar{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  #chatMessages{padding:14px 14px}
 }
 
 /* ── Pantallas anchas / panorámicas: usar el ancho disponible ── */
@@ -1255,6 +1260,7 @@ function asistResumen(){
 
 // ── Navigation ────────────────────────────────────────────────
 function nav(view, projectId){
+  if(typeof stopChatPoll==='function') stopChatPoll();   // corta el respaldo del chat al navegar
   state.view = view;
   state.projectId = projectId||null;
   state.search = ''; state.cat = 'all';
@@ -2932,6 +2938,7 @@ function renderRoomChat(){
   document.getElementById('topbarActions').innerHTML = backBtn + waBtn;
   document.getElementById('view').innerHTML = chatUIHtml();
   loadChatMessages();
+  startChatPoll();                           // respaldo: revisa mensajes nuevos aunque el tiempo real falle
 }
 
 async function loadChatMessages(){
@@ -2939,6 +2946,26 @@ async function loadChatMessages(){
   state_chat.messages = d.data || [];
   state_chat.loaded = true;
   drawMessages();
+}
+
+// Respaldo por consulta periódica: si el tiempo real (SSE) no entrega en
+// producción, igual trae los mensajes nuevos de la sala abierta cada 4s.
+let _chatPoll=null;
+function stopChatPoll(){ if(_chatPoll){ clearInterval(_chatPoll); _chatPoll=null; } }
+function startChatPoll(){
+  stopChatPoll();
+  _chatPoll=setInterval(async ()=>{
+    if(state.view!=='chat' && state.view!=='roomchat'){ stopChatPoll(); return; }
+    const room=state_chat.scope||'general';
+    try{
+      const d=await api('/api/select',{table:'messages',filters:[{col:'room',val:room}],order:[{col:'created_at',asc:true}],limit:200});
+      if(!d || d.error || !Array.isArray(d.data)) return;
+      if((state_chat.scope||'general')!==room) return;          // cambió de sala mientras tanto
+      const have=new Set(state_chat.messages.map(m=>m.id));
+      const cambio = d.data.length!==state_chat.messages.length || d.data.some(m=>!have.has(m.id));
+      if(cambio){ state_chat.messages=d.data; drawMessages(); markRoomRead(room); }
+    }catch(e){}
+  }, 4000);
 }
 
 function drawMessages(){
@@ -2979,7 +3006,9 @@ async function sendChatMessage(){
   if(!content) return;
   input.value = '';
   const d = await api('/api/insert',{table:'messages',values:{content,room:state_chat.scope||'general'}});
-  if(d.error) showToast('Error al enviar','err');
+  if(d.error){ showToast('Error al enviar','err'); return; }
+  const row = d.data && d.data[0];
+  if(row && !state_chat.messages.find(m=>m.id===row.id)){ state_chat.messages.push(row); drawMessages(); }
 }
 
 // ── Enviar mensaje por WhatsApp a los miembros (admin/supervisor/ingeniero) ──
@@ -3056,7 +3085,9 @@ async function sendChatPhoto(input){
   const up = await apiUpload('chat', state_chat.scope, file);
   if(up.error){ showToast(up.error.message||'Error al subir','err'); return; }
   const d = await api('/api/insert',{table:'messages',values:{room:state_chat.scope||'general', file_id: up.data.id, content:''}});
-  if(d.error) showToast('Error al enviar','err');
+  if(d.error){ showToast('Error al enviar','err'); return; }
+  const row = d.data && d.data[0];
+  if(row && !state_chat.messages.find(m=>m.id===row.id)){ state_chat.messages.push(row); drawMessages(); }
 }
 
 // ── App initialization ────────────────────────────────────────
