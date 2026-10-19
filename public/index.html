@@ -619,6 +619,7 @@ html{height:100%}
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg>
         Mercadeo <span id="unread-mercadeo" hidden class="unread-badge">!</span>
       </div>
+      <div id="sbMktEmpresas" style="display:none"></div>
       <div class="sb-nav-item" id="nav-users" onclick="nav('users')" style="display:none">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         Panel Admin
@@ -1340,6 +1341,23 @@ function renderSidebar(){
 
   // Projects list
   renderSidebarProjects();
+  // Empresas de Mercadeo en la columna
+  renderSidebarMktEmpresas();
+}
+function goMktEmpresa(e){ mstate.mktEmpresa=e; mstate.mktTab='panel'; nav('mercadeo'); }
+function goMktHome(){ mstate.mktEmpresa=null; nav('mercadeo'); }
+function renderSidebarMktEmpresas(){
+  const box=document.getElementById('sbMktEmpresas'); if(!box) return;
+  if(!canModule('mkt')){ box.style.display='none'; box.innerHTML=''; return; }
+  box.style.display='block';
+  const inMkt = state.view==='mercadeo';
+  const homeActive = inMkt && !mstate.mktEmpresa;
+  box.innerHTML =
+    `<div class="sb-proj ${homeActive?'active':''}" style="padding-left:30px" onclick="goMktHome()"><span class="sb-proj-name">🏠 Inicio Mercadeo</span></div>`+
+    MKT_EMPRESAS.map(e=>`<div class="sb-proj ${inMkt&&mstate.mktEmpresa===e?'active':''}" style="padding-left:30px" onclick="goMktEmpresa('${e.replace(/'/g,"\\'")}')">
+      <span class="sb-proj-dot" style="background:#BE185D"></span>
+      <span class="sb-proj-name">${esc(e)}</span>
+    </div>`).join('');
 }
 function renderSidebarProjects(){
   const cont = document.getElementById('sbProjects'); if(!cont) return;
@@ -4032,18 +4050,11 @@ function mktSelectEmpresa(e){ mstate.mktEmpresa=e; mstate.mktTab='panel'; render
 async function renderMercadeo(){
   if(!canModule('mkt')){ nav('dashboard'); return; }
   setTopbar('Mercadeo');
-  // Pantalla de selección de empresa (cada una tiene sus propios datos)
+  // Dashboard de inicio de Mercadeo (consolidado de las 5 empresas)
   if(!mstate.mktEmpresa){
     document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`;
-    document.getElementById('view').innerHTML=`<div style="padding:28px 24px;max-width:760px">
-      <h2 style="font-size:17px;margin:0 0 4px">Mercadeo · Seleccionar empresa</h2>
-      <div style="font-size:12px;color:var(--c-muted);margin-bottom:18px">Cada empresa tiene sus propios datos, campañas, pendientes y calendario.</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
-        ${MKT_EMPRESAS.map(e=>`<div class="section-card" style="padding:24px 14px;text-align:center;cursor:pointer" onclick="mktSelectEmpresa('${e.replace(/'/g,"\\'")}')">
-          <div style="font-size:30px;margin-bottom:8px">🏢</div>
-          <div style="font-weight:800;font-size:15px">${esc(e)}</div>
-        </div>`).join('')}
-      </div></div>`;
+    document.getElementById('view').innerHTML=`<div id="mktHome" class="dash-fx" style="padding:20px 24px;max-width:1000px"><div class="nodata" style="padding:30px">Cargando…</div></div>`;
+    renderMktHome();
     return;
   }
   const emp=mstate.mktEmpresa;
@@ -4069,6 +4080,66 @@ async function renderMercadeo(){
   else if(tab==='push') renderMktPush();
   else if(tab==='biblioteca') renderMktBiblioteca();
   else renderTareas();
+}
+
+// ── Dashboard de inicio de Mercadeo (consolidado 5 empresas) ──
+async function renderMktHome(){
+  const host=document.getElementById('mktHome'); if(!host) return;
+  const [rp,rt,rz,rc]=await Promise.all([
+    sb.from('publicaciones').select('*'),
+    sb.from('mercadeo_tareas').select('*'),
+    sb.from('mkt_piezas').select('*'),
+    sb.from('campanas').select('*')
+  ]);
+  const pubs=rp.data||[], tareas=rt.data||[], piezas=rz.data||[], camps=rc.data||[];
+  const hoy=todayStr(), mesAct=hoy.slice(0,7);
+  const addDays=(s,n)=>{ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+  const in7=addDays(hoy,7);
+  const openT=t=>!['completado','cancelado'].includes(t.estado);
+  const pubMesTot=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
+  const pendTot=tareas.filter(openT).length;
+  const revisarTot=piezas.filter(p=>['borrador','enviado'].includes(p.estado)).length;
+  const prox7=pubs.filter(p=>p.fecha&&p.fecha>=hoy&&p.fecha<=in7).length;
+  const campTot=camps.filter(c=>c.estado==='activa').length;
+  const hr=new Date().getHours(); const greet=hr<12?'Buenos días':hr<18?'Buenas tardes':'Buenas noches';
+  const perEmp=e=>({
+    pend: tareas.filter(t=>t.empresa===e&&openT(t)).length,
+    pubMes: pubs.filter(p=>p.empresa===e&&(p.fecha||'').slice(0,7)===mesAct).length,
+    revisar: piezas.filter(p=>p.empresa===e&&['borrador','enviado'].includes(p.estado)).length,
+    camp: camps.filter(c=>c.empresa===e&&c.estado==='activa').length
+  });
+  host.innerHTML=`
+    <div class="greeting-bar">
+      <div style="display:flex;align-items:center;gap:18px;position:relative;z-index:1">
+        <img src="/cmi-logo-light.svg" alt="CMI" style="height:56px;width:auto;display:block;filter:drop-shadow(0 0 12px rgba(242,74,84,.55))">
+        <div>
+          <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
+          <div class="greeting-date">${fmtDateLong(hoy)} · Mercadeo CMI</div>
+        </div>
+      </div>
+      <div class="greeting-kpis">
+        <div class="greeting-kpi"><div class="greeting-kpi-val">${pubMesTot}</div><div class="greeting-kpi-label">Publicaciones (mes)</div></div>
+        <div class="greeting-kpi"><div class="greeting-kpi-val">${pendTot}</div><div class="greeting-kpi-label">Pendientes</div></div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:16px 0">
+      ${kpiTile('Empresas',MKT_EMPRESAS.length,'#60A5FA','rgba(29,78,216,.14)')}
+      ${kpiTile('Campañas activas',campTot,'#34D77F','rgba(34,197,94,.14)')}
+      ${kpiTile('Pendientes abiertos',pendTot,'#F59E0B','rgba(217,119,6,.14)')}
+      ${kpiTile('Piezas por revisar',revisarTot,'#A78BFA','rgba(124,58,237,.14)')}
+      ${kpiTile('Publican (7 días)',prox7,'#E8384A','rgba(232,56,74,.14)')}
+    </div>
+    <h2 style="font-size:15px;margin:4px 0 6px">Empresas</h2>
+    <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Cada empresa tiene sus propios datos. Toca una para entrar (también están en el menú de la izquierda).</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
+      ${MKT_EMPRESAS.map(e=>{ const s=perEmp(e); return `<div class="section-card" style="padding:18px 16px;cursor:pointer" onclick="mktSelectEmpresa('${e.replace(/'/g,"\\'")}')">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:24px">🏢</span><span style="font-weight:800;font-size:15px">${esc(e)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Pendientes</span><b style="color:var(--c-text)">${s.pend}</b></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Publicaciones (mes)</span><b style="color:var(--c-text)">${s.pubMes}</b></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Por revisar</span><b style="color:var(--c-text)">${s.revisar}</b></div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Campañas activas</span><b style="color:var(--c-text)">${s.camp}</b></div>
+      </div>`; }).join('')}
+    </div>`;
 }
 
 // ── Panel con gráficas ─────────────────────────────────────────
