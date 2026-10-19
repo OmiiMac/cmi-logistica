@@ -269,6 +269,28 @@ CREATE TABLE IF NOT EXISTS caja_chica (
   updated_at   TEXT
 );
 
+-- Mercadeo: piezas en preaprobación (grillas, artes, reels, copys, propuestas)
+CREATE TABLE IF NOT EXISTS mkt_piezas (
+  id           TEXT PRIMARY KEY,
+  empresa      TEXT,
+  titulo       TEXT NOT NULL,
+  tipo         TEXT,                       -- grilla|arte|reel|historia|copy|propuesta
+  formato      TEXT,
+  red_social   TEXT,
+  copy         TEXT,
+  fecha        TEXT,                        -- fecha sugerida de publicación
+  responsable  TEXT,
+  version      INTEGER DEFAULT 1,
+  comentarios  TEXT,
+  estado       TEXT DEFAULT 'borrador',     -- borrador|enviado|correcciones|aprobado|programado
+  archivo_file TEXT,
+  campana_id   TEXT,
+  publicacion_id TEXT,
+  created_by   TEXT,
+  created_at   TEXT,
+  updated_at   TEXT
+);
+
 -- Salidas de material por proyecto (trazabilidad: a qué actividad/área se usó)
 CREATE TABLE IF NOT EXISTS salidas_material (
   id          TEXT PRIMARY KEY,
@@ -377,6 +399,7 @@ const SCHEMA = {
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'created_by', 'created_at', 'updated_at'],
   publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'fecha_inicio', 'fecha_limite', 'fecha_publicacion', 'campana_id', 'enlace', 'created_by', 'created_at', 'updated_at'],
+  mkt_piezas:   ['id', 'empresa', 'titulo', 'tipo', 'formato', 'red_social', 'copy', 'fecha', 'responsable', 'version', 'comentarios', 'estado', 'archivo_file', 'campana_id', 'publicacion_id', 'created_by', 'created_at', 'updated_at'],
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   salidas_material: ['id', 'project_id', 'item_id', 'item_name', 'cantidad', 'unidad', 'actividad', 'area', 'fecha', 'notas', 'created_by', 'created_at', 'updated_at'],
@@ -394,7 +417,7 @@ const MODULE_ROLES = {
 const TABLE_MODULE = {
   cuentas: 'conta', asientos: 'conta', movimientos: 'conta', compromisos: 'conta',
   licitaciones: 'licit',
-  campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt'
+  campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt'
 };
 const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt' };
 // Salas de chat restringidas (heredan el permiso del módulo). Las demás
@@ -970,6 +993,7 @@ function canWrite(table, op, user, values, filters) {
     case 'campanas':
     case 'publicaciones':
     case 'mercadeo_tareas':
+    case 'mkt_piezas':
       return roleCan('mkt', user);
     default:
       return false;

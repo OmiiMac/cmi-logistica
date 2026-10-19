@@ -4051,9 +4051,10 @@ async function renderMercadeo(){
   let addBtn='';
   if(tab==='campanas') addBtn=`<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`;
   else if(tab==='tareas') addBtn=`<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Pendiente</button>`;
+  else if(tab==='preaprobados') addBtn=`<button class="btn btn-sm btn-primary" onclick="showPiezaModal()">+ Nueva pieza</button>`;
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`+addBtn;
-  const tabs=[['panel','📊 Panel'],['calendario','📅 Calendario'],['campanas','Campañas'],['tareas','Pendientes'],['biblioteca','🖼️ Biblioteca']];
+  const tabs=[['panel','📊 Panel'],['calendario','📅 Calendario'],['campanas','Campañas'],['tareas','Pendientes'],['preaprobados','✅ Preaprobados'],['biblioteca','🖼️ Biblioteca']];
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1000px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
       <span style="font-weight:800;font-size:15px">🏢 ${esc(emp)}</span>
@@ -4064,6 +4065,7 @@ async function renderMercadeo(){
   if(tab==='panel') renderMktPanel();
   else if(tab==='calendario') renderMktCalendario();
   else if(tab==='campanas') renderCampanas();
+  else if(tab==='preaprobados') renderMktPreaprobados();
   else if(tab==='biblioteca') renderMktBiblioteca();
   else renderTareas();
 }
@@ -4325,6 +4327,97 @@ async function renderTareas(){
 async function setTareaEstado(id,estado){ const {error}=await sb.from('mercadeo_tareas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado: '+(MKT_TAREA_LBL[estado]||estado),'ok'); renderMercadeo(); } }
 async function moveTarea(id,estado){ return setTareaEstado(id,estado); }
 async function delTarea(id){ if(!confirm('¿Eliminar este pendiente?')) return; const {error}=await sb.from('mercadeo_tareas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminado','ok'); renderMercadeo(); } }
+
+// ── Preaprobados (piezas: grillas, artes, reels, copys) ───────
+const PIEZA_EST=[['borrador','Borrador'],['enviado','Enviado a preaprobación'],['correcciones','Correcciones solicitadas'],['aprobado','Aprobado'],['programado','Programado']];
+const PIEZA_LBL=Object.fromEntries(PIEZA_EST);
+const PIEZA_COLOR={borrador:'#6B6B78',enviado:'#1D4ED8',correcciones:'#C62040',aprobado:'#166534',programado:'#7C3AED'};
+const PIEZA_TIPOS=['grilla','arte','reel','historia','copy','propuesta'];
+async function renderMktPreaprobados(){
+  const b=document.getElementById('mktBody'); if(!b) return;
+  const {data}=await sb.from('mkt_piezas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false});
+  const all=data||[]; mstate._piezas=all;
+  const f=mstate.mktPiezaFiltro||'all';
+  const grupos={revision:['borrador','enviado'],correcciones:['correcciones'],aprobado:['aprobado'],programado:['programado']};
+  let rows=all;
+  if(f!=='all') rows=all.filter(p=>(grupos[f]||[f]).includes(p.estado));
+  const cnt=g=>all.filter(p=>grupos[g].includes(p.estado)).length;
+  b.innerHTML=`
+    <div class="filter-chips" style="margin-bottom:12px;overflow-x:auto;flex-wrap:nowrap">
+      <span class="chip ${f==='all'?'active':''}" onclick="mstate.mktPiezaFiltro='all';renderMercadeo()">Todas (${all.length})</span>
+      <span class="chip ${f==='revision'?'active':''}" style="white-space:nowrap" onclick="mstate.mktPiezaFiltro='revision';renderMercadeo()">En revisión (${cnt('revision')})</span>
+      <span class="chip ${f==='correcciones'?'active':''}" style="white-space:nowrap" onclick="mstate.mktPiezaFiltro='correcciones';renderMercadeo()">Correcciones (${cnt('correcciones')})</span>
+      <span class="chip ${f==='aprobado'?'active':''}" onclick="mstate.mktPiezaFiltro='aprobado';renderMercadeo()">Aprobados (${cnt('aprobado')})</span>
+      <span class="chip ${f==='programado'?'active':''}" onclick="mstate.mktPiezaFiltro='programado';renderMercadeo()">Programados (${cnt('programado')})</span>
+    </div>
+    <div style="font-size:11px;color:var(--c-muted);margin-bottom:12px">Flujo: Borrador → Enviado a preaprobación → Correcciones (si aplica) → Aprobado → (Enviar al calendario) → Programado.</div>
+    ${rows.length===0?'<div class="nodata" style="padding:24px">Sin piezas. Crea una con "+ Nueva pieza".</div>':
+    `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">${rows.map(p=>`
+      <div class="section-card" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:6px">
+          <b style="font-size:13px">${esc(p.titulo)}</b>
+          <span style="font-size:9px;font-weight:700;color:#fff;background:${PIEZA_COLOR[p.estado]||'#6B6B78'};padding:2px 7px;border-radius:20px;white-space:nowrap">${(PIEZA_LBL[p.estado]||p.estado).toUpperCase()}</span>
+        </div>
+        <div style="font-size:11px;color:var(--c-muted);margin-top:3px">${esc(p.tipo||'')}${p.formato?' · '+esc(p.formato):''}${p.red_social?' · '+esc(p.red_social):''}${p.version?' · v'+p.version:''}</div>
+        ${p.fecha?`<div style="font-size:11px;color:var(--c-muted)">📅 ${esc(p.fecha)}</div>`:''}
+        ${p.copy?`<div style="font-size:11px;margin-top:5px;color:var(--c-text);max-height:40px;overflow:hidden">${esc(p.copy)}</div>`:''}
+        ${p.archivo_file?`<a href="${fileUrl(p.archivo_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">ver archivo</a>`:''}
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;align-items:center">
+          <select onchange="setPiezaEstado('${p.id}',this.value)" style="font-size:10px;border:1px solid var(--c-border);border-radius:6px;padding:2px 5px;background:var(--c-bg);color:var(--c-text)">${PIEZA_EST.map(([k,l])=>`<option value="${k}" ${p.estado===k?'selected':''}>${l}</option>`).join('')}</select>
+          ${p.estado==='aprobado'?`<button class="btn btn-sm btn-primary" style="font-size:10px;padding:3px 7px" onclick="enviarAlCalendario('${p.id}')">→ Calendario</button>`:''}
+          <button class="act-btn" onclick="showPiezaModal('${p.id}')" title="Editar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="act-btn del" onclick="delPieza('${p.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+        </div>
+      </div>`).join('')}</div>`}`;
+}
+async function showPiezaModal(id){
+  const p = id ? (mstate._piezas||[]).find(x=>x.id===id)||{} : {};
+  const {data:camps}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa);
+  openModal(`
+    <div class="modal-head"><h2>${id?'Editar':'Nueva'} pieza</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Título</label><input id="pzTitulo" value="${esc(p.titulo||'')}"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Tipo</label><select id="pzTipo">${PIEZA_TIPOS.map(t=>`<option value="${t}" ${p.tipo===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Formato</label><input id="pzFormato" value="${esc(p.formato||'')}" placeholder="Ej: 1080x1080, vertical…"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Red social</label><input id="pzRed" value="${esc(p.red_social||'')}" placeholder="Instagram, Facebook…"></div>
+        <div class="form-group"><label>Fecha sugerida</label><input id="pzFecha" type="date" value="${esc(p.fecha||'')}"></div>
+      </div>
+      <div class="form-group"><label>Copy</label><textarea id="pzCopy" rows="2">${esc(p.copy||'')}</textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Responsable</label><input id="pzResp" value="${esc(p.responsable||'')}"></div>
+        <div class="form-group"><label>Versión</label><input id="pzVer" type="number" min="1" value="${p.version||1}"></div>
+      </div>
+      <div class="form-group"><label>Campaña (opcional)</label><select id="pzCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${p.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Archivo / arte (opcional)</label><input type="file" id="pzFile" accept="image/*,video/*,.pdf"></div>
+      <div class="form-group"><label>Comentarios</label><textarea id="pzComent" rows="2">${esc(p.comentarios||'')}</textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePieza('${id||''}')">Guardar</button></div>`);
+}
+async function savePieza(id){
+  const titulo=document.getElementById('pzTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
+  const row={titulo,tipo:document.getElementById('pzTipo').value,formato:document.getElementById('pzFormato').value.trim(),red_social:document.getElementById('pzRed').value.trim(),fecha:document.getElementById('pzFecha').value||null,copy:document.getElementById('pzCopy').value.trim(),responsable:document.getElementById('pzResp').value.trim(),version:Number(document.getElementById('pzVer').value)||1,campana_id:document.getElementById('pzCampana').value||null,comentarios:document.getElementById('pzComent').value.trim()};
+  let piezaId=id, error, data;
+  if(id){ ({error}=await sb.from('mkt_piezas').update(row).eq('id',id)); }
+  else { ({data,error}=await sb.from('mkt_piezas').insert({...row,empresa:mstate.mktEmpresa,estado:'borrador'})); piezaId=data&&data[0]&&data[0].id; }
+  if(error){ showToast(error.message,'err'); return; }
+  const fin=document.getElementById('pzFile');
+  if(fin&&fin.files&&fin.files[0]&&piezaId){ const up=await apiUpload('pieza',piezaId,fin.files[0]); if(!up.error) await sb.from('mkt_piezas').update({archivo_file:up.data.id}).eq('id',piezaId); }
+  closeModal(); showToast('Pieza guardada','ok'); renderMercadeo();
+}
+async function setPiezaEstado(id,estado){ const {error}=await sb.from('mkt_piezas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado: '+(PIEZA_LBL[estado]||estado),'ok'); renderMercadeo(); } }
+async function enviarAlCalendario(id){
+  const p=(mstate._piezas||[]).find(x=>x.id===id); if(!p) return;
+  if(!p.fecha){ showToast('La pieza no tiene fecha. Edítala y asígnale una fecha.','err'); return; }
+  const {data,error}=await sb.from('publicaciones').insert({empresa:mstate.mktEmpresa,fecha:p.fecha,canal:p.red_social||'',contenido:p.titulo+(p.copy?(' · '+p.copy):''),estado:'programado',campana_id:p.campana_id||null});
+  if(error){ showToast('Error al enviar al calendario','err'); return; }
+  const pubId=data&&data[0]&&data[0].id;
+  await sb.from('mkt_piezas').update({estado:'programado',publicacion_id:pubId}).eq('id',id);
+  showToast('Enviada al calendario (Programada)','ok'); renderMercadeo();
+}
+async function delPieza(id){ if(!confirm('¿Eliminar esta pieza?')) return; const {error}=await sb.from('mkt_piezas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminada','ok'); renderMercadeo(); } }
 </script>
 <style>
 /* ===== Dashboard futurista — paleta rojo/negro ===== */
