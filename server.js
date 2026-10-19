@@ -338,6 +338,14 @@ ensureColumn('equipo_movs', 'destino_id', 'TEXT');
 ensureColumn('profiles', 'restrict_mods', 'TEXT'); // módulos ocultos para este usuario (ej: 'conta,licit')
 ensureColumn('profiles', 'phone', 'TEXT');          // teléfono para avisos por WhatsApp (formato +503...)
 ensureColumn('profiles', 'wa_optin', 'INTEGER DEFAULT 0'); // 1 = acepta recibir avisos por WhatsApp
+ensureColumn('licitaciones', 'responsable_presupuesto', 'TEXT'); // responsable del presupuesto
+ensureColumn('licitaciones', 'precio_costo', 'REAL');            // precio costo
+ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homologación
+// Migración de estados de licitaciones al nuevo esquema (idempotente)
+db.exec("UPDATE licitaciones SET estado='en_preparacion' WHERE estado IN ('borrador','en_revision')");
+db.exec("UPDATE licitaciones SET estado='participada'    WHERE estado='presentada'");
+db.exec("UPDATE licitaciones SET estado='aprobada'       WHERE estado='adjudicada'");
+db.exec("UPDATE licitaciones SET estado='rechazada'      WHERE estado='perdida'");
 // Backfill idempotente: mensajes previos quedan en su sala correcta.
 db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
 db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
@@ -355,7 +363,7 @@ const SCHEMA = {
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
   movimientos:  ['id', 'asiento_id', 'cuenta_id', 'debe', 'haber', 'proyecto_id', 'descripcion'],
-  licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'moneda', 'estado', 'responsable', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
+  licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'created_by', 'created_at', 'updated_at'],
   publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'created_by', 'created_at', 'updated_at'],

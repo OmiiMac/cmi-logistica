@@ -1228,7 +1228,7 @@ async function asistLicit(){
   const d=await api('/api/select',{table:'licitaciones',order:[{col:'fecha_limite',asc:true}],limit:50});
   const lics=d.data||[];
   if(!lics.length) return 'No hay licitaciones registradas.';
-  const abiertas=lics.filter(l=>!['perdida','adjudicada','presentada'].includes(l.estado));
+  const abiertas=lics.filter(l=>!['aprobada','rechazada'].includes(l.estado));
   const list=(abiertas.length?abiertas:lics).slice(0,8);
   return `Licitaciones (${lics.length} en total):\n`+list.map(l=>`• ${esc(l.titulo||'—')}${l.entidad?` — ${esc(l.entidad)}`:''}${l.estado?` [${esc(l.estado)}]`:''}${l.fecha_limite?` · límite ${esc(l.fecha_limite)}`:''}`).join('\n')+'\nMás detalle en la sección Licitaciones.';
 }
@@ -1589,7 +1589,7 @@ function renderDashboard(){
     const er=document.getElementById('chDashRuta');
     if(er) push(new Chart(er,{type:'doughnut',data:{labels:['Pendiente','En ruta','Completada'],datasets:[{data:[est.pendiente,est.en_ruta,est.completada],backgroundColor:['#F59E0B','#60A5FA','#22C55E']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
     if(canModule('licit')) sb.from('licitaciones').select('*').then(({data})=>{
-      const ls=data||[]; const by={}; ls.forEach(l=>{ const s=l.estado||'borrador'; by[s]=(by[s]||0)+1; }); const ks=Object.keys(by);
+      const ls=data||[]; const by={}; ls.forEach(l=>{ const s=l.estado||'en_preparacion'; by[s]=(by[s]||0)+1; }); const ks=Object.keys(by);
       const e=document.getElementById('chDashLicit'); if(e&&ks.length) push(new Chart(e,{type:'doughnut',data:{labels:ks.map(s=>(LIC_ESTADOS[s]||s)),datasets:[{data:ks.map(s=>by[s]),backgroundColor:ks.map(s=>(LIC_COLOR[s]||['','#9B1B30'])[1])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else if(e) e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin licitaciones</div>';
     });
     if(canModule('mkt')) sb.from('publicaciones').select('*').then(({data})=>{
@@ -3834,15 +3834,12 @@ async function saveAsiento(){
 }
 
 /* ================= LICITACIONES ================= */
-const LIC_ESTADOS={borrador:'Borrador',en_revision:'En revisión',aprobada:'Aprobada',rechazada:'Rechazada',presentada:'Presentada',adjudicada:'Adjudicada',perdida:'Perdida'};
+const LIC_ESTADOS={en_preparacion:'En preparación',participada:'Participada',aprobada:'Aprobada',rechazada:'Rechazada'};
 const LIC_COLOR={
-  borrador:    ['rgba(139,136,150,.18)','#B0909A'],   // gris neutro
-  en_revision: ['rgba(245,158,11,.22)','#F59E0B'],    // AMARILLO: pendiente por aprobación
-  presentada:  ['rgba(96,165,250,.22)','#60A5FA'],    // azul: presentada/en espera de resultado
-  aprobada:    ['rgba(34,197,94,.22)','#22C55E'],     // VERDE: aprobada
-  adjudicada:  ['rgba(34,197,94,.22)','#22C55E'],     // VERDE: adjudicada (ganada)
-  rechazada:   ['rgba(240,85,106,.22)','#F0556A'],    // ROJO: rechazada
-  perdida:     ['rgba(240,85,106,.22)','#F0556A']     // ROJO: perdida
+  en_preparacion: ['rgba(139,136,150,.18)','#B0909A'], // gris: en preparación
+  participada:    ['rgba(96,165,250,.22)','#60A5FA'],  // azul: participada (en espera de resultado)
+  aprobada:       ['rgba(34,197,94,.22)','#22C55E'],   // VERDE: aprobada
+  rechazada:      ['rgba(240,85,106,.22)','#F0556A']   // ROJO: rechazada
 };
 function licBadge(e){ const c=LIC_COLOR[e]||['#eee','#555']; return `<span style="font-size:11px;background:${c[0]};color:${c[1]};padding:2px 8px;border-radius:20px;font-weight:700">${LIC_ESTADOS[e]||e}</span>`; }
 async function renderLicitaciones(){
@@ -3869,13 +3866,13 @@ function renderLicList(){
   if(!data.length){ list.innerHTML='<div class="nodata" style="padding:30px">Sin licitaciones aún.</div>'; return; }
   list.innerHTML=data.map(l=>`<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openLicDetail('${l.id}')">
     <div style="display:flex;justify-content:space-between;align-items:start;gap:10px"><div><div style="font-weight:700">${esc(l.titulo)}</div><div style="font-size:12px;color:var(--c-muted)">${esc(l.entidad||'')} ${l.numero?'· '+esc(l.numero):''}</div></div>${licBadge(l.estado)}</div>
-    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.monto_estimado?`<span>💰 ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}</div>
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.monto_estimado?`<span>💰 Ref: ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.precio_costo?`<span>🏷️ Costo: ${money(l.precio_costo)}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}</div>
   </div>`).join('');
 }
 function renderLicPanel(){
   const b=document.getElementById('licBody'); if(!b) return;
   const lics=mstate.lics||[];
-  const activos=['borrador','en_revision','presentada','aprobada'];
+  const activos=['en_preparacion','participada'];
   const enJuego=lics.filter(l=>activos.includes(l.estado));
   const montoJuego=enJuego.reduce((a,l)=>a+(Number(l.monto_estimado)||0),0);
   const hoy=todayStr(), en15=ymd(new Date(Date.now()+15*86400000));
@@ -3890,14 +3887,14 @@ function renderLicPanel(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
       <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Licitaciones por estado</h3><canvas id="chLicEstado" height="190"></canvas></div>
       <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Cierres por mes (fecha límite)</h3><canvas id="chLicMes" height="190"></canvas></div>
-      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Monto estimado por estado</h3><canvas id="chLicMonto" height="190"></canvas></div>
-      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Adjudicadas vs perdidas</h3><canvas id="chLicWin" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Precio referencia por estado</h3><canvas id="chLicMonto" height="190"></canvas></div>
+      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Aprobadas vs rechazadas</h3><canvas id="chLicWin" height="190"></canvas></div>
     </div>`;
   drawLicCharts(lics);
 }
 function drawLicCharts(lics){
   destroyLicCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
-  const byEst={}; lics.forEach(l=>{ const s=l.estado||'borrador'; byEst[s]=(byEst[s]||0)+1; });
+  const byEst={}; lics.forEach(l=>{ const s=l.estado||'en_preparacion'; byEst[s]=(byEst[s]||0)+1; });
   const le=Object.keys(byEst);
   const estColor=s=>(LIC_COLOR[s]||['','#9B1B30'])[1];   // color propio de cada estado
   const e1=document.getElementById('chLicEstado');
@@ -3906,13 +3903,13 @@ function drawLicCharts(lics){
   const ml=Object.keys(byMes).sort();
   const e2=document.getElementById('chLicMes');
   if(e2) _licCharts.push(new Chart(e2,{type:'bar',data:{labels:ml,datasets:[{label:'Cierres',data:ml.map(m=>byMes[m]),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
-  const montoEst={}; lics.forEach(l=>{ const s=l.estado||'borrador'; montoEst[s]=(montoEst[s]||0)+(Number(l.monto_estimado)||0); });
+  const montoEst={}; lics.forEach(l=>{ const s=l.estado||'en_preparacion'; montoEst[s]=(montoEst[s]||0)+(Number(l.monto_estimado)||0); });
   const lm=Object.keys(montoEst);
   const e3=document.getElementById('chLicMonto');
   if(e3) _licCharts.push(new Chart(e3,{type:'bar',data:{labels:lm.map(s=>LIC_ESTADOS[s]||s),datasets:[{label:'Monto',data:lm.map(s=>montoEst[s]),backgroundColor:lm.map(estColor)}]},options:chartOpts({plugins:{legend:{display:false}}})}));
-  const win=lics.filter(l=>l.estado==='adjudicada').length, loss=lics.filter(l=>l.estado==='perdida').length;
+  const win=lics.filter(l=>l.estado==='aprobada').length, loss=lics.filter(l=>l.estado==='rechazada').length;
   const e4=document.getElementById('chLicWin');
-  if(e4) _licCharts.push(new Chart(e4,{type:'doughnut',data:{labels:['Adjudicadas','Perdidas'],datasets:[{data:[win,loss],backgroundColor:['#22C55E','#F0556A']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
+  if(e4) _licCharts.push(new Chart(e4,{type:'doughnut',data:{labels:['Aprobadas','Rechazadas'],datasets:[{data:[win,loss],backgroundColor:['#22C55E','#F0556A']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
 }
 function renderLicCalendario(){
   const b=document.getElementById('licBody'); if(!b) return;
@@ -3972,13 +3969,16 @@ function openLicModal(lic){
       <div class="form-group"><label>Título</label><input id="liTitulo" value="${esc(lic.titulo||'')}"></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Entidad</label><input id="liEntidad" value="${esc(lic.entidad||'')}"></div><div class="form-group" style="flex:1"><label>N°</label><input id="liNumero" value="${esc(lic.numero||'')}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Publicación</label><input id="liPub" type="date" value="${esc(lic.fecha_publicacion||'')}"></div><div class="form-group" style="flex:1"><label>Fecha límite</label><input id="liLim" type="date" value="${esc(lic.fecha_limite||'')}"></div></div>
-      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Monto estimado</label><input id="liMonto" type="number" step="0.01" value="${lic.monto_estimado||''}"></div><div class="form-group" style="flex:1"><label>Responsable</label><input id="liResp" value="${esc(lic.responsable||'')}"></div></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Precio referencia</label><input id="liMonto" type="number" step="0.01" value="${lic.monto_estimado||''}"></div><div class="form-group" style="flex:1"><label>Precio costo</label><input id="liCosto" type="number" step="0.01" value="${lic.precio_costo||''}"></div></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="liResp" value="${esc(lic.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Responsable de presupuesto</label><input id="liRespPres" value="${esc(lic.responsable_presupuesto||'')}"></div></div>
+      <div class="form-group"><label>Fecha de homologación</label><input id="liHomol" type="date" value="${esc(lic.fecha_homologacion||'')}"></div>
       <div class="form-group"><label>Notas</label><textarea id="liNotas" rows="2">${esc(lic.notas||'')}</textarea></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveLic('${lic.id||''}')">Guardar</button></div>`);
 }
 async function saveLic(id){
-  const row={titulo:document.getElementById('liTitulo').value.trim(),entidad:document.getElementById('liEntidad').value.trim(),numero:document.getElementById('liNumero').value.trim(),fecha_publicacion:document.getElementById('liPub').value||null,fecha_limite:document.getElementById('liLim').value||null,monto_estimado:Number(document.getElementById('liMonto').value)||null,responsable:document.getElementById('liResp').value.trim(),notas:document.getElementById('liNotas').value.trim()};
+  const row={titulo:document.getElementById('liTitulo').value.trim(),entidad:document.getElementById('liEntidad').value.trim(),numero:document.getElementById('liNumero').value.trim(),fecha_publicacion:document.getElementById('liPub').value||null,fecha_limite:document.getElementById('liLim').value||null,monto_estimado:Number(document.getElementById('liMonto').value)||null,precio_costo:Number(document.getElementById('liCosto').value)||null,responsable:document.getElementById('liResp').value.trim(),responsable_presupuesto:document.getElementById('liRespPres').value.trim(),fecha_homologacion:document.getElementById('liHomol').value||null,notas:document.getElementById('liNotas').value.trim()};
+  if(!id) row.estado='en_preparacion';
   if(!row.titulo){ showToast('Falta el título','err'); return; }
   let error; if(id){ ({error}=await sb.from('licitaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('licitaciones').insert(row)); }
   if(error){ showToast(error.message,'err'); return; }
@@ -3993,7 +3993,7 @@ async function openLicDetail(id){
     <div class="modal-head"><h2>${esc(l.titulo)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <div style="margin-bottom:10px">${licBadge(l.estado)} ${l.aprobado_at?`<span style="font-size:11px;color:var(--c-muted)">· resuelta ${esc(l.aprobado_at.slice(0,10))}</span>`:''}</div>
-      <div style="font-size:13px;color:var(--c-muted);line-height:1.7">${l.entidad?`<div><b>Entidad:</b> ${esc(l.entidad)}</div>`:''}${l.numero?`<div><b>N°:</b> ${esc(l.numero)}</div>`:''}${l.fecha_limite?`<div><b>Fecha límite:</b> ${esc(l.fecha_limite)}</div>`:''}${l.monto_estimado?`<div><b>Monto:</b> ${money(l.monto_estimado)} ${esc(l.moneda||'')}</div>`:''}${l.responsable?`<div><b>Responsable:</b> ${esc(l.responsable)}</div>`:''}${l.notas?`<div style="margin-top:6px">${esc(l.notas)}</div>`:''}</div>
+      <div style="font-size:13px;color:var(--c-muted);line-height:1.7">${l.entidad?`<div><b>Entidad:</b> ${esc(l.entidad)}</div>`:''}${l.numero?`<div><b>N°:</b> ${esc(l.numero)}</div>`:''}${l.fecha_limite?`<div><b>Fecha límite:</b> ${esc(l.fecha_limite)}</div>`:''}${l.fecha_homologacion?`<div><b>Homologación:</b> ${esc(l.fecha_homologacion)}</div>`:''}${l.monto_estimado?`<div><b>Precio referencia:</b> ${money(l.monto_estimado)} ${esc(l.moneda||'')}</div>`:''}${l.precio_costo?`<div><b>Precio costo:</b> ${money(l.precio_costo)} ${esc(l.moneda||'')}</div>`:''}${l.responsable?`<div><b>Responsable:</b> ${esc(l.responsable)}</div>`:''}${l.responsable_presupuesto?`<div><b>Responsable de presupuesto:</b> ${esc(l.responsable_presupuesto)}</div>`:''}${l.notas?`<div style="margin-top:6px">${esc(l.notas)}</div>`:''}</div>
       ${estSel}
       <h3 style="font-size:13px;margin:14px 0 6px">Documentos</h3>
       <div>${docsHtml(docs,'licitacion',id)}</div>
