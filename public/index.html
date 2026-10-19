@@ -632,6 +632,7 @@ html{height:100%}
       </button>
       <span class="topbar-title" id="topbarTitle">Dashboard</span>
       <span class="topbar-badge" id="topbarBadge" hidden></span>
+      <button id="assistBtn" class="btn btn-sm btn-ghost" title="Asistente: pregúntame sobre la página" onclick="openAssistant()">🤖 Asistente</button>
       <button id="printBtn" class="btn btn-sm btn-ghost" title="Imprimir esta pantalla" onclick="printView()">🖨 Imprimir</button>
       <button id="captureBtn" class="btn btn-sm btn-ghost" title="Capturar esta pantalla (foto o PDF)" onclick="openCaptureMenu()">📸 Capturar</button>
       <div id="topbarActions"></div>
@@ -1121,6 +1122,132 @@ function printView(){
   window.addEventListener('afterprint', quitar, { once:true });
   setTimeout(quitar, 8000);   // respaldo por si el navegador no dispara afterprint
   setTimeout(()=>{ try{ window.print(); }catch(e){} }, 150);
+}
+
+// ── Asistente de la página (gratis, con los datos reales) ─────
+let _asistMsgs = [];
+function _norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function openAssistant(){
+  openModal(`
+  <div class="modal-head"><h2>🤖 Asistente CMI</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+    <div id="asistMsgs" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:200px;max-height:48vh"></div>
+    <div id="asistChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <div style="display:flex;gap:8px">
+      <input id="asistInput" placeholder="Pregúntame algo…" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();asistSend()}">
+      <button class="btn btn-primary" onclick="asistSend()">Enviar</button>
+    </div>
+  </div>`);
+  const chips=['¿Dónde está el camión?','¿Qué proyectos hay?','¿Dónde encuentro cada cosa?'];
+  if(canModule('licit')) chips.push('Licitaciones');
+  if(canModule('mkt'))   chips.push('Mercadeo');
+  chips.push('Resumen de hoy');
+  const cc=document.getElementById('asistChips');
+  if(cc) cc.innerHTML=chips.map(c=>`<span class="chip" onclick="asistAsk(this.textContent)">${esc(c)}</span>`).join('');
+  if(!_asistMsgs.length) _asistMsgs.push({who:'bot',text:'¡Hola! Soy el asistente de ObraControl CMI. Puedo decirte dónde está el camión, qué proyectos hay, dónde encontrar cada cosa, y sobre licitaciones y mercadeo. La contabilidad es privada. 🔒\n¿Qué necesitas?'});
+  renderAsist();
+}
+function renderAsist(){
+  const el=document.getElementById('asistMsgs'); if(!el) return;
+  el.innerHTML=_asistMsgs.map(m=>`<div style="align-self:${m.who==='user'?'flex-end':'flex-start'};max-width:88%;background:${m.who==='user'?'var(--c-primary)':'var(--c-bg)'};color:${m.who==='user'?'#fff':'var(--c-text)'};border:1px solid var(--c-border);border-radius:12px;padding:8px 11px;font-size:13px;line-height:1.5;white-space:pre-wrap">${m.text}</div>`).join('');
+  el.scrollTop=el.scrollHeight;
+}
+function asistSend(){ const i=document.getElementById('asistInput'); if(!i) return; const t=(i.value||'').trim(); if(!t) return; i.value=''; asistAsk(t); }
+async function asistAsk(t){
+  _asistMsgs.push({who:'user',text:esc(t)}); renderAsist();
+  _asistMsgs.push({who:'bot',text:'…'}); renderAsist();
+  let a; try{ a=await asistAnswer(t); }catch(e){ a='No pude responder eso ahora. Intenta de otra forma.'; }
+  _asistMsgs.pop(); _asistMsgs.push({who:'bot',text:a}); renderAsist();
+}
+async function asistAnswer(q){
+  const s=_norm(q);
+  const has=(...k)=>k.some(x=>s.includes(x));
+  if(has('contab','conta','dinero','saldo','cuenta','asiento','balance','mayor','gasto','ingreso'))
+    return 'La información de contabilidad es privada y no se consulta por aquí. 🔒';
+  if(has('camion','ruta','transporte','chofer','conductor','entrega')) return asistCamion();
+  if(has('licitac','licita','oferta')) return await asistLicit();
+  if(has('mercadeo','campana','publicidad','marketing','redes','publicacion')) return await asistMercadeo();
+  if(has('donde encuentro','cada cosa','ayuda','menu','seccion','navega','como uso','donde veo','que puedo'))
+    return asistNav();
+  if(has('proyecto','obra')) return asistProyectos(q);
+  if(has('inventario','articulo','herramienta','equipo','material','stock','donde esta','cuanto hay','cantidad'))
+    return asistInventario(q);
+  if(has('novedad','actualiz','resumen','que hay','estado de hoy','hoy'))
+    return asistResumen();
+  return 'No estoy seguro de eso. '+asistNav();
+}
+function asistCamion(){
+  const hoy=todayStr();
+  const rs=(state.rutas||[]).filter(r=>r.date===hoy);
+  const enRuta=rs.filter(r=>r.status==='en_ruta');
+  const linea=r=>`• ${esc(r.origen||'?')} → ${esc(r.destino||'?')}${r.conductor?` (conductor: ${esc(r.conductor)})`:''}${r.hora?` · ${esc(r.hora)}`:''}`;
+  if(enRuta.length) return '🚚 El camión está EN RUTA ahora:\n'+enRuta.map(linea).join('\n');
+  if(rs.length){
+    const pend=rs.filter(r=>r.status==='pendiente'), comp=rs.filter(r=>r.status==='completada');
+    let out='El camión no está en camino en este momento.';
+    if(pend.length) out+='\n⏳ Pendientes para hoy:\n'+pend.map(linea).join('\n');
+    if(comp.length) out+=`\n✅ Completadas hoy: ${comp.length}`;
+    return out;
+  }
+  return 'No hay rutas registradas para hoy. Puedes verlas o crear una en "Rutas del Camión".';
+}
+function asistProyectos(q){
+  const projs=[...state.projects.values()].filter(p=>p.id!=='bodega'&&p.status!=='archived');
+  const s=_norm(q);
+  const hit=projs.find(p=>_norm(p.name).length>3 && s.includes(_norm(p.name)));
+  if(hit) return `🏗️ ${esc(hit.name)}\n• Dirección: ${esc(hit.address||'—')}\n• Supervisor: ${esc(hit.supervisor||'—')}\n• Estado: ${esc(hit.status||'activo')}\nÁbrelo en el menú lateral (Proyectos) para ver su inventario y chat.`;
+  if(!projs.length) return 'No hay proyectos registrados todavía.';
+  return `Tienes ${projs.length} proyecto(s):\n`+projs.map(p=>`• ${esc(p.name)}${p.supervisor?` — ${esc(p.supervisor)}`:''}`).join('\n')+'\nTócalos en el menú lateral para ver más.';
+}
+function asistInventario(q){
+  const items=[...state.items.values()];
+  const s=_norm(q);
+  const found=items.filter(i=>_norm(i.name).length>2 && s.includes(_norm(i.name)));
+  if(found.length) return found.slice(0,12).map(i=>`📦 ${esc(i.name)}: ${i.quantity} ${esc(i.unit||'')} en ${esc(projName(i.projectId)||i.projectId||'—')}`).join('\n');
+  const total=items.length;
+  const low=items.filter(i=>i.minStock>0 && i.quantity<=i.minStock);
+  let out=`Hay ${total} artículo(s) en el inventario.`;
+  if(low.length) out+=`\n⚠️ ${low.length} con stock bajo: `+low.slice(0,8).map(i=>esc(i.name)).join(', ');
+  out+='\nPregúntame "¿dónde está <nombre del artículo>?" o entra a Inventario para ver todo.';
+  return out;
+}
+async function asistLicit(){
+  if(!canModule('licit')) return 'No tienes acceso a Licitaciones, así que no puedo darte esa información. 🔒';
+  const d=await api('/api/select',{table:'licitaciones',order:[{col:'fecha_limite',asc:true}],limit:50});
+  const lics=d.data||[];
+  if(!lics.length) return 'No hay licitaciones registradas.';
+  const abiertas=lics.filter(l=>!['perdida','adjudicada','presentada'].includes(l.estado));
+  const list=(abiertas.length?abiertas:lics).slice(0,8);
+  return `Licitaciones (${lics.length} en total):\n`+list.map(l=>`• ${esc(l.titulo||'—')}${l.entidad?` — ${esc(l.entidad)}`:''}${l.estado?` [${esc(l.estado)}]`:''}${l.fecha_limite?` · límite ${esc(l.fecha_limite)}`:''}`).join('\n')+'\nMás detalle en la sección Licitaciones.';
+}
+async function asistMercadeo(){
+  if(!canModule('mkt')) return 'No tienes acceso a Mercadeo. 🔒';
+  const d=await api('/api/select',{table:'campanas',order:[{col:'created_at',asc:false}],limit:50});
+  const c=d.data||[];
+  if(!c.length) return 'No hay campañas de mercadeo registradas.';
+  return `Campañas de mercadeo (${c.length}):\n`+c.slice(0,8).map(x=>`• ${esc(x.nombre||'—')}${x.estado?` [${esc(x.estado)}]`:''}${x.fecha_inicio?` · desde ${esc(x.fecha_inicio)}`:''}`).join('\n')+'\nMás detalle en la sección Mercadeo.';
+}
+function asistNav(){
+  let out='Te ubico dónde está cada cosa en ObraControl CMI:\n';
+  out+='• 📊 Dashboard: resumen general (inicio).\n';
+  out+='• 📦 Inventario: artículos por categoría y por proyecto.\n';
+  out+='• 🚚 Rutas del Camión: a dónde va el camión y su estado.\n';
+  out+='• 🔄 Transferencias: entradas/salidas y vales.\n';
+  out+='• 🏗️ Proyectos: en el menú lateral; cada uno con su inventario y chat.\n';
+  out+='• 💬 Chat: mensajes por área y por proyecto.\n';
+  if(canModule('licit')) out+='• 📋 Licitaciones.\n';
+  if(canModule('mkt'))   out+='• 📣 Mercadeo.\n';
+  out+='Pregúntame cosas como: "¿dónde está el camión?", "¿qué proyectos hay?", "¿dónde está <artículo>?".';
+  return out;
+}
+function asistResumen(){
+  const hoy=todayStr();
+  const projs=[...state.projects.values()].filter(p=>p.id!=='bodega'&&p.status!=='archived').length;
+  const low=[...state.items.values()].filter(i=>i.minStock>0 && i.quantity<=i.minStock).length;
+  const rs=(state.rutas||[]).filter(r=>r.date===hoy);
+  const enRuta=rs.filter(r=>r.status==='en_ruta').length;
+  const pend=rs.filter(r=>r.status==='pendiente').length;
+  return `📋 Resumen de hoy:\n• Proyectos activos: ${projs}\n• Camión en ruta ahora: ${enRuta}\n• Rutas pendientes hoy: ${pend}\n• Artículos con stock bajo: ${low}`;
 }
 
 // ── Navigation ────────────────────────────────────────────────
