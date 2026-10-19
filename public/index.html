@@ -4075,26 +4075,74 @@ async function renderMercadeo(){
 async function renderMktPanel(){
   const b=document.getElementById('mktBody'); if(!b) return;
   const emp=mstate.mktEmpresa;
-  const [rc,rp,rt]=await Promise.all([
+  const [rc,rp,rt,rz,ru,re]=await Promise.all([
     sb.from('campanas').select('*').eq('empresa',emp),
     sb.from('publicaciones').select('*').eq('empresa',emp),
-    sb.from('mercadeo_tareas').select('*').eq('empresa',emp)
+    sb.from('mercadeo_tareas').select('*').eq('empresa',emp),
+    sb.from('mkt_piezas').select('*').eq('empresa',emp),
+    sb.from('mkt_push').select('*').eq('empresa',emp),
+    sb.from('mkt_efemerides').select('*')
   ]);
-  const camps=rc.data||[], pubs=rp.data||[], tareas=rt.data||[];
+  const camps=rc.data||[], pubs=rp.data||[], tareas=rt.data||[], piezas=rz.data||[], push=ru.data||[], efem=re.data||[];
   mstate.campanas=camps;
-  const mesAct=todayStr().slice(0,7);
+  const hoy=todayStr(); const mesAct=hoy.slice(0,7);
+  const addDays=(s,n)=>{ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+  const in7=addDays(hoy,7), in30=addDays(hoy,30);
   const pubsMes=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
   const campActivas=camps.filter(c=>c.estado==='activa').length;
   const pendAbiertos=tareas.filter(t=>!['completado','cancelado'].includes(t.estado)).length;
-  const porAprobar=tareas.filter(t=>t.estado==='en_preaprobacion').length;
+  const vencidas=tareas.filter(t=>!['completado','cancelado'].includes(t.estado)&&t.fecha_limite&&t.fecha_limite<hoy).length;
+  const piezasRev=piezas.filter(p=>['borrador','enviado'].includes(p.estado)).length;
+  const piezasApr=piezas.filter(p=>p.estado==='aprobado').length;
+  const pushMes=push.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
+  const pushEnv=push.filter(p=>(p.fecha||'').slice(0,7)===mesAct&&p.estado==='enviado').length;
+  // Próximas publicaciones (de hoy en adelante)
+  const prox=pubs.filter(p=>p.fecha&&p.fecha>=hoy).sort((a,b)=>(a.fecha+(a.hora||'')).localeCompare(b.fecha+(b.hora||''))).slice(0,6);
+  // Efemérides próximas (normaliza recurrentes al año en curso)
+  const yr=+hoy.slice(0,4);
+  const efemProx=efem.filter(e=>!e.empresa||e.empresa===emp).map(e=>{
+    let f=e.fecha||''; if(e.recurrente&&f){ f=yr+f.slice(4); if(f<hoy) f=(yr+1)+f.slice(4); }
+    return {...e,_f:f};
+  }).filter(e=>e._f>=hoy&&e._f<=in30).sort((a,b)=>a._f.localeCompare(b._f)).slice(0,5);
+  const diaCorto=s=>{ const d=new Date(s+'T00:00:00'); return ['dom','lun','mar','mié','jue','vie','sáb'][d.getDay()]+' '+d.getDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]; };
   b.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
       ${kpiTile('Campañas activas',campActivas,'#60A5FA','rgba(29,78,216,.14)')}
       ${kpiTile('Publicaciones (mes)',pubsMes,'#34D77F','rgba(34,197,94,.14)')}
       ${kpiTile('Pendientes abiertos',pendAbiertos,'#F59E0B','rgba(217,119,6,.14)')}
-      ${kpiTile('Por aprobar',porAprobar,'#D97706','rgba(217,119,6,.14)')}
-      ${kpiTile('Total publicaciones',pubs.length,'#E8384A','rgba(232,56,74,.14)')}
+      ${kpiTile('Vencidos',vencidas,'#EF4444','rgba(239,68,68,.14)')}
+      ${kpiTile('Piezas por revisar',piezasRev,'#A78BFA','rgba(124,58,237,.14)')}
+      ${kpiTile('Piezas aprobadas',piezasApr,'#34D77F','rgba(22,101,52,.14)')}
+      ${kpiTile('Push (mes)',pushMes+(pushEnv?' · '+pushEnv+' env.':''),'#38BDF8','rgba(2,132,199,.14)')}
     </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:16px">
+      <div class="section-card" style="padding:14px">
+        <h3 style="font-size:13px;margin:0 0 10px">📅 Próximas publicaciones</h3>
+        ${prox.length?prox.map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--c-border)">
+          <span style="font-size:10px;font-weight:700;color:var(--c-muted);min-width:78px">${diaCorto(p.fecha)}${p.hora?' · '+esc(p.hora):''}</span>
+          <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.titulo||p.contenido||'(sin título)')}${p.canal?' <span style="color:var(--c-muted)">· '+esc(p.canal)+'</span>':''}</span>
+          <span style="font-size:9px;font-weight:700;color:#fff;background:${(typeof PUB_COLOR!=='undefined'&&PUB_COLOR[p.estado])||'#C62040'};padding:2px 6px;border-radius:20px;white-space:nowrap">${((typeof PUB_LBL!=='undefined'&&PUB_LBL[p.estado])||p.estado||'').toUpperCase()}</span>
+        </div>`).join(''):'<div class="nodata" style="font-size:12px;padding:16px">Nada programado próximamente.</div>'}
+        <div style="margin-top:10px"><button class="btn btn-sm btn-ghost" onclick="mstate.mktTab='calendario';renderMercadeo()">Ver calendario →</button></div>
+      </div>
+      <div class="section-card" style="padding:14px">
+        <h3 style="font-size:13px;margin:0 0 10px">⭐ Fechas especiales próximas</h3>
+        ${efemProx.length?efemProx.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--c-border)">
+          <span style="width:9px;height:9px;border-radius:50%;background:${e.color||'#7C3AED'};flex:none"></span>
+          <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.titulo||'')}${e.recurrente?' <span style="color:var(--c-muted)">· anual</span>':''}</span>
+          <span style="font-size:10px;font-weight:700;color:var(--c-muted);white-space:nowrap">${diaCorto(e._f)}</span>
+        </div>`).join(''):'<div class="nodata" style="font-size:12px;padding:16px">Sin fechas en los próximos 30 días.</div>'}
+      </div>
+    </div>
+    ${campActivas?`<div class="section-card" style="padding:14px;margin-bottom:16px">
+      <h3 style="font-size:13px;margin:0 0 10px">🎯 Campañas activas</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
+        ${camps.filter(c=>c.estado==='activa').map(c=>`<div onclick="openCampanaDetail('${c.id}')" style="border:1px solid var(--c-border);border-radius:8px;padding:10px;cursor:pointer">
+          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.nombre)}</div>
+          ${c.objetivo?`<div style="font-size:11px;color:var(--c-muted);margin-top:3px">${esc(c.objetivo)}</div>`:''}
+          ${c.drive_link?`<a href="${esc(c.drive_link)}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--c-primary)">📁 Drive</a>`:''}
+        </div>`).join('')}
+      </div></div>`:''}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
       <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por mes</h3><canvas id="chPubMes" height="190"></canvas></div>
       <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por canal</h3><canvas id="chPubCanal" height="190"></canvas></div>
