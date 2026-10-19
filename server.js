@@ -365,6 +365,14 @@ ensureColumn('licitaciones', 'precio_costo', 'REAL');            // precio costo
 ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homologación
 ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
 ensureColumn('publicaciones', 'empresa', 'TEXT');
+ensureColumn('publicaciones', 'hora', 'TEXT');
+ensureColumn('publicaciones', 'titulo', 'TEXT');
+ensureColumn('publicaciones', 'formato', 'TEXT');
+ensureColumn('publicaciones', 'responsable', 'TEXT');
+ensureColumn('publicaciones', 'reemplazo', 'TEXT');   // sustituida por (nombre/enlace)
+ensureColumn('publicaciones', 'motivo', 'TEXT');      // motivo de sustitución/reprogramación
+db.exec("UPDATE publicaciones SET estado='publicado' WHERE estado='publicada'");
+db.exec("UPDATE publicaciones SET estado='programado' WHERE estado IN ('planificada','planificado') OR estado IS NULL");
 ensureColumn('mercadeo_tareas', 'empresa', 'TEXT');
 ensureColumn('mercadeo_tareas', 'fecha_inicio', 'TEXT');
 ensureColumn('mercadeo_tareas', 'fecha_limite', 'TEXT');
@@ -397,7 +405,7 @@ const SCHEMA = {
   movimientos:  ['id', 'asiento_id', 'cuenta_id', 'debe', 'haber', 'proyecto_id', 'descripcion'],
   licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'created_by', 'created_at', 'updated_at'],
-  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'created_by', 'created_at', 'updated_at'],
+  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'hora', 'titulo', 'formato', 'responsable', 'reemplazo', 'motivo', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'fecha_inicio', 'fecha_limite', 'fecha_publicacion', 'campana_id', 'enlace', 'created_by', 'created_at', 'updated_at'],
   mkt_piezas:   ['id', 'empresa', 'titulo', 'tipo', 'formato', 'red_social', 'copy', 'fecha', 'responsable', 'version', 'comentarios', 'estado', 'archivo_file', 'campana_id', 'publicacion_id', 'created_by', 'created_at', 'updated_at'],
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],

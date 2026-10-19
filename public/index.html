@@ -4111,46 +4111,102 @@ function drawMktCharts(pubs,tareas){
   const byCanal={}; pubs.forEach(p=>{ const c=(p.canal||'').trim()||'Sin canal'; byCanal[c]=(byCanal[c]||0)+1; });
   const e2=document.getElementById('chPubCanal'), lc=Object.keys(byCanal);
   if(e2){ if(lc.length) _mktCharts.push(new Chart(e2,{type:'doughnut',data:{labels:lc,datasets:[{data:lc.map(c=>byCanal[c]),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e2.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
-  const byEst={}; pubs.forEach(p=>{ const s=p.estado||'planificada'; byEst[s]=(byEst[s]||0)+1; });
+  const byEst={}; pubs.forEach(p=>{ const s=p.estado||'programado'; byEst[s]=(byEst[s]||0)+1; });
   const e3=document.getElementById('chPubEstado'), le=Object.keys(byEst);
-  if(e3){ if(le.length) _mktCharts.push(new Chart(e3,{type:'doughnut',data:{labels:le,datasets:[{data:le.map(s=>byEst[s]),backgroundColor:['#F59E0B','#22C55E','#60A5FA','#E8384A','#7C3AED']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
+  if(e3){ if(le.length) _mktCharts.push(new Chart(e3,{type:'doughnut',data:{labels:le.map(s=>(typeof PUB_LBL!=='undefined'&&PUB_LBL[s])||s),datasets:[{data:le.map(s=>byEst[s]),backgroundColor:le.map(s=>(typeof PUB_COLOR!=='undefined'&&PUB_COLOR[s])||'#C62040')}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
   const cols=(typeof MKT_TAREA_EST!=='undefined')?MKT_TAREA_EST:[['pendiente','Pendiente']];
   const e4=document.getElementById('chTareas');
   if(e4) _mktCharts.push(new Chart(e4,{type:'bar',data:{labels:cols.map(c=>c[1]),datasets:[{label:'Pendientes',data:cols.map(c=>tareas.filter(t=>t.estado===c[0]).length),backgroundColor:cols.map(c=>(typeof MKT_TAREA_COLOR!=='undefined'&&MKT_TAREA_COLOR[c[0]])||'#C62040')}]},options:chartOpts({plugins:{legend:{display:false}}})}));
 }
 
-// ── Calendario mensual de publicaciones ────────────────────────
+// ── Calendario editorial (Mes / Grilla mensual) ───────────────
+const PUB_EST=[['programado','Programado'],['publicado','Publicado'],['no_publicado','No publicado'],['reprogramado','Reprogramado'],['sustituido','Sustituido']];
+const PUB_LBL=Object.fromEntries(PUB_EST);
+const PUB_COLOR={programado:'#D97706',publicado:'#22C55E',no_publicado:'#9CA3AF',reprogramado:'#1D4ED8',sustituido:'#C62040'};
 async function renderMktCalendario(){
   const b=document.getElementById('mktBody'); if(!b) return;
   const {data}=await sb.from('publicaciones').select('*').eq('empresa',mstate.mktEmpresa);
-  const pubs=data||[];
+  const pubs=data||[]; mstate._pubs=pubs;
   const ym=mstate.mktMonth||todayStr().slice(0,7);
   const [Y,M]=ym.split('-').map(Number);
-  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7; // lunes=0
+  const view=mstate.mktCalView||'mes';
+  const header=`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <div class="filter-chips"><span class="chip ${view==='mes'?'active':''}" onclick="mstate.mktCalView='mes';renderMercadeo()">📅 Mes</span><span class="chip ${view==='grilla'?'active':''}" onclick="mstate.mktCalView='grilla';renderMercadeo()">▦ Grilla mensual</span></div>
+      <div class="date-strip-wrap" style="flex:1;justify-content:center;gap:10px">
+        <button class="nav-arrow" onclick="shiftMktMonth(-1)">‹</button>
+        <div style="font-weight:700;text-transform:capitalize;min-width:130px;text-align:center">${MESES_ES[M-1]} ${Y}</div>
+        <button class="nav-arrow" onclick="shiftMktMonth(1)">›</button>
+      </div>
+      <button class="btn btn-sm btn-primary" onclick="openPubModal(null,'${ym}-15')">+ Agregar publicación</button>
+    </div>`;
+  const chip=e=>`<span style="font-size:10px;font-weight:700;color:#fff;background:${PUB_COLOR[e]||'#6B6B78'};padding:2px 7px;border-radius:20px">${PUB_LBL[e]||e}</span>`;
+  if(view==='grilla'){
+    const list=pubs.filter(p=>(p.fecha||'').slice(0,7)===ym).sort((a,b)=>(a.fecha+(a.hora||'')).localeCompare(b.fecha+(b.hora||'')));
+    b.innerHTML=header+`<div class="item-table"><table>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Red</th><th>Formato</th><th>Título / Copy</th><th>Responsable</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${list.length===0?`<tr><td colspan="8"><div class="empty-state">Sin publicaciones este mes</div></td></tr>`:list.map(p=>`
+        <tr style="cursor:pointer" onclick="openPubModal('${p.id}')">
+          <td style="white-space:nowrap">${esc(p.fecha||'')}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(p.hora||'')}</td>
+          <td style="font-size:12px">${esc(p.canal||'')}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(p.formato||'')}</td>
+          <td><b style="font-size:13px">${esc(p.titulo||p.contenido||'')}</b></td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(p.responsable||'')}</td>
+          <td>${chip(p.estado||'programado')}</td>
+          <td style="text-align:right"><button class="act-btn del" onclick="event.stopPropagation();delPubCal('${p.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+    return;
+  }
+  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7;
   const days=new Date(Y,M,0).getDate();
   const byDay={}; pubs.forEach(p=>{ if((p.fecha||'').slice(0,7)===ym){ const d=+p.fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push(p); } });
   const hoy=todayStr();
   let cells='';
   for(let i=0;i<startDow;i++) cells+=`<div></div>`;
   for(let d=1;d<=days;d++){
-    const ds=ym+'-'+String(d).padStart(2,'0'); const list=byDay[d]||[]; const esHoy=ds===hoy;
-    cells+=`<div style="min-height:86px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden">
+    const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
+    cells+=`<div style="min-height:88px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="openPubModal(null,'${ds}')">
       <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
-      ${list.slice(0,3).map(p=>`<div title="${esc((p.canal?p.canal+': ':'')+(p.contenido||''))}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${p.estado==='publicada'?'rgba(34,197,94,.25)':'rgba(198,32,64,.28)'};color:#F5E9EC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.canal||p.contenido||'Publicación')}</div>`).join('')}
-      ${list.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${list.length-3} más</div>`:''}
+      ${l.slice(0,3).map(p=>`<div onclick="event.stopPropagation();openPubModal('${p.id}')" title="${esc((p.canal?p.canal+': ':'')+(p.titulo||p.contenido||''))}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${PUB_COLOR[p.estado]||'#9B1B30'};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.titulo||p.canal||p.contenido||'Publicación')}</div>`).join('')}
+      ${l.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${l.length-3} más</div>`:''}
     </div>`;
   }
   const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-  b.innerHTML=`
-    <div class="date-strip-wrap" style="justify-content:space-between;margin-bottom:12px">
-      <button class="nav-arrow" onclick="shiftMktMonth(-1)">‹‹</button>
-      <div style="flex:1;text-align:center;font-weight:700;text-transform:capitalize">${MESES_ES[M-1]} ${Y}</div>
-      <button class="nav-arrow" onclick="shiftMktMonth(1)">>>></button>
-    </div>
+  b.innerHTML=header+`
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Las publicaciones se cargan dentro de cada campaña. <span style="color:#22C55E">Verde</span> = publicada · <span style="color:#F0556A">Rojo</span> = planificada.</div>`;
+    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Toca un día para agregar, o una publicación para editar su estado. Colores = estado.</div>`;
 }
+async function openPubModal(id,defFecha){
+  const p = id ? (mstate._pubs||[]).find(x=>x.id===id)||{} : {};
+  const {data:camps}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa);
+  const est=p.estado||'programado';
+  openModal(`
+    <div class="modal-head"><h2>${id?'Publicación':'Nueva publicación'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-group"><label>Fecha</label><input id="puFecha" type="date" value="${esc(p.fecha||defFecha||todayStr())}"></div><div class="form-group"><label>Hora (opcional)</label><input id="puHora" type="time" value="${esc(p.hora||'')}"></div></div>
+      <div class="form-row"><div class="form-group"><label>Red social</label><input id="puCanal" value="${esc(p.canal||'')}" placeholder="Instagram, Facebook…"></div><div class="form-group"><label>Formato</label><input id="puFormato" value="${esc(p.formato||'')}" placeholder="Reel, post, historia…"></div></div>
+      <div class="form-group"><label>Título</label><input id="puTitulo" value="${esc(p.titulo||'')}"></div>
+      <div class="form-group"><label>Copy / contenido</label><textarea id="puCont" rows="2">${esc(p.contenido||'')}</textarea></div>
+      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="puResp" value="${esc(p.responsable||'')}"></div><div class="form-group"><label>Campaña</label><select id="puCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${p.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div></div>
+      <div class="form-group"><label>Estado</label><select id="puEstado" onchange="document.getElementById('puSust').style.display=this.value==='sustituido'?'block':'none'">${PUB_EST.map(([k,l])=>`<option value="${k}" ${est===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div id="puSust" style="display:${est==='sustituido'?'block':'none'}">
+        <div class="form-group"><label>Sustituida por (nombre o enlace de la pieza que la reemplaza)</label><input id="puReemplazo" value="${esc(p.reemplazo||'')}"></div>
+        <div class="form-group"><label>Motivo</label><input id="puMotivo" value="${esc(p.motivo||'')}"></div>
+      </div>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between"><div>${id?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="delPubCal('${id}')">Eliminar</button>`:''}</div><div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button> <button class="btn btn-primary" onclick="saveCalPub('${id||''}')">Guardar</button></div></div>`);
+}
+async function saveCalPub(id){
+  const fecha=document.getElementById('puFecha').value||todayStr();
+  const row={fecha,hora:document.getElementById('puHora').value||'',canal:document.getElementById('puCanal').value.trim(),formato:document.getElementById('puFormato').value.trim(),titulo:document.getElementById('puTitulo').value.trim(),contenido:document.getElementById('puCont').value.trim(),responsable:document.getElementById('puResp').value.trim(),campana_id:document.getElementById('puCampana').value||null,estado:document.getElementById('puEstado').value,reemplazo:document.getElementById('puReemplazo')?document.getElementById('puReemplazo').value.trim():'',motivo:document.getElementById('puMotivo')?document.getElementById('puMotivo').value.trim():''};
+  if(row.estado==='sustituido' && !row.reemplazo){ showToast('Indica qué publicación la reemplaza','err'); return; }
+  let error; if(id){ ({error}=await sb.from('publicaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('publicaciones').insert({...row,empresa:mstate.mktEmpresa})); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Publicación guardada','ok'); renderMercadeo();
+}
+async function delPubCal(id){ if(!confirm('¿Eliminar esta publicación?')) return; const {error}=await sb.from('publicaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
 function shiftMktMonth(dir){ const ym=mstate.mktMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.mktMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderMktCalendario(); }
 
 // ── Biblioteca de medios (fotos / archivos / videos) ───────────
