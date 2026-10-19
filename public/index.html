@@ -3521,7 +3521,7 @@ async function renderContabilidad(){
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('contabilidad','contabilidad')">💬 Chat</button><button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
   document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:900px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      ${[['panel','📊 Panel'],['compromisos','📅 Pendientes y compromisos'],['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
+      ${[['panel','📊 Panel'],['caja','💵 Caja chica'],['compromisos','📅 Pendientes y compromisos'],['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
     </div>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
       <div><label style="font-size:11px;color:var(--c-muted);display:block">Desde</label><input type="date" value="${mstate.contaDesde}" onchange="mstate.contaDesde=this.value;renderContabilidad()"></div>
@@ -3531,6 +3531,7 @@ async function renderContabilidad(){
   </div>`;
   if(!mstate.cuentas.length){ const {data}=await sb.from('cuentas').select('*').order('codigo'); mstate.cuentas=data||[]; }
   if(mstate.contaTab==='panel'){ renderContaPanel(); return; }
+  if(mstate.contaTab==='caja'){ renderContaCaja(); return; }
   if(mstate.contaTab==='compromisos'){ renderContaCompromisos(); return; }
   if(mstate.contaTab==='mayor'){ renderContaMayor(); return; }
   const {data:saldos,error}=await apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta});
@@ -3541,6 +3542,37 @@ async function renderContabilidad(){
   else if(mstate.contaTab==='balance') body.innerHTML=contaBalance(saldos);
 }
 function kpiTile(label,val,color,bg){ return `<div style="background:${bg};border-radius:10px;padding:14px"><div style="font-size:20px;font-weight:800;color:${color}">${val}</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">${label}</div></div>`; }
+// Caja chica de todos los proyectos (vista de Contabilidad)
+function goProjCaja(pid){ nav('project',pid); state.projTab='caja'; render(); }
+async function renderContaCaja(){
+  const body=document.getElementById('contaBody'); if(!body) return;
+  body.innerHTML='<div class="nodata" style="padding:20px">Cargando caja chica…</div>';
+  const d=await api('/api/select',{table:'caja_chica',order:[{col:'fecha',asc:false}],limit:5000});
+  if(mstate.contaTab!=='caja') return;
+  const movs=d.data||[];
+  const byProj={};
+  movs.forEach(m=>{ const p=m.project_id||'—'; const o=(byProj[p]=byProj[p]||{ing:0,gas:0,n:0}); if(m.tipo==='ingreso') o.ing+=(+m.monto||0); else o.gas+=(+m.monto||0); o.n++; });
+  const rows=Object.entries(byProj).map(([pid,o])=>({pid,name:projName(pid)||pid,ing:o.ing,gas:o.gas,n:o.n,saldo:o.ing-o.gas})).sort((a,b)=>a.name.localeCompare(b.name));
+  const tIng=rows.reduce((s,r)=>s+r.ing,0), tGas=rows.reduce((s,r)=>s+r.gas,0);
+  body.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
+      ${kpiTile('Fondos (todos)', cajaMoney(tIng), '#166534','#DCFCE7')}
+      ${kpiTile('Gastos (todos)', cajaMoney(tGas), '#DC2626','#FEE2E2')}
+      ${kpiTile('Saldo total', cajaMoney(tIng-tGas), '#1D4ED8','#DBEAFE')}
+    </div>
+    <div class="item-table"><table>
+      <thead><tr><th>Proyecto</th><th style="text-align:right">Fondos</th><th style="text-align:right">Gastos</th><th style="text-align:right">Saldo</th><th style="text-align:center">Mov.</th></tr></thead>
+      <tbody>${rows.length===0?`<tr><td colspan="5"><div class="empty-state">Sin movimientos de caja en ningún proyecto</div></td></tr>`:rows.map(r=>`
+        <tr style="cursor:pointer" onclick="goProjCaja('${r.pid}')" title="Ver la caja de este proyecto">
+          <td><b style="font-size:13px">${esc(r.name)}</b></td>
+          <td style="text-align:right;color:var(--c-ok)">${cajaMoney(r.ing)}</td>
+          <td style="text-align:right;color:var(--c-err)">${cajaMoney(r.gas)}</td>
+          <td style="text-align:right;font-weight:800;color:${r.saldo<0?'var(--c-err)':'inherit'}">${cajaMoney(r.saldo)}</td>
+          <td style="text-align:center;color:var(--c-muted)">${r.n}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>
+    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Toca un proyecto para ver y gestionar su caja chica.</div>`;
+}
 async function renderContaPanel(){
   const body=document.getElementById('contaBody'); if(!body) return;
   const [rs,rm]=await Promise.all([
