@@ -1303,6 +1303,7 @@ function renderInvLista(){
         <span class="chip ${state.cat==='all'?'active':''}" onclick="state.cat='all';renderInventario()">Todos</span>
         ${CATS.map(c=>`<span class="chip ${state.cat===c.id?'active':''}" onclick="state.cat='${c.id}';renderInventario()">${c.label}</span>`).join('')}
       </div>
+      <button class="btn btn-sm btn-primary" onclick="showItemModal()">+ Artículo</button>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;flex-wrap:wrap">
       <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0">Detalle por categoría</h3>
@@ -1996,6 +1997,9 @@ function showItemModal(id){
   <div class="modal-head"><h2>${isNew?'Nuevo Articulo':'Editar Articulo'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-group"><label>Nombre</label><input id="iName" value="${esc(item?.name||'')}" placeholder="Nombre del articulo"></div>
+    ${isNew?`<div class="form-group"><label>Ubicación (dónde se guarda)</label>
+      <select id="iProj">${sortedProjects().map(p=>`<option value="${p.id}" ${(state.projectId||'bodega')===p.id?'selected':''}>${esc(p.name||p.id)}</option>`).join('')}</select>
+    </div>`:''}
     <div class="form-group">
       <label>Foto del artículo</label>
       <div style="display:flex;align-items:center;gap:12px">
@@ -2056,7 +2060,9 @@ async function saveItem(id){
     const d=await api('/api/update',{table:'items',values:row,filters:[{col:'id',val:id}]});
     if(d.error){toast('Error al guardar','err');return;}
   } else {
-    const d=await api('/api/insert',{table:'items',values:{...row,project_id:state.projectId,created_at:new Date().toISOString()}});
+    const projSel = document.getElementById('iProj');
+    const projId = (projSel && projSel.value) || state.projectId || 'bodega';
+    const d=await api('/api/insert',{table:'items',values:{...row,project_id:projId,created_at:new Date().toISOString()}});
     if(d.error){toast('Error al crear','err');return;}
     itemId = d.data && d.data[0] && d.data[0].id;
   }
