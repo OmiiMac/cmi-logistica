@@ -2677,10 +2677,13 @@ async function renderUsers(){
     const initials = (p.name||'?').slice(0,2).toUpperCase();
     const email = p.email || p.name || p.id.slice(0,8);
     const isSelf = p.id === state.userId;
+    const blocked = String(p.restrict_mods||'').split(',').map(s=>s.trim()).filter(Boolean);
+    const isAdmin2 = p.role==='admin' && blocked.includes('conta');
+    const badge = isAdmin2 ? '<span style="font-size:10px;background:#2A0C14;color:#F08A98;padding:1px 6px;border-radius:4px;font-weight:700">ADMIN 2</span>' : roleBadge(p.role);
     return `<div class="user-row">
       <div class="user-avatar" style="background:${p.role==='admin'?'rgba(155,27,48,.15)':p.role==='supervisor'?'rgba(217,119,6,.12)':'rgba(29,78,216,.1)'};color:${p.role==='admin'?'var(--c-primary)':p.role==='supervisor'?'#D97706':'#1D4ED8'}">${esc(initials)}</div>
       <div class="user-info">
-        <div class="user-name">${esc(p.name||'Sin nombre')} ${roleBadge(p.role)}</div>
+        <div class="user-name">${esc(p.name||'Sin nombre')} ${badge}</div>
         <div class="user-email">${esc(email)}</div>
       </div>
       <div class="user-actions">
@@ -2695,7 +2698,8 @@ async function renderUsers(){
             <option value="contador"   ${p.role==='contador'?'selected':''}>Contador</option>
             <option value="mercadeo"   ${p.role==='mercadeo'?'selected':''}>Mercadeo</option>
             <option value="licitaciones" ${p.role==='licitaciones'?'selected':''}>Licitaciones</option>
-            <option value="admin"      ${p.role==='admin'?'selected':''}>Admin</option>
+            <option value="admin"      ${p.role==='admin'&&!isAdmin2?'selected':''}>Admin</option>
+            <option value="admin2"     ${isAdmin2?'selected':''}>Admin 2 (sin Contabilidad)</option>
           </select>` : ''}
         ${full && !isSelf && p.status==='active' && p.role==='admin' ? `<button onclick="showPermisosModal('${p.id}')" title="Qué módulos puede ver" style="background:none;border:1px solid var(--c-primary);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-primary)">Permisos</button>` : ''}
         ${full && !isSelf ? `<button onclick="setUserPassword('${p.id}')" title="Fijar/resetear contraseña" style="background:none;border:1px solid var(--c-border);border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;color:var(--c-muted)">Clave</button>` : ''}
@@ -2832,9 +2836,15 @@ function roleBadge(role){
   return `<span style="font-size:10px;background:${c[0]};color:${c[1]};padding:1px 6px;border-radius:4px;font-weight:700">${(ROLE_LABEL[role]||role).toUpperCase()}</span>`;
 }
 async function setUserRole(id, newRole){
-  const d = await api('/api/update',{table:'profiles',values:{role:newRole},filters:[{col:'id',val:id}]});
+  // "Admin 2" = administrador que ve todo MENOS Contabilidad (admin + restricción 'conta').
+  // Al cambiar de rol se limpian las restricciones previas (salvo Admin 2).
+  let values, label;
+  if(newRole==='admin2'){ values={role:'admin', restrict_mods:'conta'}; label='Admin 2 (sin Contabilidad)'; }
+  else if(newRole==='admin'){ values={role:'admin', restrict_mods:''}; label='Admin'; }
+  else { values={role:newRole, restrict_mods:''}; label=ROLE_LABEL[newRole]||newRole; }
+  const d = await api('/api/update',{table:'profiles',values,filters:[{col:'id',val:id}]});
   if(d.error) showToast('Error al cambiar rol: '+d.error.message, 'err');
-  else { showToast(`Rol cambiado a ${ROLE_LABEL[newRole]||newRole}`, 'ok'); renderUsers(); }
+  else { showToast(`Rol cambiado a ${label}`, 'ok'); renderUsers(); }
 }
 
 async function setUserPassword(id){
