@@ -437,8 +437,7 @@ html{height:100%}
 
 /* ── CHAT ── */
 #chatWrap{display:flex;flex-direction:column;height:100%;overflow:hidden;position:relative}
-/* Marca de agua: logo de la torre CMI, tenue y centrado detrás de los mensajes */
-#chatWrap::before{content:"";position:absolute;inset:0;background-image:url('/cmi-logo.svg');background-repeat:no-repeat;background-position:center 42%;background-size:min(300px,46%);opacity:.05;pointer-events:none;z-index:0}
+/* La marca de agua del chat la provee el sello global (#main::after) */
 #chatMessages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;position:relative;z-index:1}
 #chatInputBar{position:relative;z-index:1}
 .msg-row{display:flex;gap:10px;align-items:flex-end;max-width:75%}
@@ -3680,12 +3679,11 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
 
 /* ===== Marca de agua CMI (logo de fondo) ===== */
 #main, .dash-fx{ position:relative; }
-#loginWrap::before, #resetWrap::before, #pendingWrap::before, #main::before, .dash-fx::before{
+#loginWrap::before, #resetWrap::before, #pendingWrap::before{
   content:''; position:absolute; inset:0; z-index:0; pointer-events:none;
   background:url('/cmi-logo.svg') no-repeat center;
   background-size:min(62vw,460px); opacity:.05;
 }
-#main::before{ opacity:.06; }
 /* Marca de agua global: sello tenue del logo de la torre ENCIMA del contenido,
    visible en todas las areas (proyectos, inventario, rutas, transferencias,
    contabilidad, licitaciones, mercadeo…) aunque las tablas/tarjetas sean opacas.
