@@ -341,6 +341,9 @@ ensureColumn('profiles', 'wa_optin', 'INTEGER DEFAULT 0'); // 1 = acepta recibir
 ensureColumn('licitaciones', 'responsable_presupuesto', 'TEXT'); // responsable del presupuesto
 ensureColumn('licitaciones', 'precio_costo', 'REAL');            // precio costo
 ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homologación
+ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
+ensureColumn('publicaciones', 'empresa', 'TEXT');
+ensureColumn('mercadeo_tareas', 'empresa', 'TEXT');
 // Migración de estados de licitaciones al nuevo esquema (idempotente)
 db.exec("UPDATE licitaciones SET estado='en_preparacion' WHERE estado IN ('borrador','en_revision')");
 db.exec("UPDATE licitaciones SET estado='participada'    WHERE estado='presentada'");
@@ -364,9 +367,9 @@ const SCHEMA = {
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
   movimientos:  ['id', 'asiento_id', 'cuenta_id', 'debe', 'haber', 'proyecto_id', 'descripcion'],
   licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
-  campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'created_by', 'created_at', 'updated_at'],
-  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'created_by', 'created_at', 'updated_at'],
-  mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'created_by', 'created_at', 'updated_at'],
+  campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'created_by', 'created_at', 'updated_at'],
+  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'created_by', 'created_at', 'updated_at'],
+  mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'created_by', 'created_at', 'updated_at'],
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   salidas_material: ['id', 'project_id', 'item_id', 'item_name', 'cantidad', 'unidad', 'actividad', 'area', 'fecha', 'notas', 'created_by', 'created_at', 'updated_at'],

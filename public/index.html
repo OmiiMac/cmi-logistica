@@ -4027,9 +4027,26 @@ async function aprobarLic(id,ok){ const {error}=await sb.from('licitaciones').up
 async function delLic(id){ if(!confirm('¿Eliminar esta licitación?')) return; const {error}=await sb.from('licitaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminada','ok'); closeModal(); renderLicitaciones(); }
 
 /* ================= MERCADEO ================= */
+const MKT_EMPRESAS=['Barbology','PaintPro','Agero','CMI','Cargo Express'];
+function mktSelectEmpresa(e){ mstate.mktEmpresa=e; mstate.mktTab='panel'; renderMercadeo(); }
 async function renderMercadeo(){
   if(!canModule('mkt')){ nav('dashboard'); return; }
   setTopbar('Mercadeo');
+  // Pantalla de selección de empresa (cada una tiene sus propios datos)
+  if(!mstate.mktEmpresa){
+    document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`;
+    document.getElementById('view').innerHTML=`<div style="padding:28px 24px;max-width:760px">
+      <h2 style="font-size:17px;margin:0 0 4px">Mercadeo · Seleccionar empresa</h2>
+      <div style="font-size:12px;color:var(--c-muted);margin-bottom:18px">Cada empresa tiene sus propios datos, campañas, pendientes y calendario.</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+        ${MKT_EMPRESAS.map(e=>`<div class="section-card" style="padding:24px 14px;text-align:center;cursor:pointer" onclick="mktSelectEmpresa('${e.replace(/'/g,"\\'")}')">
+          <div style="font-size:30px;margin-bottom:8px">🏢</div>
+          <div style="font-weight:800;font-size:15px">${esc(e)}</div>
+        </div>`).join('')}
+      </div></div>`;
+    return;
+  }
+  const emp=mstate.mktEmpresa;
   const tab=mstate.mktTab||'panel';
   let addBtn='';
   if(tab==='campanas') addBtn=`<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`;
@@ -4038,6 +4055,10 @@ async function renderMercadeo(){
     `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`+addBtn;
   const tabs=[['panel','📊 Panel'],['calendario','📅 Calendario'],['campanas','Campañas'],['tareas','Pendientes'],['biblioteca','🖼️ Biblioteca']];
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1000px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-weight:800;font-size:15px">🏢 ${esc(emp)}</span>
+      <button class="btn btn-sm btn-ghost" onclick="mstate.mktEmpresa=null;renderMercadeo()">↔ Cambiar empresa</button>
+    </div>
     <div class="filter-chips" style="margin-bottom:16px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" onclick="mstate.mktTab='${k}';renderMercadeo()">${l}</span>`).join('')}</div>
     <div id="mktBody"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
   if(tab==='panel') renderMktPanel();
@@ -4050,10 +4071,11 @@ async function renderMercadeo(){
 // ── Panel con gráficas ─────────────────────────────────────────
 async function renderMktPanel(){
   const b=document.getElementById('mktBody'); if(!b) return;
+  const emp=mstate.mktEmpresa;
   const [rc,rp,rt]=await Promise.all([
-    sb.from('campanas').select('*'),
-    sb.from('publicaciones').select('*'),
-    sb.from('mercadeo_tareas').select('*')
+    sb.from('campanas').select('*').eq('empresa',emp),
+    sb.from('publicaciones').select('*').eq('empresa',emp),
+    sb.from('mercadeo_tareas').select('*').eq('empresa',emp)
   ]);
   const camps=rc.data||[], pubs=rp.data||[], tareas=rt.data||[];
   mstate.campanas=camps;
@@ -4096,7 +4118,7 @@ function drawMktCharts(pubs,tareas){
 // ── Calendario mensual de publicaciones ────────────────────────
 async function renderMktCalendario(){
   const b=document.getElementById('mktBody'); if(!b) return;
-  const {data}=await sb.from('publicaciones').select('*');
+  const {data}=await sb.from('publicaciones').select('*').eq('empresa',mstate.mktEmpresa);
   const pubs=data||[];
   const ym=mstate.mktMonth||todayStr().slice(0,7);
   const [Y,M]=ym.split('-').map(Number);
@@ -4148,7 +4170,7 @@ function mediaGridHtml(files, delFn){
 }
 async function renderMktBiblioteca(){
   const b=document.getElementById('mktBody'); if(!b) return;
-  const {data}=await sb.from('files').select('*').eq('scope','mercadeo');
+  const {data}=await sb.from('files').select('*').eq('scope','mercadeo').eq('ref_id',mstate.mktEmpresa);
   const files=(data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
   b.innerHTML=`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
@@ -4161,13 +4183,13 @@ async function renderMktBiblioteca(){
 async function uploadMktFile(){
   const inp=document.getElementById('mktFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
   showToast('Subiendo…','ok');
-  const {error}=await apiUpload('mercadeo','mercadeo',inp.files[0]);
+  const {error}=await apiUpload('mercadeo',mstate.mktEmpresa,inp.files[0]);
   if(error){ showToast(error.message||'Error al subir','err'); return; }
   showToast('Archivo subido','ok'); renderMktBiblioteca();
 }
 async function delMktFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderMktBiblioteca(); }
 async function renderCampanas(){
-  const {data}=await sb.from('campanas').select('*').order('created_at',{ascending:false});
+  const {data}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false});
   const b=document.getElementById('mktBody'); if(!b) return;
   mstate.campanas=data||[];
   if(!data||!data.length){ b.innerHTML='<div class="nodata" style="padding:30px">Sin campañas aún.</div>'; return; }
@@ -4192,7 +4214,7 @@ function openCampanaModal(c){
 async function saveCampana(id){
   const row={nombre:document.getElementById('cmNombre').value.trim(),descripcion:document.getElementById('cmDesc').value.trim(),fecha_inicio:document.getElementById('cmIni').value||null,fecha_fin:document.getElementById('cmFin').value||null,responsable:document.getElementById('cmResp').value.trim(),estado:document.getElementById('cmEstado').value};
   if(!row.nombre){ showToast('Falta el nombre','err'); return; }
-  let error; if(id){ ({error}=await sb.from('campanas').update(row).eq('id',id)); } else { ({error}=await sb.from('campanas').insert(row)); }
+  let error; if(id){ ({error}=await sb.from('campanas').update(row).eq('id',id)); } else { ({error}=await sb.from('campanas').insert({...row,empresa:mstate.mktEmpresa})); }
   if(error){ showToast(error.message,'err'); return; }
   closeModal(); showToast('Guardado','ok'); renderMercadeo();
 }
@@ -4227,7 +4249,7 @@ function pubsHtml(pubs,campanaId){
 }
 async function savePub(campanaId){
   const contenido=document.getElementById('pbCont').value.trim(); if(!contenido){ showToast('Falta el contenido','err'); return; }
-  const {error}=await sb.from('publicaciones').insert({campana_id:campanaId,fecha:document.getElementById('pbFecha').value||null,canal:document.getElementById('pbCanal').value.trim(),contenido});
+  const {error}=await sb.from('publicaciones').insert({campana_id:campanaId,fecha:document.getElementById('pbFecha').value||null,canal:document.getElementById('pbCanal').value.trim(),contenido,empresa:mstate.mktEmpresa});
   if(error){ showToast(error.message,'err'); return; }
   openCampanaDetail(campanaId);
 }
@@ -4246,12 +4268,12 @@ async function openTareaModal(){
 }
 async function saveTarea(){
   const titulo=document.getElementById('tTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
-  const {error}=await sb.from('mercadeo_tareas').insert({titulo,descripcion:document.getElementById('tDesc').value.trim(),responsable:document.getElementById('tResp').value.trim(),prioridad:document.getElementById('tPrio').value});
+  const {error}=await sb.from('mercadeo_tareas').insert({titulo,descripcion:document.getElementById('tDesc').value.trim(),responsable:document.getElementById('tResp').value.trim(),prioridad:document.getElementById('tPrio').value,empresa:mstate.mktEmpresa});
   if(error){ showToast(error.message,'err'); return; }
   closeModal(); showToast('Pendiente creado','ok'); renderMercadeo();
 }
 async function renderTareas(){
-  const {data}=await sb.from('mercadeo_tareas').select('*').order('created_at',{ascending:false});
+  const {data}=await sb.from('mercadeo_tareas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false});
   const b=document.getElementById('mktBody'); if(!b) return;
   const cols=[['pendiente','Pendiente'],['en_progreso','En progreso'],['hecho','Hecho']];
   const PR={alta:['#FEE2E2','#DC2626'],media:['#FEF3C7','#D97706'],baja:['#E0E7FF','#4338CA']};
