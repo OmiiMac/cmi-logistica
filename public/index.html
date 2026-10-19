@@ -4082,12 +4082,14 @@ async function renderMktPanel(){
   const mesAct=todayStr().slice(0,7);
   const pubsMes=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
   const campActivas=camps.filter(c=>c.estado==='activa').length;
-  const pendAbiertos=tareas.filter(t=>t.estado!=='hecho').length;
+  const pendAbiertos=tareas.filter(t=>!['completado','cancelado'].includes(t.estado)).length;
+  const porAprobar=tareas.filter(t=>t.estado==='en_preaprobacion').length;
   b.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
       ${kpiTile('Campañas activas',campActivas,'#60A5FA','rgba(29,78,216,.14)')}
       ${kpiTile('Publicaciones (mes)',pubsMes,'#34D77F','rgba(34,197,94,.14)')}
       ${kpiTile('Pendientes abiertos',pendAbiertos,'#F59E0B','rgba(217,119,6,.14)')}
+      ${kpiTile('Por aprobar',porAprobar,'#D97706','rgba(217,119,6,.14)')}
       ${kpiTile('Total publicaciones',pubs.length,'#E8384A','rgba(232,56,74,.14)')}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
@@ -4110,9 +4112,9 @@ function drawMktCharts(pubs,tareas){
   const byEst={}; pubs.forEach(p=>{ const s=p.estado||'planificada'; byEst[s]=(byEst[s]||0)+1; });
   const e3=document.getElementById('chPubEstado'), le=Object.keys(byEst);
   if(e3){ if(le.length) _mktCharts.push(new Chart(e3,{type:'doughnut',data:{labels:le,datasets:[{data:le.map(s=>byEst[s]),backgroundColor:['#F59E0B','#22C55E','#60A5FA','#E8384A','#7C3AED']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
-  const cols=['pendiente','en_progreso','hecho'], lbl={pendiente:'Pendiente',en_progreso:'En progreso',hecho:'Hecho'};
+  const cols=(typeof MKT_TAREA_EST!=='undefined')?MKT_TAREA_EST:[['pendiente','Pendiente']];
   const e4=document.getElementById('chTareas');
-  if(e4) _mktCharts.push(new Chart(e4,{type:'bar',data:{labels:cols.map(c=>lbl[c]),datasets:[{label:'Pendientes',data:cols.map(c=>tareas.filter(t=>t.estado===c).length),backgroundColor:['#F59E0B','#60A5FA','#22C55E']}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  if(e4) _mktCharts.push(new Chart(e4,{type:'bar',data:{labels:cols.map(c=>c[1]),datasets:[{label:'Pendientes',data:cols.map(c=>tareas.filter(t=>t.estado===c[0]).length),backgroundColor:cols.map(c=>(typeof MKT_TAREA_COLOR!=='undefined'&&MKT_TAREA_COLOR[c[0]])||'#C62040')}]},options:chartOpts({plugins:{legend:{display:false}}})}));
 }
 
 // ── Calendario mensual de publicaciones ────────────────────────
@@ -4256,38 +4258,73 @@ async function savePub(campanaId){
 async function togglePub(id,estado,campanaId){ const {error}=await sb.from('publicaciones').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
 async function delPub(id,campanaId){ const {error}=await sb.from('publicaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
 async function delCampana(id){ if(!confirm('¿Eliminar campaña?')) return; const {error}=await sb.from('campanas').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
-async function openTareaModal(){
+// Estados tipo Monday para los pendientes de mercadeo
+const MKT_TAREA_EST=[['pendiente','Pendiente'],['en_proceso','En proceso'],['en_preaprobacion','En preaprobación'],['correcciones','Correcciones solicitadas'],['aprobado','Aprobado'],['completado','Completado'],['cancelado','Cancelado']];
+const MKT_TAREA_LBL=Object.fromEntries(MKT_TAREA_EST);
+const MKT_TAREA_COLOR={pendiente:'#6B6B78',en_proceso:'#1D4ED8',en_preaprobacion:'#D97706',correcciones:'#C62040',aprobado:'#166534',completado:'#22C55E',cancelado:'#9CA3AF'};
+async function openTareaModal(id){
+  const t = id ? (mstate._tareas||[]).find(x=>x.id===id)||{} : {};
+  const {data:camps}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa);
+  const pr=t.prioridad||'media';
   openModal(`
-    <div class="modal-head"><h2>Nuevo pendiente</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h2>${id?'Editar':'Nuevo'} pendiente</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <div class="form-group"><label>Título</label><input id="tTitulo"></div>
-      <div class="form-group"><label>Descripción</label><textarea id="tDesc" rows="2"></textarea></div>
-      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="tResp"></div><div class="form-group" style="flex:1"><label>Prioridad</label><select id="tPrio"><option value="baja">Baja</option><option value="media" selected>Media</option><option value="alta">Alta</option></select></div></div>
+      <div class="form-group"><label>Título</label><input id="tTitulo" value="${esc(t.titulo||'')}"></div>
+      <div class="form-group"><label>Descripción</label><textarea id="tDesc" rows="2">${esc(t.descripcion||'')}</textarea></div>
+      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="tResp" value="${esc(t.responsable||'')}"></div><div class="form-group"><label>Prioridad</label><select id="tPrio"><option value="baja" ${pr==='baja'?'selected':''}>Baja</option><option value="media" ${pr==='media'?'selected':''}>Media</option><option value="alta" ${pr==='alta'?'selected':''}>Alta</option></select></div></div>
+      <div class="form-row"><div class="form-group"><label>Fecha inicio</label><input id="tIni" type="date" value="${esc(t.fecha_inicio||'')}"></div><div class="form-group"><label>Fecha límite</label><input id="tLim" type="date" value="${esc(t.fecha_limite||'')}"></div></div>
+      <div class="form-row"><div class="form-group"><label>Fecha de publicación (si aplica)</label><input id="tPub" type="date" value="${esc(t.fecha_publicacion||'')}"></div><div class="form-group"><label>Estado</label><select id="tEstado">${MKT_TAREA_EST.map(([k,l])=>`<option value="${k}" ${(t.estado||'pendiente')===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+      <div class="form-group"><label>Campaña asociada (opcional)</label><select id="tCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${t.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Enlace / adjunto (opcional)</label><input id="tEnlace" value="${esc(t.enlace||'')}" placeholder="https://…"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarea()">Guardar</button></div>`);
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarea('${id||''}')">Guardar</button></div>`);
 }
-async function saveTarea(){
+async function saveTarea(id){
   const titulo=document.getElementById('tTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
-  const {error}=await sb.from('mercadeo_tareas').insert({titulo,descripcion:document.getElementById('tDesc').value.trim(),responsable:document.getElementById('tResp').value.trim(),prioridad:document.getElementById('tPrio').value,empresa:mstate.mktEmpresa});
+  const row={titulo,descripcion:document.getElementById('tDesc').value.trim(),responsable:document.getElementById('tResp').value.trim(),prioridad:document.getElementById('tPrio').value,estado:document.getElementById('tEstado').value,fecha_inicio:document.getElementById('tIni').value||null,fecha_limite:document.getElementById('tLim').value||null,fecha_publicacion:document.getElementById('tPub').value||null,campana_id:document.getElementById('tCampana').value||null,enlace:document.getElementById('tEnlace').value.trim()};
+  let error; if(id){ ({error}=await sb.from('mercadeo_tareas').update(row).eq('id',id)); } else { ({error}=await sb.from('mercadeo_tareas').insert({...row,empresa:mstate.mktEmpresa})); }
   if(error){ showToast(error.message,'err'); return; }
-  closeModal(); showToast('Pendiente creado','ok'); renderMercadeo();
+  closeModal(); showToast('Pendiente guardado','ok'); renderMercadeo();
 }
 async function renderTareas(){
-  const {data}=await sb.from('mercadeo_tareas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false});
   const b=document.getElementById('mktBody'); if(!b) return;
-  const cols=[['pendiente','Pendiente'],['en_progreso','En progreso'],['hecho','Hecho']];
-  const PR={alta:['#FEE2E2','#DC2626'],media:['#FEF3C7','#D97706'],baja:['#E0E7FF','#4338CA']};
-  b.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">${cols.map(([k,l])=>{
-    const items=(data||[]).filter(t=>t.estado===k);
-    return `<div><div style="font-size:12px;font-weight:700;color:var(--c-muted);margin-bottom:8px">${l} (${items.length})</div>${items.map(t=>{const pc=PR[t.prioridad]||PR.media;return `<div class="section-card" style="margin-bottom:8px;padding:10px">
-      <div style="font-weight:600;font-size:13px">${esc(t.titulo)}</div>${t.descripcion?`<div style="font-size:12px;color:var(--c-muted);margin-top:3px">${esc(t.descripcion)}</div>`:''}
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px"><span style="font-size:10px;background:${pc[0]};color:${pc[1]};padding:1px 6px;border-radius:4px;font-weight:700">${(t.prioridad||'media').toUpperCase()}</span>
-      <span style="white-space:nowrap">${k!=='pendiente'?`<button title="atrás" onclick="moveTarea('${t.id}','${k==='hecho'?'en_progreso':'pendiente'}')" style="border:none;background:none;cursor:pointer">◀</button>`:''}${k!=='hecho'?`<button title="avanzar" onclick="moveTarea('${t.id}','${k==='pendiente'?'en_progreso':'hecho'}')" style="border:none;background:none;cursor:pointer">▶</button>`:''}<button onclick="delTarea('${t.id}')" style="border:none;background:none;color:#DC2626;cursor:pointer">×</button></span></div>
-      ${t.responsable?`<div style="font-size:11px;color:var(--c-muted);margin-top:4px">👤 ${esc(t.responsable)}</div>`:''}
-    </div>`;}).join('')||'<div class="nodata" style="padding:12px;font-size:12px">—</div>'}</div>`;}).join('')}</div>`;
+  const [rt,rc]=await Promise.all([
+    sb.from('mercadeo_tareas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false}),
+    sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa)
+  ]);
+  const all=rt.data||[]; mstate._tareas=all;
+  const campName={}; (rc.data||[]).forEach(c=>campName[c.id]=c.nombre);
+  const hoy=todayStr();
+  const esVencida=t=>t.fecha_limite && t.fecha_limite<hoy && !['completado','cancelado','aprobado'].includes(t.estado);
+  const fEst=mstate.mktTareaEst||'all', fVenc=!!mstate.mktTareaVenc;
+  let rows=all;
+  if(fEst!=='all') rows=rows.filter(t=>t.estado===fEst);
+  if(fVenc) rows=rows.filter(esVencida);
+  const vencidasN=all.filter(esVencida).length;
+  const estSel=t=>`<select onchange="setTareaEstado('${t.id}',this.value)" style="font-size:11px;font-weight:700;border:none;border-radius:20px;padding:3px 8px;color:#fff;background:${MKT_TAREA_COLOR[t.estado]||'#6B6B78'};cursor:pointer">${MKT_TAREA_EST.map(([k,l])=>`<option value="${k}" ${t.estado===k?'selected':''} style="background:var(--c-card);color:var(--c-text)">${l}</option>`).join('')}</select>`;
+  b.innerHTML=`
+    <div class="filter-chips" style="margin-bottom:12px;overflow-x:auto;flex-wrap:nowrap">
+      <span class="chip ${fEst==='all'&&!fVenc?'active':''}" onclick="mstate.mktTareaEst='all';mstate.mktTareaVenc=false;renderMercadeo()">Todos (${all.length})</span>
+      <span class="chip ${fVenc?'active':''}" style="white-space:nowrap" onclick="mstate.mktTareaVenc=true;mstate.mktTareaEst='all';renderMercadeo()">⚠ Vencidas (${vencidasN})</span>
+      ${MKT_TAREA_EST.map(([k,l])=>`<span class="chip ${fEst===k&&!fVenc?'active':''}" style="white-space:nowrap" onclick="mstate.mktTareaEst='${k}';mstate.mktTareaVenc=false;renderMercadeo()">${l}</span>`).join('')}
+    </div>
+    <div class="item-table"><table>
+      <thead><tr><th>Pendiente</th><th>Responsable</th><th>Límite</th><th>Publicación</th><th>Campaña</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${rows.length===0?`<tr><td colspan="7"><div class="empty-state">Sin pendientes${fEst!=='all'||fVenc?' (ajusta el filtro)':''}</div></td></tr>`:rows.map(t=>`
+        <tr>
+          <td><b style="font-size:13px">${esc(t.titulo)}</b>${t.descripcion?`<div style="font-size:11px;color:var(--c-muted)">${esc(t.descripcion)}</div>`:''}${t.enlace?` <a href="${esc(t.enlace)}" target="_blank" style="font-size:11px;color:var(--c-primary)">enlace</a>`:''}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(t.responsable||'—')}</td>
+          <td style="font-size:12px;white-space:nowrap;${esVencida(t)?'color:var(--c-err);font-weight:700':''}">${esc(t.fecha_limite||'—')}${esVencida(t)?' ⚠':''}</td>
+          <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(t.fecha_publicacion||'—')}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(campName[t.campana_id]||'—')}</td>
+          <td>${estSel(t)}</td>
+          <td style="white-space:nowrap;text-align:right"><button class="act-btn" onclick="openTareaModal('${t.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delTarea('${t.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+        </tr>`).join('')}</tbody>
+    </table></div>`;
 }
-async function moveTarea(id,estado){ const {error}=await sb.from('mercadeo_tareas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else renderMercadeo(); }
-async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else renderMercadeo(); }
+async function setTareaEstado(id,estado){ const {error}=await sb.from('mercadeo_tareas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado: '+(MKT_TAREA_LBL[estado]||estado),'ok'); renderMercadeo(); } }
+async function moveTarea(id,estado){ return setTareaEstado(id,estado); }
+async function delTarea(id){ if(!confirm('¿Eliminar este pendiente?')) return; const {error}=await sb.from('mercadeo_tareas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminado','ok'); renderMercadeo(); } }
 </script>
 <style>
 /* ===== Dashboard futurista — paleta rojo/negro ===== */

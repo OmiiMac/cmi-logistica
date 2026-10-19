@@ -344,6 +344,13 @@ ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homo
 ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
 ensureColumn('publicaciones', 'empresa', 'TEXT');
 ensureColumn('mercadeo_tareas', 'empresa', 'TEXT');
+ensureColumn('mercadeo_tareas', 'fecha_inicio', 'TEXT');
+ensureColumn('mercadeo_tareas', 'fecha_limite', 'TEXT');
+ensureColumn('mercadeo_tareas', 'fecha_publicacion', 'TEXT');
+ensureColumn('mercadeo_tareas', 'campana_id', 'TEXT');
+ensureColumn('mercadeo_tareas', 'enlace', 'TEXT');
+db.exec("UPDATE mercadeo_tareas SET estado='en_proceso' WHERE estado='en_progreso'");
+db.exec("UPDATE mercadeo_tareas SET estado='completado' WHERE estado='hecho'");
 // Migración de estados de licitaciones al nuevo esquema (idempotente)
 db.exec("UPDATE licitaciones SET estado='en_preparacion' WHERE estado IN ('borrador','en_revision')");
 db.exec("UPDATE licitaciones SET estado='participada'    WHERE estado='presentada'");
@@ -369,7 +376,7 @@ const SCHEMA = {
   licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'created_by', 'created_at', 'updated_at'],
   publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'created_by', 'created_at', 'updated_at'],
-  mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'created_by', 'created_at', 'updated_at'],
+  mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'fecha_inicio', 'fecha_limite', 'fecha_publicacion', 'campana_id', 'enlace', 'created_by', 'created_at', 'updated_at'],
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   salidas_material: ['id', 'project_id', 'item_id', 'item_name', 'cantidad', 'unidad', 'actividad', 'area', 'fecha', 'notas', 'created_by', 'created_at', 'updated_at'],
