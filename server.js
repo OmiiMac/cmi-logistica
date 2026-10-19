@@ -269,6 +269,47 @@ CREATE TABLE IF NOT EXISTS caja_chica (
   updated_at   TEXT
 );
 
+-- Mercadeo: calendario de mensajes push (planificación, por empresa)
+CREATE TABLE IF NOT EXISTS mkt_push (
+  id           TEXT PRIMARY KEY,
+  empresa      TEXT,
+  fecha        TEXT,
+  hora         TEXT,
+  titulo       TEXT,
+  mensaje      TEXT,
+  estado       TEXT DEFAULT 'borrador',   -- borrador|revision|aprobado|enviado|no_enviado
+  responsable  TEXT,
+  observaciones TEXT,
+  created_by   TEXT,
+  created_at   TEXT,
+  updated_at   TEXT
+);
+
+-- Mercadeo: efemérides / fechas comerciales (capa del calendario)
+CREATE TABLE IF NOT EXISTS mkt_efemerides (
+  id           TEXT PRIMARY KEY,
+  empresa      TEXT,                        -- vacío = aplica a todas
+  fecha        TEXT,                        -- YYYY-MM-DD (o se usa MM-DD si recurrente)
+  titulo       TEXT NOT NULL,
+  color        TEXT,
+  recurrente   INTEGER DEFAULT 0,           -- 1 = se repite cada año
+  created_by   TEXT,
+  created_at   TEXT,
+  updated_at   TEXT
+);
+
+-- Mercadeo: enlaces de biblioteca (Google Drive y otros), por empresa
+CREATE TABLE IF NOT EXISTS mkt_biblioteca (
+  id           TEXT PRIMARY KEY,
+  empresa      TEXT,
+  titulo       TEXT NOT NULL,
+  categoria    TEXT,                        -- Planes|Grillas|Artes|Videos|Documentos…
+  url          TEXT,
+  created_by   TEXT,
+  created_at   TEXT,
+  updated_at   TEXT
+);
+
 -- Mercadeo: piezas en preaprobación (grillas, artes, reels, copys, propuestas)
 CREATE TABLE IF NOT EXISTS mkt_piezas (
   id           TEXT PRIMARY KEY,
@@ -364,6 +405,8 @@ ensureColumn('licitaciones', 'responsable_presupuesto', 'TEXT'); // responsable 
 ensureColumn('licitaciones', 'precio_costo', 'REAL');            // precio costo
 ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homologación
 ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
+ensureColumn('campanas', 'objetivo', 'TEXT');
+ensureColumn('campanas', 'drive_link', 'TEXT');
 ensureColumn('publicaciones', 'empresa', 'TEXT');
 ensureColumn('publicaciones', 'hora', 'TEXT');
 ensureColumn('publicaciones', 'titulo', 'TEXT');
@@ -404,7 +447,10 @@ const SCHEMA = {
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
   movimientos:  ['id', 'asiento_id', 'cuenta_id', 'debe', 'haber', 'proyecto_id', 'descripcion'],
   licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
-  campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'created_by', 'created_at', 'updated_at'],
+  campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'objetivo', 'drive_link', 'created_by', 'created_at', 'updated_at'],
+  mkt_push:     ['id', 'empresa', 'fecha', 'hora', 'titulo', 'mensaje', 'estado', 'responsable', 'observaciones', 'created_by', 'created_at', 'updated_at'],
+  mkt_efemerides:['id', 'empresa', 'fecha', 'titulo', 'color', 'recurrente', 'created_by', 'created_at', 'updated_at'],
+  mkt_biblioteca:['id', 'empresa', 'titulo', 'categoria', 'url', 'created_by', 'created_at', 'updated_at'],
   publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'hora', 'titulo', 'formato', 'responsable', 'reemplazo', 'motivo', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'fecha_inicio', 'fecha_limite', 'fecha_publicacion', 'campana_id', 'enlace', 'created_by', 'created_at', 'updated_at'],
   mkt_piezas:   ['id', 'empresa', 'titulo', 'tipo', 'formato', 'red_social', 'copy', 'fecha', 'responsable', 'version', 'comentarios', 'estado', 'archivo_file', 'campana_id', 'publicacion_id', 'created_by', 'created_at', 'updated_at'],
@@ -425,7 +471,7 @@ const MODULE_ROLES = {
 const TABLE_MODULE = {
   cuentas: 'conta', asientos: 'conta', movimientos: 'conta', compromisos: 'conta',
   licitaciones: 'licit',
-  campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt'
+  campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt'
 };
 const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt' };
 // Salas de chat restringidas (heredan el permiso del módulo). Las demás
@@ -1002,6 +1048,9 @@ function canWrite(table, op, user, values, filters) {
     case 'publicaciones':
     case 'mercadeo_tareas':
     case 'mkt_piezas':
+    case 'mkt_push':
+    case 'mkt_efemerides':
+    case 'mkt_biblioteca':
       return roleCan('mkt', user);
     default:
       return false;

@@ -4054,7 +4054,7 @@ async function renderMercadeo(){
   else if(tab==='preaprobados') addBtn=`<button class="btn btn-sm btn-primary" onclick="showPiezaModal()">+ Nueva pieza</button>`;
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`+addBtn;
-  const tabs=[['panel','📊 Panel'],['calendario','📅 Calendario'],['campanas','Campañas'],['tareas','Pendientes'],['preaprobados','✅ Preaprobados'],['biblioteca','🖼️ Biblioteca']];
+  const tabs=[['panel','📊 Panel'],['calendario','📅 Calendario'],['campanas','Campañas'],['tareas','Pendientes'],['preaprobados','✅ Preaprobados'],['push','🔔 Mensajes Push'],['biblioteca','🖼️ Biblioteca']];
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1000px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
       <span style="font-weight:800;font-size:15px">🏢 ${esc(emp)}</span>
@@ -4066,6 +4066,7 @@ async function renderMercadeo(){
   else if(tab==='calendario') renderMktCalendario();
   else if(tab==='campanas') renderCampanas();
   else if(tab==='preaprobados') renderMktPreaprobados();
+  else if(tab==='push') renderMktPush();
   else if(tab==='biblioteca') renderMktBiblioteca();
   else renderTareas();
 }
@@ -4125,19 +4126,28 @@ const PUB_LBL=Object.fromEntries(PUB_EST);
 const PUB_COLOR={programado:'#D97706',publicado:'#22C55E',no_publicado:'#9CA3AF',reprogramado:'#1D4ED8',sustituido:'#C62040'};
 async function renderMktCalendario(){
   const b=document.getElementById('mktBody'); if(!b) return;
-  const {data}=await sb.from('publicaciones').select('*').eq('empresa',mstate.mktEmpresa);
-  const pubs=data||[]; mstate._pubs=pubs;
+  const efemOn=mstate.mktEfem!==false;
+  const [rp,re]=await Promise.all([
+    sb.from('publicaciones').select('*').eq('empresa',mstate.mktEmpresa),
+    sb.from('mkt_efemerides').select('*')
+  ]);
+  const pubs=rp.data||[]; mstate._pubs=pubs;
+  const efem=(re.data||[]).filter(e=>!e.empresa||e.empresa===mstate.mktEmpresa); mstate._efem=efem;
   const ym=mstate.mktMonth||todayStr().slice(0,7);
   const [Y,M]=ym.split('-').map(Number);
+  const mm=String(M).padStart(2,'0');
+  const efemByDay={};
+  if(efemOn) efem.forEach(e=>{ if(!e.fecha) return; const mo=e.fecha.slice(5,7), d=+e.fecha.slice(8,10); const enMes = e.recurrente ? (mo===mm) : (e.fecha.slice(0,7)===ym); if(enMes) (efemByDay[d]=efemByDay[d]||[]).push(e); });
   const view=mstate.mktCalView||'mes';
   const header=`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-      <div class="filter-chips"><span class="chip ${view==='mes'?'active':''}" onclick="mstate.mktCalView='mes';renderMercadeo()">📅 Mes</span><span class="chip ${view==='grilla'?'active':''}" onclick="mstate.mktCalView='grilla';renderMercadeo()">▦ Grilla mensual</span></div>
+      <div class="filter-chips"><span class="chip ${view==='mes'?'active':''}" onclick="mstate.mktCalView='mes';renderMercadeo()">📅 Mes</span><span class="chip ${view==='grilla'?'active':''}" onclick="mstate.mktCalView='grilla';renderMercadeo()">▦ Grilla mensual</span><span class="chip ${efemOn?'active':''}" onclick="mstate.mktEfem=${efemOn?'false':'true'};renderMercadeo()">⭐ Efemérides</span></div>
       <div class="date-strip-wrap" style="flex:1;justify-content:center;gap:10px">
         <button class="nav-arrow" onclick="shiftMktMonth(-1)">‹</button>
         <div style="font-weight:700;text-transform:capitalize;min-width:130px;text-align:center">${MESES_ES[M-1]} ${Y}</div>
         <button class="nav-arrow" onclick="shiftMktMonth(1)">›</button>
       </div>
+      <button class="btn btn-sm btn-ghost" onclick="openEfemModal(null,'${ym}-01')">+ Fecha especial</button>
       <button class="btn btn-sm btn-primary" onclick="openPubModal(null,'${ym}-15')">+ Agregar publicación</button>
     </div>`;
   const chip=e=>`<span style="font-size:10px;font-weight:700;color:#fff;background:${PUB_COLOR[e]||'#6B6B78'};padding:2px 7px;border-radius:20px">${PUB_LBL[e]||e}</span>`;
@@ -4166,8 +4176,10 @@ async function renderMktCalendario(){
   for(let i=0;i<startDow;i++) cells+=`<div></div>`;
   for(let d=1;d<=days;d++){
     const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
+    const ef=efemByDay[d]||[];
     cells+=`<div style="min-height:88px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="openPubModal(null,'${ds}')">
       <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
+      ${ef.map(e=>`<div onclick="event.stopPropagation();openEfemModal('${e.id}')" title="Efeméride: ${esc(e.titulo)}" style="font-size:9px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${esc(e.color||'#7C3AED')};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">⭐ ${esc(e.titulo)}</div>`).join('')}
       ${l.slice(0,3).map(p=>`<div onclick="event.stopPropagation();openPubModal('${p.id}')" title="${esc((p.canal?p.canal+': ':'')+(p.titulo||p.contenido||''))}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${PUB_COLOR[p.estado]||'#9B1B30'};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.titulo||p.canal||p.contenido||'Publicación')}</div>`).join('')}
       ${l.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${l.length-3} más</div>`:''}
     </div>`;
@@ -4230,9 +4242,23 @@ function mediaGridHtml(files, delFn){
 }
 async function renderMktBiblioteca(){
   const b=document.getElementById('mktBody'); if(!b) return;
-  const {data}=await sb.from('files').select('*').eq('scope','mercadeo').eq('ref_id',mstate.mktEmpresa);
-  const files=(data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
+  const [rf,rl]=await Promise.all([
+    sb.from('files').select('*').eq('scope','mercadeo').eq('ref_id',mstate.mktEmpresa),
+    sb.from('mkt_biblioteca').select('*').eq('empresa',mstate.mktEmpresa)
+  ]);
+  const files=(rf.data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
+  const links=(rl.data||[]).sort((a,b)=>(a.categoria||'').localeCompare(b.categoria||''));
   b.innerHTML=`
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Enlaces (Google Drive y otros)</h3>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <input id="blTit" placeholder="Nombre (ej: Grilla octubre)" style="flex:1;min-width:120px">
+      <input id="blCat" placeholder="Categoría (Planes, Grillas, Artes…)" style="flex:1;min-width:120px">
+      <input id="blUrl" placeholder="https://drive.google.com/…" style="flex:2;min-width:150px">
+      <button class="btn btn-sm btn-primary" onclick="addMktLink()">+ Enlace</button>
+    </div>
+    ${links.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:18px">${links.map(l=>`
+      <div class="section-card" style="padding:10px"><div style="font-size:10px;color:var(--c-muted);text-transform:uppercase">${esc(l.categoria||'Enlace')}</div><a href="${esc(l.url)}" target="_blank" style="font-weight:700;font-size:13px;color:var(--c-primary);word-break:break-word">${esc(l.titulo)}</a><div style="text-align:right"><button class="act-btn del" onclick="delMktLink('${l.id}')" title="Eliminar"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></div></div>`).join('')}</div>`:'<div class="nodata" style="padding:12px;margin-bottom:16px;font-size:12px">Sin enlaces aún.</div>'}
+    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Archivos subidos</h3>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
       <input type="file" id="mktFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
       <button class="btn btn-sm btn-primary" onclick="uploadMktFile()">Subir foto / archivo / video</button>
@@ -4240,6 +4266,14 @@ async function renderMktBiblioteca(){
     </div>
     ${mediaGridHtml(files)}`;
 }
+async function addMktLink(){
+  const titulo=document.getElementById('blTit').value.trim(), url=document.getElementById('blUrl').value.trim();
+  if(!titulo||!url){ showToast('Pon nombre y enlace','err'); return; }
+  const {error}=await sb.from('mkt_biblioteca').insert({empresa:mstate.mktEmpresa,titulo,categoria:document.getElementById('blCat').value.trim(),url});
+  if(error){ showToast(error.message,'err'); return; }
+  showToast('Enlace agregado','ok'); renderMktBiblioteca();
+}
+async function delMktLink(id){ if(!confirm('¿Eliminar este enlace?')) return; const {error}=await sb.from('mkt_biblioteca').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } renderMktBiblioteca(); }
 async function uploadMktFile(){
   const inp=document.getElementById('mktFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
   showToast('Subiendo…','ok');
@@ -4265,14 +4299,16 @@ function openCampanaModal(c){
     <div class="modal-head"><h2>${c.id?'Editar':'Nueva'} campaña</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <div class="form-group"><label>Nombre</label><input id="cmNombre" value="${esc(c.nombre||'')}"></div>
+      <div class="form-group"><label>Objetivo</label><input id="cmObjetivo" value="${esc(c.objetivo||'')}" placeholder="Ej: aumentar seguidores, promocionar servicio…"></div>
       <div class="form-group"><label>Descripción</label><textarea id="cmDesc" rows="2">${esc(c.descripcion||'')}</textarea></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Inicio</label><input id="cmIni" type="date" value="${esc(c.fecha_inicio||'')}"></div><div class="form-group" style="flex:1"><label>Fin</label><input id="cmFin" type="date" value="${esc(c.fecha_fin||'')}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="cmResp" value="${esc(c.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Estado</label><select id="cmEstado"><option value="activa" ${c.estado==='activa'?'selected':''}>Activa</option><option value="pausada" ${c.estado==='pausada'?'selected':''}>Pausada</option><option value="finalizada" ${c.estado==='finalizada'?'selected':''}>Finalizada</option></select></div></div>
+      <div class="form-group"><label>Carpeta de Google Drive (enlace)</label><input id="cmDrive" value="${esc(c.drive_link||'')}" placeholder="https://drive.google.com/…"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCampana('${c.id||''}')">Guardar</button></div>`);
 }
 async function saveCampana(id){
-  const row={nombre:document.getElementById('cmNombre').value.trim(),descripcion:document.getElementById('cmDesc').value.trim(),fecha_inicio:document.getElementById('cmIni').value||null,fecha_fin:document.getElementById('cmFin').value||null,responsable:document.getElementById('cmResp').value.trim(),estado:document.getElementById('cmEstado').value};
+  const row={nombre:document.getElementById('cmNombre').value.trim(),objetivo:document.getElementById('cmObjetivo').value.trim(),descripcion:document.getElementById('cmDesc').value.trim(),fecha_inicio:document.getElementById('cmIni').value||null,fecha_fin:document.getElementById('cmFin').value||null,responsable:document.getElementById('cmResp').value.trim(),estado:document.getElementById('cmEstado').value,drive_link:document.getElementById('cmDrive').value.trim()};
   if(!row.nombre){ showToast('Falta el nombre','err'); return; }
   let error; if(id){ ({error}=await sb.from('campanas').update(row).eq('id',id)); } else { ({error}=await sb.from('campanas').insert({...row,empresa:mstate.mktEmpresa})); }
   if(error){ showToast(error.message,'err'); return; }
@@ -4285,7 +4321,9 @@ async function openCampanaDetail(id){
   openModal(`
     <div class="modal-head"><h2>${esc(c.nombre)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-bottom:10px">${esc(c.descripcion)}</div>`:''}
+      ${c.objetivo?`<div style="font-size:12px;margin-bottom:6px"><b>Objetivo:</b> ${esc(c.objetivo)}</div>`:''}
+      ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-bottom:8px">${esc(c.descripcion)}</div>`:''}
+      ${c.drive_link?`<div style="margin-bottom:10px"><a href="${esc(c.drive_link)}" target="_blank" class="btn btn-sm btn-ghost">📁 Carpeta de Drive</a></div>`:''}
       <h3 style="font-size:13px;margin:10px 0 6px">Materiales</h3>
       <div>${docsHtml(mats,'campana',id)}</div>
       <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input type="file" id="cmFile"><button class="btn btn-sm btn-ghost" onclick="uploadDoc('campana','${id}','cmFile',()=>openCampanaDetail('${id}'))">Subir material</button></div>
@@ -4474,6 +4512,93 @@ async function enviarAlCalendario(id){
   showToast('Enviada al calendario (Programada)','ok'); renderMercadeo();
 }
 async function delPieza(id){ if(!confirm('¿Eliminar esta pieza?')) return; const {error}=await sb.from('mkt_piezas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminada','ok'); renderMercadeo(); } }
+
+// ── Mensajes Push (calendario de planificación) ───────────────
+const PUSH_EST=[['borrador','Borrador'],['revision','En revisión'],['aprobado','Aprobado'],['enviado','Enviado'],['no_enviado','No enviado']];
+const PUSH_LBL=Object.fromEntries(PUSH_EST);
+const PUSH_COLOR={borrador:'#6B6B78',revision:'#D97706',aprobado:'#166534',enviado:'#1D4ED8',no_enviado:'#C62040'};
+function shiftMktPushMonth(n){ const ym=mstate.mktPushMonth||todayStr().slice(0,7); let [Y,M]=ym.split('-').map(Number); M+=n; if(M<1){M=12;Y--;} if(M>12){M=1;Y++;} mstate.mktPushMonth=Y+'-'+String(M).padStart(2,'0'); renderMercadeo(); }
+async function renderMktPush(){
+  const b=document.getElementById('mktBody'); if(!b) return;
+  const {data}=await sb.from('mkt_push').select('*').eq('empresa',mstate.mktEmpresa);
+  const items=data||[]; mstate._push=items;
+  const ym=mstate.mktPushMonth||todayStr().slice(0,7);
+  const [Y,M]=ym.split('-').map(Number);
+  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7;
+  const days=new Date(Y,M,0).getDate();
+  const byDay={}; items.forEach(p=>{ if((p.fecha||'').slice(0,7)===ym){ const d=+p.fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push(p); } });
+  const hoy=todayStr(); const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  let cells='';
+  for(let i=0;i<startDow;i++) cells+='<div></div>';
+  for(let d=1;d<=days;d++){
+    const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
+    cells+=`<div style="min-height:80px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="openPushModal(null,'${ds}')">
+      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
+      ${l.slice(0,3).map(p=>`<div onclick="event.stopPropagation();openPushModal('${p.id}')" title="${esc(p.titulo||p.mensaje||'')}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${PUSH_COLOR[p.estado]||'#6B6B78'};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.hora?p.hora+' ':'')}${esc(p.titulo||'Push')}</div>`).join('')}
+    </div>`;
+  }
+  b.innerHTML=`
+    <div class="date-strip-wrap" style="justify-content:space-between;margin-bottom:12px">
+      <button class="nav-arrow" onclick="shiftMktPushMonth(-1)">‹ Mes anterior</button>
+      <div style="font-weight:700;text-transform:capitalize">${MESES_ES[M-1]} ${Y}</div>
+      <button class="nav-arrow" onclick="shiftMktPushMonth(1)">Mes siguiente ›</button>
+    </div>
+    <div style="font-size:11px;color:var(--c-muted);margin-bottom:8px">Planificación de notificaciones push. Toca un día (ocupado o vacío) para programar un mensaje. <b>El envío automático se confirma aparte</b> — por ahora es planificación.</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>`;
+}
+function openPushModal(id,defFecha){
+  const p = id ? (mstate._push||[]).find(x=>x.id===id)||{} : {};
+  const est=p.estado||'borrador';
+  openModal(`
+    <div class="modal-head"><h2>${id?'Mensaje push':'Nuevo mensaje push'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-group"><label>Fecha</label><input id="phFecha" type="date" value="${esc(p.fecha||defFecha||todayStr())}"></div><div class="form-group"><label>Hora estimada</label><input id="phHora" type="time" value="${esc(p.hora||'')}"></div></div>
+      <div class="form-group"><label>Título</label><input id="phTitulo" value="${esc(p.titulo||'')}"></div>
+      <div class="form-group"><label>Mensaje</label><textarea id="phMsg" rows="3">${esc(p.mensaje||'')}</textarea></div>
+      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="phResp" value="${esc(p.responsable||'')}"></div><div class="form-group"><label>Estado</label><select id="phEstado">${PUSH_EST.map(([k,l])=>`<option value="${k}" ${est===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+      <div class="form-group"><label>Observaciones</label><textarea id="phObs" rows="2">${esc(p.observaciones||'')}</textarea></div>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between"><div>${id?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="delPush('${id}')">Eliminar</button> <button class="btn btn-sm btn-ghost" onclick="duplicarPush('${id}')">Duplicar</button>`:''}</div><div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button> <button class="btn btn-primary" onclick="savePush('${id||''}')">Guardar</button></div></div>`);
+}
+async function savePush(id){
+  const titulo=document.getElementById('phTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
+  const row={fecha:document.getElementById('phFecha').value||todayStr(),hora:document.getElementById('phHora').value||'',titulo,mensaje:document.getElementById('phMsg').value.trim(),responsable:document.getElementById('phResp').value.trim(),estado:document.getElementById('phEstado').value,observaciones:document.getElementById('phObs').value.trim()};
+  let error; if(id){ ({error}=await sb.from('mkt_push').update(row).eq('id',id)); } else { ({error}=await sb.from('mkt_push').insert({...row,empresa:mstate.mktEmpresa})); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Mensaje push guardado','ok'); renderMercadeo();
+}
+async function duplicarPush(id){ const p=(mstate._push||[]).find(x=>x.id===id); if(!p) return; const {error}=await sb.from('mkt_push').insert({empresa:mstate.mktEmpresa,fecha:p.fecha,hora:p.hora,titulo:(p.titulo||'')+' (copia)',mensaje:p.mensaje,responsable:p.responsable,estado:'borrador',observaciones:p.observaciones}); if(error){ showToast(error.message,'err'); return; } closeModal(); showToast('Duplicado','ok'); renderMercadeo(); }
+async function delPush(id){ if(!confirm('¿Eliminar este mensaje push?')) return; const {error}=await sb.from('mkt_push').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminado','ok'); renderMercadeo(); }
+
+// ── Efemérides / fechas comerciales ───────────────────────────
+const EFEM_COLORS=['#7C3AED','#D97706','#166534','#1D4ED8','#C62040','#DB2777'];
+function openEfemModal(id,defFecha){
+  const e = id ? (mstate._efem||[]).find(x=>x.id===id)||{} : {};
+  openModal(`
+    <div class="modal-head"><h2>${id?'Fecha especial':'Nueva fecha especial'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Nombre</label><input id="efTitulo" value="${esc(e.titulo||'')}" placeholder="Ej: Día del Barbero, Navidad…"></div>
+      <div class="form-row"><div class="form-group"><label>Fecha</label><input id="efFecha" type="date" value="${esc(e.fecha||defFecha||todayStr())}"></div><div class="form-group"><label>Color</label><select id="efColor">${EFEM_COLORS.map(c=>`<option value="${c}" ${e.color===c?'selected':''}>${c}</option>`).join('')}</select></div></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="efRec" ${e.recurrente?'checked':''} style="width:16px;height:16px"> Se repite cada año</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="efAll" ${!e.empresa?'checked':''} style="width:16px;height:16px"> Aplica a todas las empresas</label>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between"><div>${id?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="delEfem('${id}')">Eliminar</button> <button class="btn btn-sm btn-ghost" onclick="efemConvertir('${id}')">→ Crear publicación</button>`:''}</div><div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button> <button class="btn btn-primary" onclick="saveEfem('${id||''}')">Guardar</button></div></div>`);
+}
+async function saveEfem(id){
+  const titulo=document.getElementById('efTitulo').value.trim(); if(!titulo){ showToast('Falta el nombre','err'); return; }
+  const row={titulo,fecha:document.getElementById('efFecha').value||todayStr(),color:document.getElementById('efColor').value,recurrente:document.getElementById('efRec').checked?1:0,empresa:document.getElementById('efAll').checked?'':mstate.mktEmpresa};
+  let error; if(id){ ({error}=await sb.from('mkt_efemerides').update(row).eq('id',id)); } else { ({error}=await sb.from('mkt_efemerides').insert(row)); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Fecha especial guardada','ok'); renderMercadeo();
+}
+async function delEfem(id){ if(!confirm('¿Eliminar esta fecha especial?')) return; const {error}=await sb.from('mkt_efemerides').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
+async function efemConvertir(id){
+  const e=(mstate._efem||[]).find(x=>x.id===id); if(!e) return;
+  const {error}=await sb.from('publicaciones').insert({empresa:mstate.mktEmpresa,fecha:e.fecha,titulo:e.titulo,contenido:'',estado:'programado'});
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); mstate.mktTab='calendario'; showToast('Publicación creada para '+e.titulo,'ok'); renderMercadeo();
+}
 </script>
 <style>
 /* ===== Dashboard futurista — paleta rojo/negro ===== */
