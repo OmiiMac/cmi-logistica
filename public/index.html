@@ -177,8 +177,6 @@ html{height:100%}
   color:rgba(255,255,255,.05);letter-spacing:.05em;pointer-events:none;
   user-select:none;
 }
-.greeting-action{position:relative;z-index:1;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.24);color:#fff;border-radius:10px;padding:7px 13px;font-family:var(--font);font-size:12.5px;font-weight:600;cursor:pointer;backdrop-filter:blur(8px);transition:background .15s}
-.greeting-action:hover{background:rgba(255,255,255,.26)}
 .greeting-hi{font-family:var(--font-num);font-size:20px;font-weight:700;color:#fff;margin-bottom:4px;letter-spacing:.03em}
 .greeting-date{font-size:13px;color:rgba(255,255,255,.6);letter-spacing:.01em}
 .greeting-kpis{display:flex;gap:10px;position:relative;z-index:1}
@@ -599,6 +597,10 @@ html{height:100%}
       <div class="sb-nav-item" id="nav-chat" onclick="nav('chat')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         Chat <span id="chatUnread" hidden class="unread-badge">!</span>
+      </div>
+      <div class="sb-nav-item" id="nav-asistente" onclick="openAssistant()">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M12 7V4M9 13h.01M15 13h.01M2 11v4M22 11v4"/></svg>
+        Asistente IA
       </div>
       <div class="sb-nav-item" id="nav-contabilidad" onclick="nav('contabilidad')" style="display:none">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h5"/></svg>
@@ -1376,11 +1378,6 @@ function renderDashboard(){
       <div>
         <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
         <div class="greeting-date">${fmtDateLong(state.rutaDate)} · CMI Construction Corp</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
-          <button onclick="openAssistant()" class="greeting-action">🤖 Asistente</button>
-          ${canModule('mkt')?`<button onclick="nav('mercadeo')" class="greeting-action">📣 Mercadeo</button>`:''}
-          ${canModule('mkt')?`<button onclick="mstate.mktTab='campanas';nav('mercadeo')" class="greeting-action">📅 Campañas</button>`:''}
-        </div>
       </div>
     </div>
     <div class="greeting-kpis">
@@ -1392,6 +1389,16 @@ function renderDashboard(){
         <div class="greeting-kpi-val">${totalItems}</div>
         <div class="greeting-kpi-label">Artículos</div>
       </div>
+      ${canModule('mkt')?`
+      <div class="greeting-kpi">
+        <div class="greeting-kpi-val" id="gkMkt">…</div>
+        <div class="greeting-kpi-label">Mercadeo</div>
+      </div>`:''}
+      ${canModule('licit')?`
+      <div class="greeting-kpi">
+        <div class="greeting-kpi-val" id="gkLic">…</div>
+        <div class="greeting-kpi-label">Licitaciones</div>
+      </div>`:''}
     </div>
   </div>
   ${alerts}
@@ -1530,8 +1537,8 @@ function renderDashboard(){
   </div>`;
 
   // Conteos de modulos (async, solo para quien tiene acceso)
-  if(canModule('licit')) sb.from('licitaciones').select('id').then(({data})=>{ const el=document.getElementById('dashLicit'); if(el) el.textContent=(data||[]).length; });
-  if(canModule('mkt'))   sb.from('campanas').select('id').then(({data})=>{ const el=document.getElementById('dashMkt'); if(el) el.textContent=(data||[]).length; });
+  if(canModule('licit')) sb.from('licitaciones').select('id').then(({data})=>{ const n=(data||[]).length; const a=document.getElementById('dashLicit'); if(a) a.textContent=n; const b=document.getElementById('gkLic'); if(b) b.textContent=n; });
+  if(canModule('mkt'))   sb.from('campanas').select('id').then(({data})=>{ const n=(data||[]).length; const a=document.getElementById('dashMkt'); if(a) a.textContent=n; const b=document.getElementById('gkMkt'); if(b) b.textContent=n; });
 
   // Listado de licitaciones en el panel lateral (para quien tenga acceso)
   if(canModule('licit')) sb.from('licitaciones').select('*').order('created_at',{ascending:false}).then(({data})=>{
