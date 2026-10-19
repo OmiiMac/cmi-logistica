@@ -4046,6 +4046,8 @@ async function delLic(id){ if(!confirm('¿Eliminar esta licitación?')) return; 
 
 /* ================= MERCADEO ================= */
 const MKT_EMPRESAS=['Barbology','PaintPro','Agero','CMI','Cargo Express'];
+const MKT_EMP_COLOR={Barbology:'#0EA5E9',PaintPro:'#F97316',Agero:'#22C55E',CMI:'#E8384A','Cargo Express':'#8B5CF6'};
+const MKT_EMP_EMOJI={Barbology:'💈',PaintPro:'🎨',Agero:'🛠️',CMI:'🏗️','Cargo Express':'🚚'};
 function mktSelectEmpresa(e){ mstate.mktEmpresa=e; mstate.mktTab='panel'; renderMercadeo(); }
 async function renderMercadeo(){
   if(!canModule('mkt')){ nav('dashboard'); return; }
@@ -4108,12 +4110,19 @@ async function renderMktHome(){
     revisar: piezas.filter(p=>p.empresa===e&&['borrador','enviado'].includes(p.estado)).length,
     camp: camps.filter(c=>c.empresa===e&&c.estado==='activa').length
   });
+  const stats=Object.fromEntries(MKT_EMPRESAS.map(e=>[e,perEmp(e)]));
+  const maxAct=Math.max(1,...MKT_EMPRESAS.map(e=>stats[e].pend+stats[e].pubMes+stats[e].revisar));
+  const bigKpi=(emoji,val,label,c1,c2)=>`<div style="position:relative;overflow:hidden;border-radius:16px;padding:16px 16px 18px;background:linear-gradient(135deg,${c1},${c2});color:#fff;box-shadow:0 6px 18px -8px ${c1}">
+    <div style="font-size:26px;line-height:1;opacity:.95">${emoji}</div>
+    <div style="font-size:30px;font-weight:900;margin-top:8px;text-shadow:0 1px 6px rgba(0,0,0,.25)">${val}</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.92;margin-top:2px">${label}</div>
+  </div>`;
   host.innerHTML=`
     <div class="greeting-bar">
       <div style="display:flex;align-items:center;gap:18px;position:relative;z-index:1">
         <img src="/cmi-logo-light.svg" alt="CMI" style="height:56px;width:auto;display:block;filter:drop-shadow(0 0 12px rgba(242,74,84,.55))">
         <div>
-          <div class="greeting-hi">${greet}, ${esc(state.userName)}</div>
+          <div class="greeting-hi">${greet}, ${esc(state.userName)} ✨</div>
           <div class="greeting-date">${fmtDateLong(hoy)} · Mercadeo CMI</div>
         </div>
       </div>
@@ -4122,24 +4131,58 @@ async function renderMktHome(){
         <div class="greeting-kpi"><div class="greeting-kpi-val">${pendTot}</div><div class="greeting-kpi-label">Pendientes</div></div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:16px 0">
-      ${kpiTile('Empresas',MKT_EMPRESAS.length,'#60A5FA','rgba(29,78,216,.14)')}
-      ${kpiTile('Campañas activas',campTot,'#34D77F','rgba(34,197,94,.14)')}
-      ${kpiTile('Pendientes abiertos',pendTot,'#F59E0B','rgba(217,119,6,.14)')}
-      ${kpiTile('Piezas por revisar',revisarTot,'#A78BFA','rgba(124,58,237,.14)')}
-      ${kpiTile('Publican (7 días)',prox7,'#E8384A','rgba(232,56,74,.14)')}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0">
+      ${bigKpi('🏢',MKT_EMPRESAS.length,'Empresas','#3B82F6','#1D4ED8')}
+      ${bigKpi('🚀',campTot,'Campañas activas','#22C55E','#15803D')}
+      ${bigKpi('📋',pendTot,'Pendientes','#F59E0B','#D97706')}
+      ${bigKpi('🎨',revisarTot,'Por revisar','#A78BFA','#7C3AED')}
+      ${bigKpi('🔥',prox7,'Publican (7 días)','#FB7185','#E8384A')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">🏢 Actividad por empresa</h3><canvas id="chHomeEmp" height="210"></canvas></div>
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">📣 Publicaciones del mes por empresa</h3><canvas id="chHomePubEmp" height="210"></canvas></div>
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">📈 Publicaciones por mes (todas)</h3><canvas id="chHomeMes" height="210"></canvas></div>
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">✅ Pipeline de piezas</h3><canvas id="chHomePiezas" height="210"></canvas></div>
     </div>
     <h2 style="font-size:15px;margin:4px 0 6px">Empresas</h2>
-    <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Cada empresa tiene sus propios datos. Toca una para entrar (también están en el menú de la izquierda).</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
-      ${MKT_EMPRESAS.map(e=>{ const s=perEmp(e); return `<div class="section-card" style="padding:18px 16px;cursor:pointer" onclick="mktSelectEmpresa('${e.replace(/'/g,"\\'")}')">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-size:24px">🏢</span><span style="font-weight:800;font-size:15px">${esc(e)}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Pendientes</span><b style="color:var(--c-text)">${s.pend}</b></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Publicaciones (mes)</span><b style="color:var(--c-text)">${s.pubMes}</b></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Por revisar</span><b style="color:var(--c-text)">${s.revisar}</b></div>
-        <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--c-muted)"><span>Campañas activas</span><b style="color:var(--c-text)">${s.camp}</b></div>
+    <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Toca una para entrar (también están en el menú de la izquierda).</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
+      ${MKT_EMPRESAS.map(e=>{ const s=stats[e]; const col=MKT_EMP_COLOR[e]||'#BE185D'; const act=s.pend+s.pubMes+s.revisar; const pct=Math.round(act/maxAct*100);
+        return `<div class="section-card" style="position:relative;padding:0;overflow:hidden;cursor:pointer;border-top:4px solid ${col}" onclick="mktSelectEmpresa('${e.replace(/'/g,"\\'")}')">
+        <div style="padding:16px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div style="width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:${col}22">${MKT_EMP_EMOJI[e]||'🏢'}</div>
+            <span style="font-weight:800;font-size:15px">${esc(e)}</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px">
+            <div style="flex:1;text-align:center;background:${col}14;border-radius:10px;padding:8px 4px"><div style="font-size:19px;font-weight:900;color:${col}">${s.pend}</div><div style="font-size:9px;color:var(--c-muted);font-weight:700;text-transform:uppercase">Pend.</div></div>
+            <div style="flex:1;text-align:center;background:${col}14;border-radius:10px;padding:8px 4px"><div style="font-size:19px;font-weight:900;color:${col}">${s.pubMes}</div><div style="font-size:9px;color:var(--c-muted);font-weight:700;text-transform:uppercase">Pub.</div></div>
+            <div style="flex:1;text-align:center;background:${col}14;border-radius:10px;padding:8px 4px"><div style="font-size:19px;font-weight:900;color:${col}">${s.camp}</div><div style="font-size:9px;color:var(--c-muted);font-weight:700;text-transform:uppercase">Camp.</div></div>
+          </div>
+          <div style="font-size:10px;color:var(--c-muted);margin-bottom:4px">Actividad</div>
+          <div style="height:8px;border-radius:20px;background:var(--c-border);overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${col},${col}99);border-radius:20px"></div></div>
+        </div>
       </div>`; }).join('')}
     </div>`;
+  // Gráficas
+  destroyMktCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
+  const emps=MKT_EMPRESAS, cols=emps.map(e=>MKT_EMP_COLOR[e]||'#BE185D');
+  const e1=document.getElementById('chHomeEmp');
+  if(e1){ const data=emps.map(e=>stats[e].pend+stats[e].pubMes+stats[e].revisar);
+    if(data.some(v=>v>0)) _mktCharts.push(new Chart(e1,{type:'doughnut',data:{labels:emps,datasets:[{data,backgroundColor:cols,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:true,cutout:'62%',plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12,padding:8}}}}}));
+    else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:30px">Aún sin actividad</div>'; }
+  const e2=document.getElementById('chHomePubEmp');
+  if(e2) _mktCharts.push(new Chart(e2,{type:'bar',data:{labels:emps,datasets:[{label:'Publicaciones',data:emps.map(e=>stats[e].pubMes),backgroundColor:cols,borderRadius:8}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  const e3=document.getElementById('chHomeMes');
+  if(e3){ const byMes={}; pubs.forEach(p=>{ const m=(p.fecha||'').slice(0,7); if(m) byMes[m]=(byMes[m]||0)+1; });
+    const ml=Object.keys(byMes).sort().slice(-6);
+    if(ml.length) _mktCharts.push(new Chart(e3,{type:'line',data:{labels:ml,datasets:[{label:'Publicaciones',data:ml.map(m=>byMes[m]),borderColor:'#E8384A',backgroundColor:'rgba(232,56,74,.18)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#E8384A'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+    else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:30px">Sin publicaciones todavía</div>'; }
+  const e4=document.getElementById('chHomePiezas');
+  if(e4){ const estados=(typeof PIEZA_EST!=='undefined')?PIEZA_EST:[['borrador','Borrador']];
+    const dat=estados.map(([k])=>piezas.filter(p=>p.estado===k).length);
+    if(dat.some(v=>v>0)) _mktCharts.push(new Chart(e4,{type:'doughnut',data:{labels:estados.map(x=>x[1]),datasets:[{data:dat,backgroundColor:estados.map(([k])=>(typeof PIEZA_COLOR!=='undefined'&&PIEZA_COLOR[k])||'#C62040'),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:true,cutout:'62%',plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12,padding:8}}}}}));
+    else e4.outerHTML='<div class="nodata" style="font-size:12px;padding:30px">Sin piezas todavía</div>'; }
 }
 
 // ── Panel con gráficas ─────────────────────────────────────────
