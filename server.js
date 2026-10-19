@@ -562,10 +562,17 @@ function waRecipients(room, senderId) {
   return waMembers(room, waOptinUsers()).filter(u => u.id !== senderId);
 }
 
+// Normaliza un número a E.164: "+" seguido solo de dígitos (quita espacios, guiones, etc.).
+function waE164(x) {
+  const d = String(x || '').replace(/[^\d]/g, '');
+  return d ? '+' + d : '';
+}
 async function waSendTwilio(phone, body) {
   const sid = process.env.TWILIO_ACCOUNT_SID, tok = process.env.TWILIO_AUTH_TOKEN, from = process.env.TWILIO_WHATSAPP_FROM;
   if (!sid || !tok || !from) throw new Error('Faltan credenciales de Twilio');
-  const params = new URLSearchParams({ From: `whatsapp:${from}`, To: `whatsapp:${phone}`, Body: body });
+  const to = waE164(phone), fromN = waE164(from);
+  if (!to) throw new Error('Teléfono del destinatario inválido: ' + phone);
+  const params = new URLSearchParams({ From: `whatsapp:${fromN}`, To: `whatsapp:${to}`, Body: body });
   const auth = Buffer.from(`${sid}:${tok}`).toString('base64');
   const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: 'POST',
@@ -1005,6 +1012,16 @@ app.post('/api/wa-send', async (req, res) => {
   const { scope, room, userIds, text } = req.body || {};
   const msg = String(text || '').trim();
   if (!msg) return res.json({ data: null, error: { message: 'Escribe un mensaje' } });
+
+  // Prueba a uno mismo: sirve para verificar que el envío desde la app funciona.
+  if (scope === 'test') {
+    const me = db.prepare('SELECT id, name, phone FROM profiles WHERE id = ?').get(u.id);
+    if (!me || !me.phone || !String(me.phone).trim())
+      return res.json({ data: null, error: { message: 'Primero pon tu teléfono en Mi Perfil' } });
+    const body = `*ObraControl CMI* — Prueba de WhatsApp. Si ves esto, el envío desde la app funciona. ✅`;
+    try { await waSendText(String(me.phone).trim(), body); return res.json({ data: { total: 1, sent: 1, failed: 0, dry: WA_PROVIDER === 'dry' }, error: null }); }
+    catch (e) { console.error('wa-send test:', e.message); return res.json({ data: null, error: { message: 'Twilio: ' + e.message } }); }
+  }
 
   const base = waOptinUsers();
   let list;

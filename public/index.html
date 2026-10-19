@@ -2862,11 +2862,23 @@ function openWaSendModal(presetRoom){
       <textarea id="waText" rows="4" placeholder="Escribe el mensaje que recibirán por WhatsApp…"></textarea>
     </div>
     <div style="font-size:11px;color:var(--c-muted)">Solo le llega a quien tenga su teléfono y el aviso de WhatsApp activado en su perfil.</div>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--c-border)">
+      <button class="btn btn-sm btn-ghost" onclick="waSendTest()">🧪 Enviar prueba a mi WhatsApp</button>
+      <div style="font-size:10px;color:var(--c-muted);margin-top:4px">Para comprobar que el envío desde la app funciona (te llega a ti mismo).</div>
+    </div>
   </div>
   <div class="modal-foot">
     <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-primary" onclick="waSend('${room}')">📤 Enviar</button>
   </div>`);
+}
+async function waSendTest(){
+  showToast('Enviando prueba…','ok');
+  const r=await apiPost('/api/wa-send', { scope:'test', text:'test' });
+  if(r.error){ showToast(r.error.message||'Error','err'); return; }
+  const d=r.data||{};
+  if(d.dry) showToast('Modo prueba (dry): falta activar Twilio en Railway.','err');
+  else showToast('✅ Prueba enviada a tu WhatsApp. Revisa tu teléfono.','ok');
 }
 function waScopeChanged(){
   const s=document.getElementById('waScope').value;
