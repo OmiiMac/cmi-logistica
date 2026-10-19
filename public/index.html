@@ -1304,24 +1304,6 @@ function renderInvLista(){
         ${CATS.map(c=>`<span class="chip ${state.cat===c.id?'active':''}" onclick="state.cat='${c.id}';renderInventario()">${c.label}</span>`).join('')}
       </div>
     </div>
-    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:18px 0 8px">Resumen por artículo · bodega vs proyectos</h3>
-    <div class="item-table" style="margin-bottom:18px">
-      <table>
-        <thead><tr><th>Artículo</th><th>Categoría</th><th style="text-align:center">En bodega</th><th style="text-align:center">En proyectos</th><th style="text-align:center">Total</th></tr></thead>
-        <tbody>
-          ${summary.length===0
-            ? `<tr><td colspan="5"><div class="empty-state">Sin artículos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
-            : summary.map(g=>`
-              <tr>
-                <td><div style="display:flex;align-items:center;gap:9px">${g.photoId?`<img src="${fileUrl(g.photoId)}" loading="lazy" style="width:30px;height:30px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:30px;height:30px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(g.name)}</b></div></td>
-                <td>${catChip(g.category)}</td>
-                <td style="text-align:center;font-weight:700">${g.bodega}</td>
-                <td style="text-align:center;font-weight:700"${Object.keys(g.proj).length?` title="${projBreak(g)}"`:''}>${g.proy}${Object.keys(g.proj).length?`<div style="font-size:9px;font-weight:400;color:var(--c-muted);line-height:1.2;margin-top:1px">${projBreak(g)}</div>`:''}</td>
-                <td style="text-align:center;font-weight:800;color:var(--c-primary)">${g.total}</td>
-              </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;flex-wrap:wrap">
       <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0">Detalle por categoría</h3>
       ${catKeys.length?`<div style="display:flex;gap:6px">
