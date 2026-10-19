@@ -1555,34 +1555,34 @@ let _invCharts=[]; function destroyInvCharts(){ _invCharts.forEach(c=>{ try{c.de
 function renderInvGraficas(){
   const b=document.getElementById('invBody'); if(!b) return;
   const all=[...state.items.values()];
-  b.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
-    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Artículos por categoría</h3><canvas id="chInvCat" height="190"></canvas></div>
-    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Unidades por ubicación</h3><canvas id="chInvUbic" height="190"></canvas></div>
-    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Estado de los equipos</h3><canvas id="chInvEstado" height="190"></canvas></div>
-    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Unidades por categoría</h3><canvas id="chInvUniCat" height="190"></canvas></div>
+  b.innerHTML=`<div style="display:flex;flex-direction:column;gap:16px;max-width:900px">
+    <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">Artículos por categoría</h3><div style="position:relative;height:280px"><canvas id="chInvCat"></canvas></div></div>
+    <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">Unidades por ubicación</h3><div style="position:relative;height:280px"><canvas id="chInvUbic"></canvas></div></div>
+    <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">Estado de los equipos</h3><div style="position:relative;height:280px"><canvas id="chInvEstado"></canvas></div></div>
+    <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">Unidades por categoría</h3><div style="position:relative;height:280px"><canvas id="chInvUniCat"></canvas></div></div>
   </div>`;
   destroyInvCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
   // por categoría (cantidad de artículos)
   const catCount={}; all.forEach(i=>{ catCount[i.category]=(catCount[i.category]||0)+1; });
   const cats=Object.keys(catCount);
   const e1=document.getElementById('chInvCat');
-  if(e1){ if(cats.length) _invCharts.push(new Chart(e1,{type:'doughnut',data:{labels:cats.map(c=>(CATS.find(x=>x.id===c)||{}).label||c),datasets:[{data:cats.map(c=>catCount[c]),backgroundColor:cats.map(c=>CAT_COLOR[c]||'#9B1B30')}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin artículos</div>'; }
+  if(e1){ if(cats.length) _invCharts.push(new Chart(e1,{type:'doughnut',data:{labels:cats.map(c=>(CATS.find(x=>x.id===c)||{}).label||c),datasets:[{data:cats.map(c=>catCount[c]),backgroundColor:cats.map(c=>CAT_COLOR[c]||'#9B1B30')}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12}}}}})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin artículos</div>'; }
   // unidades por ubicación (top 8)
   const ubic={}; all.forEach(i=>{ const p=projName(i.projectId)||i.projectId||'—'; ubic[p]=(ubic[p]||0)+(i.quantity||0); });
   const up=Object.entries(ubic).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const e2=document.getElementById('chInvUbic');
-  if(e2) _invCharts.push(new Chart(e2,{type:'bar',data:{labels:up.map(x=>x[0]),datasets:[{label:'Unidades',data:up.map(x=>x[1]),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  if(e2) _invCharts.push(new Chart(e2,{type:'bar',data:{labels:up.map(x=>x[0]),datasets:[{label:'Unidades',data:up.map(x=>x[1]),backgroundColor:'#C62040'}]},options:chartOpts({maintainAspectRatio:false,plugins:{legend:{display:false}}})}));
   // por estado
   const EST={OPERATIVA:['Operativa','#22C55E'],MANTENIMIENTO:['Mantenimiento','#F59E0B'],NO_OPERATIVA:['No operativa','#F0556A']};
   const estCount={}; all.forEach(i=>{ const s=i.estado||'OPERATIVA'; estCount[s]=(estCount[s]||0)+1; });
   const es=Object.keys(estCount);
   const e3=document.getElementById('chInvEstado');
-  if(e3){ if(es.length) _invCharts.push(new Chart(e3,{type:'doughnut',data:{labels:es.map(s=>(EST[s]||[s])[0]),datasets:[{data:es.map(s=>estCount[s]),backgroundColor:es.map(s=>(EST[s]||['', '#60A5FA'])[1])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
+  if(e3){ if(es.length) _invCharts.push(new Chart(e3,{type:'doughnut',data:{labels:es.map(s=>(EST[s]||[s])[0]),datasets:[{data:es.map(s=>estCount[s]),backgroundColor:es.map(s=>(EST[s]||['', '#60A5FA'])[1])}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
   // unidades por categoría
   const uniCat={}; all.forEach(i=>{ uniCat[i.category]=(uniCat[i.category]||0)+(i.quantity||0); });
   const uc=Object.keys(uniCat);
   const e4=document.getElementById('chInvUniCat');
-  if(e4) _invCharts.push(new Chart(e4,{type:'bar',data:{labels:uc.map(c=>(CATS.find(x=>x.id===c)||{}).label||c),datasets:[{label:'Unidades',data:uc.map(c=>uniCat[c]),backgroundColor:uc.map(c=>CAT_COLOR[c]||'#9B1B30')}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+  if(e4) _invCharts.push(new Chart(e4,{type:'bar',data:{labels:uc.map(c=>(CATS.find(x=>x.id===c)||{}).label||c),datasets:[{label:'Unidades',data:uc.map(c=>uniCat[c]),backgroundColor:uc.map(c=>CAT_COLOR[c]||'#9B1B30')}]},options:chartOpts({maintainAspectRatio:false,plugins:{legend:{display:false}}})}));
 }
 async function renderInvArchivos(){
   const b=document.getElementById('invBody'); if(!b) return;
