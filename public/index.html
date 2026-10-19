@@ -1673,7 +1673,7 @@ function renderInvLista(){
             <span style="font-size:11px;font-weight:700;color:var(--c-muted);background:var(--c-bg);border:1px solid var(--c-border);border-radius:20px;padding:2px 9px">${list.length}</span>
           </div>
           ${isOpen?`<div class="item-table" style="border:none;border-radius:0;margin:0"><table>
-            <thead><tr><th>Artículo</th><th>Proyecto</th><th>Cantidad</th><th>Unidad</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Artículo</th><th>Proyecto</th><th>Cantidad</th><th>Unidad</th><th>Estado</th>${state.isAdmin?'<th style="text-align:center">Acciones</th>':''}</tr></thead>
             <tbody>${list.map(i=>`
               <tr onclick="nav('project','${i.projectId}')" style="cursor:pointer">
                 <td><div style="display:flex;align-items:center;gap:9px">${i.photoId?`<img src="${fileUrl(i.photoId)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(i.name)}</b></div></td>
@@ -1681,6 +1681,10 @@ function renderInvLista(){
                 <td>${i.quantity}${i.minStock>0&&i.quantity<=i.minStock?' <span style="color:#D97706;font-size:11px">⚠</span>':''}</td>
                 <td style="font-size:12px;color:var(--c-muted)">${esc(i.unit)}</td>
                 <td>${estadoCell(i)}</td>
+                ${state.isAdmin?`<td style="text-align:center;white-space:nowrap">
+                  <button class="act-btn" onclick="event.stopPropagation();showItemModal('${i.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                  <button class="act-btn del" onclick="event.stopPropagation();showDeleteItem('${i.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button>
+                </td>`:''}
               </tr>`).join('')}</tbody></table></div>`:''}
         </div>`;
       }).join('');
@@ -2489,7 +2493,8 @@ function showDeleteItem(id){
 async function deleteItem(id){
   const d = await api('/api/delete',{table:'items',filters:[{col:'id',val:id}]});
   if(d.error){toast('Error al eliminar','err');return;}
-  closeModal(); toast('Articulo eliminado');
+  state.items.delete(id);          // quita de inmediato, sin esperar al tiempo real
+  closeModal(); toast('Articulo eliminado'); render();
 }
 
 // Transfer modal
