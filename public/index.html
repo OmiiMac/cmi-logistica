@@ -1041,13 +1041,14 @@ function downloadBlob(blob, name){
 async function doCapture(){
   const el=document.getElementById('view');
   if(!el || typeof html2canvas==='undefined') throw new Error('sin-captura');
-  const bg=getComputedStyle(document.body).backgroundColor || '#111827';
   const prev={ flex:el.style.flex, height:el.style.height, overflow:el.style.overflow, maxHeight:el.style.maxHeight };
   el.style.flex='none'; el.style.height='auto'; el.style.maxHeight='none'; el.style.overflow='visible';
+  document.documentElement.classList.add('export-light');   // fondo blanco, texto oscuro (formal)
   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
   try{
-    return await html2canvas(el, { backgroundColor:bg, scale:Math.min(2,(window.devicePixelRatio||1)+0.5), useCORS:true, logging:false, scrollX:0, scrollY:0, windowWidth:el.scrollWidth });
+    return await html2canvas(el, { backgroundColor:'#ffffff', scale:Math.min(2,(window.devicePixelRatio||1)+0.5), useCORS:true, logging:false, scrollX:0, scrollY:0, windowWidth:el.scrollWidth });
   } finally {
+    document.documentElement.classList.remove('export-light');
     el.style.flex=prev.flex; el.style.height=prev.height; el.style.maxHeight=prev.maxHeight; el.style.overflow=prev.overflow;
   }
 }
@@ -1114,6 +1115,11 @@ function printView(){
       + '<div><div class="ph-co">CMI Construction Corp</div><div class="ph-title">'+esc(title)+'</div></div>'
       + '<div class="ph-date">'+esc(fmtDateLong(todayStr()))+'</div>';
   }
+  // Fuerza fondo blanco y texto oscuro durante la impresión (formal, legible).
+  document.documentElement.classList.add('export-light');
+  const quitar=()=>document.documentElement.classList.remove('export-light');
+  window.addEventListener('afterprint', quitar, { once:true });
+  setTimeout(quitar, 8000);   // respaldo por si el navegador no dispara afterprint
   setTimeout(()=>{ try{ window.print(); }catch(e){} }, 150);
 }
 
@@ -3818,6 +3824,38 @@ async function delTarea(id){ const {error}=await sb.from('mercadeo_tareas').dele
 #printHeader .ph-date{ margin-left:auto; font-size:12px; color:#555; text-align:right; }
 
 /* ── IMPRESIÓN: cada área sale en hoja blanca, con membrete y tablas limpias ── */
+/* ── Modo claro para imprimir / exportar (fondo blanco, texto oscuro) ── */
+html.export-light{
+  --c-bg:#fff; --c-card:#fff; --c-text:#111; --c-muted:#555;
+  --c-border:#c7c7c7; --c-side:#fff; --c-side2:#fff;
+  --c-primary-lt:#f3e9eb; --c-accent-lt:#f7f0dd;
+  background:#fff !important;
+}
+html.export-light body{ background:#fff !important; color:#111 !important; }
+html.export-light #view{ background:#fff !important; }
+html.export-light #main::after{ display:none !important; }
+html.export-light .dash-fx,
+html.export-light .dash-fx .greeting-bar,
+html.export-light .dash-fx .stat-card,
+html.export-light .dash-fx .cat-card,
+html.export-light .dash-fx .section-card,
+html.export-light .section-card,
+html.export-light .item-table,
+html.export-light .msg-bubble{ background:#fff !important; color:#111 !important; box-shadow:none !important; }
+html.export-light .dash-fx .stat-val,
+html.export-light .dash-fx .greeting-hi,
+html.export-light .dash-fx .greeting-date,
+html.export-light .dash-fx .greeting-kpi-val,
+html.export-light .dash-fx .greeting-kpi-label,
+html.export-light .dash-fx .stat-label,
+html.export-light .dash-fx .section-head h3,
+html.export-light .dash-fx .ruta-desc,
+html.export-light .dash-fx .ruta-dest,
+html.export-light .dash-fx .proj-info-name,
+html.export-light .dash-fx .proj-info-sup,
+html.export-light .dash-fx .nodata{ color:#222 !important; text-shadow:none !important; }
+html.export-light .dash-fx .greeting-bar::after{ display:none !important; }
+
 @media print{
   /* Paleta clara para papel (la app usa variables, así que todo cambia a la vez) */
   :root{
