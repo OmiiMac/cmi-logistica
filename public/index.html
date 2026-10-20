@@ -4286,7 +4286,7 @@ function openLicModal(lic){
       <div class="form-group"><label>Título</label><input id="liTitulo" value="${esc(lic.titulo||'')}"></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Entidad</label><input id="liEntidad" value="${esc(lic.entidad||'')}"></div><div class="form-group" style="flex:1"><label>N°</label><input id="liNumero" value="${esc(lic.numero||'')}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Publicación</label><input id="liPub" type="date" value="${esc(lic.fecha_publicacion||'')}"></div><div class="form-group" style="flex:1"><label>Fecha límite</label><input id="liLim" type="date" value="${esc(lic.fecha_limite||'')}"></div></div>
-      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Precio referencia</label><input id="liMonto" type="number" step="0.01" value="${lic.monto_estimado||''}"></div><div class="form-group" style="flex:1"><label>Precio costo</label><input id="liCosto" type="number" step="0.01" value="${lic.precio_costo||''}"></div></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Precio referencia (entidad)</label><input id="liMonto" type="number" step="0.01" value="${lic.monto_estimado||''}"></div><div class="form-group" style="flex:1"><label>Costo del proyecto (CMI)</label><input id="liCosto" type="number" step="0.01" value="${lic.precio_costo||''}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="liResp" value="${esc(lic.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Responsable de presupuesto</label><input id="liRespPres" value="${esc(lic.responsable_presupuesto||'')}"></div></div>
       <div class="form-group"><label>Fecha de homologación</label><input id="liHomol" type="date" value="${esc(lic.fecha_homologacion||'')}"></div>
       <div class="form-group"><label>Notas</label><textarea id="liNotas" rows="2">${esc(lic.notas||'')}</textarea></div>
@@ -4303,16 +4303,60 @@ async function saveLic(id){
 }
 async function openLicDetail(id){
   const l=(mstate.lics||[]).find(x=>x.id===id); if(!l) return;
-  const {data:docs}=await sb.from('files').select('*').eq('scope','licitacion').eq('ref_id',id);
   const canEdit=state.isAdmin||state.isLicitaciones;
+  const [docsRes,compRes]=await Promise.all([
+    sb.from('files').select('*').eq('scope','licitacion').eq('ref_id',id),
+    api('/api/select',{table:'lic_competidores',filters:[{col:'licitacion_id',val:id}],order:[{col:'monto',asc:true}],limit:100})
+  ]);
+  const docs=docsRes.data||[];
+  const competidores=compRes.data||[];
   const estSel=canEdit?`<div class="form-group" style="margin-top:12px"><label>Estado</label><select onchange="setLicEstado('${id}',this.value)">${Object.entries(LIC_ESTADOS).filter(([k])=>k!=='aprobada'&&k!=='rechazada').map(([k,v])=>`<option value="${k}" ${l.estado===k?'selected':''}>${v}</option>`).join('')}</select></div>`:'';
+  const infoItems=[
+    l.entidad?`<div><b>Entidad:</b> ${esc(l.entidad)}</div>`:'',
+    l.numero?`<div><b>N°:</b> ${esc(l.numero)}</div>`:'',
+    l.fecha_publicacion?`<div><b>Publicación:</b> ${esc(l.fecha_publicacion)}</div>`:'',
+    l.fecha_limite?`<div><b>Fecha límite:</b> ${esc(l.fecha_limite)}</div>`:'',
+    l.fecha_homologacion?`<div style="color:var(--c-text)"><b>📋 Homologación:</b> <span style="color:#0F766E;font-weight:700">${esc(l.fecha_homologacion)}</span></div>`
+      :`<div style="color:var(--c-muted)"><b>📋 Homologación:</b> <span style="font-style:italic">No definida</span></div>`,
+    l.monto_estimado?`<div><b>💰 Precio referencia:</b> <span style="font-weight:700">${money(l.monto_estimado)} ${esc(l.moneda||'')}</span></div>`:'',
+    l.precio_costo?`<div style="color:var(--c-text)"><b>🏷️ Costo del proyecto:</b> <span style="color:#9B1B30;font-weight:700">${money(l.precio_costo)} ${esc(l.moneda||'')}</span></div>`
+      :`<div style="color:var(--c-muted)"><b>🏷️ Costo del proyecto:</b> <span style="font-style:italic">No definido</span></div>`,
+    l.responsable?`<div><b>Responsable:</b> ${esc(l.responsable)}</div>`:'',
+    l.responsable_presupuesto?`<div><b>Resp. presupuesto:</b> ${esc(l.responsable_presupuesto)}</div>`:'',
+    l.notas?`<div style="margin-top:6px;padding:8px;background:var(--c-accent-lt);border-radius:6px">${esc(l.notas)}</div>`:''
+  ].filter(Boolean).join('');
+  const RES_COLOR={ganó:'#22C55E',perdió:'#F0556A',sin_info:'#6B7280'};
+  const RES_LABEL={ganó:'Ganó','perdió':'Perdió',sin_info:'Sin info'};
+  const compRows=competidores.map(c=>`<tr>
+    <td style="font-weight:600">${esc(c.nombre)}</td>
+    <td style="text-align:right;font-weight:700;color:var(--c-text)">${c.monto?money(c.monto):'—'}</td>
+    <td><span style="font-size:10px;font-weight:700;color:#fff;background:${RES_COLOR[c.resultado]||'#6B7280'};padding:2px 7px;border-radius:20px">${RES_LABEL[c.resultado]||c.resultado}</span></td>
+    <td style="font-size:11px;color:var(--c-muted)">${esc(c.notas||'')}</td>
+    ${canEdit?`<td><button class="act-btn del" onclick="deleteCompetidor('${c.id}','${id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>`:''}
+  </tr>`).join('');
+  const hasMontos=competidores.some(c=>c.monto)||l.precio_costo||l.monto_estimado;
   openModal(`
     <div class="modal-head"><h2>${esc(l.titulo)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
+    <div class="modal-body" style="max-height:78vh;overflow-y:auto">
       <div style="margin-bottom:10px">${licBadge(l.estado)} ${l.aprobado_at?`<span style="font-size:11px;color:var(--c-muted)">· resuelta ${esc(l.aprobado_at.slice(0,10))}</span>`:''}</div>
-      <div style="font-size:13px;color:var(--c-muted);line-height:1.7">${l.entidad?`<div><b>Entidad:</b> ${esc(l.entidad)}</div>`:''}${l.numero?`<div><b>N°:</b> ${esc(l.numero)}</div>`:''}${l.fecha_limite?`<div><b>Fecha límite:</b> ${esc(l.fecha_limite)}</div>`:''}${l.fecha_homologacion?`<div><b>Homologación:</b> ${esc(l.fecha_homologacion)}</div>`:''}${l.monto_estimado?`<div><b>Precio referencia:</b> ${money(l.monto_estimado)} ${esc(l.moneda||'')}</div>`:''}${l.precio_costo?`<div><b>Precio costo:</b> ${money(l.precio_costo)} ${esc(l.moneda||'')}</div>`:''}${l.responsable?`<div><b>Responsable:</b> ${esc(l.responsable)}</div>`:''}${l.responsable_presupuesto?`<div><b>Responsable de presupuesto:</b> ${esc(l.responsable_presupuesto)}</div>`:''}${l.notas?`<div style="margin-top:6px">${esc(l.notas)}</div>`:''}</div>
+      <div style="font-size:13px;color:var(--c-muted);line-height:1.9">${infoItems}</div>
       ${estSel}
-      <h3 style="font-size:13px;margin:14px 0 6px">Documentos</h3>
+
+      <div style="border-top:1px solid var(--c-border);margin:14px 0 10px"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 style="font-size:13px;margin:0;font-weight:700">📊 Análisis de Competidores</h3>
+        ${canEdit?`<button class="btn btn-sm btn-primary" onclick="showAddCompetidorModal('${id}','${l.precio_costo||l.monto_estimado||0}')">+ Agregar</button>`:''}
+      </div>
+      ${competidores.length===0
+        ?`<div class="nodata" style="padding:14px;font-size:12px">Sin competidores registrados aún.</div>`
+        :`<div class="item-table" style="margin-bottom:12px"><table>
+          <thead><tr><th>Empresa</th><th style="text-align:right">Monto ofertado</th><th>Resultado</th><th>Notas</th>${canEdit?'<th></th>':''}</tr></thead>
+          <tbody>${compRows}</tbody>
+        </table></div>`}
+      ${hasMontos?`<div style="padding:10px 0"><canvas id="licCompChart" height="140"></canvas></div>`:''}
+
+      <div style="border-top:1px solid var(--c-border);margin:14px 0 10px"></div>
+      <h3 style="font-size:13px;margin:0 0 6px;font-weight:700">📎 Documentos</h3>
       <div>${docsHtml(docs,'licitacion',id)}</div>
       ${canEdit?`<div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input type="file" id="licFile"><button class="btn btn-sm btn-ghost" onclick="uploadDoc('licitacion','${id}','licFile',()=>openLicDetail('${id}'))">Subir</button></div>`:''}
     </div>
@@ -4320,6 +4364,49 @@ async function openLicDetail(id){
       <div>${state.isAdmin?`<button class="btn btn-sm" style="background:rgba(34,197,94,.22);color:#22C55E;border:1px solid rgba(34,197,94,.5)" onclick="aprobarLic('${id}',true)">Aprobar</button> <button class="btn btn-sm" style="background:rgba(240,85,106,.22);color:#F0556A;border:1px solid rgba(240,85,106,.5)" onclick="aprobarLic('${id}',false)">Rechazar</button>`:''}</div>
       <div>${canEdit?`<button class="btn btn-ghost" onclick="openLicModal(mstate.lics.find(x=>x.id==='${id}'))">Editar</button> `:''}${state.isAdmin?`<button class="btn btn-ghost" style="color:#DC2626" onclick="delLic('${id}')">Eliminar</button> `:''}<button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
     </div>`);
+  if(hasMontos) drawLicCompChart(l, competidores);
+}
+function drawLicCompChart(l, competidores){
+  if(typeof Chart==='undefined') return; tuneChartsDark();
+  const e=document.getElementById('licCompChart'); if(!l) return;
+  const miMonto=l.precio_costo||l.monto_estimado||0;
+  const labels=[]; const montos=[]; const colors=[];
+  if(miMonto){ labels.push('CMI (mi oferta)'); montos.push(miMonto); colors.push('#9B1B30'); }
+  competidores.forEach(c=>{ if(c.monto){ labels.push(esc(c.nombre)); montos.push(c.monto); colors.push(c.resultado==='ganó'?'#22C55E':c.resultado==='perdió'?'#6B7280':'#60A5FA'); } });
+  if(!montos.length||!e) return;
+  if(window._licCompChart) try{window._licCompChart.destroy()}catch(e){}
+  window._licCompChart=new Chart(e,{type:'bar',data:{labels,datasets:[{label:'Monto ofertado',data:montos,backgroundColor:colors,borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+money(ctx.raw)}}},scales:{x:{ticks:{callback:v=>money(v)}}}}});
+}
+function showAddCompetidorModal(licId, miMonto){
+  openModal(`
+    <div class="modal-head"><h2>Agregar competidor</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-group"><label>Empresa / Competidor</label><input id="compNombre" placeholder="Ej: Constructora XYZ"></div>
+      <div class="form-row">
+        <div class="form-group"><label>Monto ofertado</label><input id="compMonto" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="form-group"><label>Resultado</label><select id="compResultado">
+          <option value="sin_info">Sin información</option>
+          <option value="ganó">Ganó</option>
+          <option value="perdió">Perdió</option>
+        </select></div>
+      </div>
+      <div class="form-group"><label>Notas (opcional)</label><input id="compNotas" placeholder="Ej: Oferta más baja, experiencia en puentes"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCompetidor('${licId}')">Guardar</button></div>`);
+}
+async function saveCompetidor(licId){
+  const nombre=document.getElementById('compNombre').value.trim();
+  if(!nombre){ showToast('Escribe el nombre del competidor','err'); return; }
+  const values={licitacion_id:licId,nombre,monto:parseFloat(document.getElementById('compMonto').value)||null,resultado:document.getElementById('compResultado').value,notas:document.getElementById('compNotas').value.trim(),created_at:new Date().toISOString()};
+  const d=await api('/api/insert',{table:'lic_competidores',values});
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  showToast('Competidor agregado','ok'); openLicDetail(licId);
+}
+async function deleteCompetidor(compId, licId){
+  if(!confirm('¿Eliminar este competidor?')) return;
+  const d=await api('/api/delete',{table:'lic_competidores',filters:[{col:'id',val:compId}]});
+  if(d.error){ showToast('Error','err'); return; }
+  showToast('Eliminado','ok'); openLicDetail(licId);
 }
 function docsHtml(docs,scope,refId){
   if(!docs||!docs.length) return '<div class="nodata" style="padding:8px;font-size:12px">Sin documentos.</div>';

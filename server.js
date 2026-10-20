@@ -173,6 +173,18 @@ CREATE TABLE IF NOT EXISTS licitaciones (
   updated_at        TEXT
 );
 
+-- ── Competidores por licitación ──
+CREATE TABLE IF NOT EXISTS lic_competidores (
+  id              TEXT PRIMARY KEY,
+  licitacion_id   TEXT NOT NULL,
+  nombre          TEXT NOT NULL,
+  monto           REAL,
+  resultado       TEXT DEFAULT 'sin_info',  -- ganó|perdió|sin_info
+  notas           TEXT,
+  created_by      TEXT,
+  created_at      TEXT
+);
+
 -- ── Mercadeo ──
 CREATE TABLE IF NOT EXISTS campanas (
   id            TEXT PRIMARY KEY,
@@ -458,7 +470,8 @@ const SCHEMA = {
   caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   salidas_material: ['id', 'project_id', 'item_id', 'item_name', 'cantidad', 'unidad', 'actividad', 'area', 'fecha', 'notas', 'created_by', 'created_at', 'updated_at'],
   compras:      ['id', 'project_id', 'descripcion', 'cantidad', 'proveedor', 'monto', 'estado', 'fecha_solicitud', 'fecha_entrega', 'aprobado_por', 'factura_file', 'notas', 'created_by', 'created_at', 'updated_at'],
-  obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at']
+  obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at'],
+  lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
@@ -471,6 +484,7 @@ const MODULE_ROLES = {
 const TABLE_MODULE = {
   cuentas: 'conta', asientos: 'conta', movimientos: 'conta', compromisos: 'conta',
   licitaciones: 'licit',
+  lic_competidores: 'licit',
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt'
 };
 const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt' };
