@@ -3945,15 +3945,22 @@ async function renderContaCaja(){
 }
 async function renderContaPanel(){
   const body=document.getElementById('contaBody'); if(!body) return;
-  const [rs,rm,rc]=await Promise.all([
+  const [rs,rm,rc,rcomp]=await Promise.all([
     apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
     apiPost('/api/conta/mensual',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
-    api('/api/select',{table:'caja_chica',limit:5000})
+    api('/api/select',{table:'caja_chica',limit:5000}),
+    api('/api/select',{table:'compras',limit:5000})
   ]);
   if(rs.error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(rs.error.message)}</div>`; return; }
   const s=rs.data||[], mensual=rm.data||[];
   const cajaByProj={}; (rc.data||[]).forEach(m=>{ if(m.tipo!=='ingreso'){ const p=m.project_id||'—'; cajaByProj[p]=(cajaByProj[p]||0)+(+m.monto||0); } });
   const cajaRows=Object.entries(cajaByProj).map(([pid,g])=>({name:projName(pid)||pid,gas:g})).filter(r=>r.gas>0).sort((a,b)=>b.gas-a.gas).slice(0,10);
+  // Compras de los proyectos (entregadas = gasto real)
+  const compras=rcomp.data||[];
+  const compByProj={}; compras.forEach(c=>{ if(c.estado==='entregada'){ const p=c.project_id||'—'; compByProj[p]=(compByProj[p]||0)+(+c.monto||0); } });
+  const compRows=Object.entries(compByProj).map(([pid,g])=>({name:projName(pid)||pid,gas:g})).filter(r=>r.gas>0).sort((a,b)=>b.gas-a.gas).slice(0,10);
+  const totCompras=Object.values(compByProj).reduce((a,b)=>a+b,0);
+  const comprasPend=compras.filter(c=>c.estado!=='entregada').reduce((a,c)=>a+(+c.monto||0),0);
   const sum=(tipo,signo)=>s.filter(c=>c.tipo===tipo).reduce((a,c)=>a+(signo==='d'?(c.debe-c.haber):(c.haber-c.debe)),0);
   const totIng=sum('ingreso','h'), totGas=sum('gasto','d'), util=totIng-totGas;
   const activo=sum('activo','d'), pasivo=sum('pasivo','h'), patr=sum('patrimonio','h')+util;
@@ -3962,6 +3969,8 @@ async function renderContaPanel(){
       ${kpiTile('Ingresos',money(totIng),'#166534','#DCFCE7')}
       ${kpiTile('Gastos',money(totGas),'#DC2626','#FEE2E2')}
       ${kpiTile('Utilidad',money(util),util>=0?'#166534':'#DC2626',util>=0?'#DCFCE7':'#FEE2E2')}
+      ${kpiTile('Compras entregadas',money(totCompras),'#EA580C','#FFEDD5')}
+      ${kpiTile('Compras pendientes',money(comprasPend),'#D97706','#FEF3C7')}
       ${kpiTile('Activo',money(activo),'#1D4ED8','#DBEAFE')}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
@@ -3970,12 +3979,18 @@ async function renderContaPanel(){
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Composición de gastos</h3><canvas id="chGastos" height="190"></canvas></div>
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Activo · Pasivo · Patrimonio</h3><canvas id="chAPP" height="190"></canvas></div>
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Gastos de caja chica por proyecto</h3><canvas id="chCajaProj" height="190"></canvas></div>
+      <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Compras entregadas por proyecto</h3><canvas id="chComprasProj" height="190"></canvas></div>
     </div>`;
   drawContaCharts(s,mensual,{activo,pasivo,patr});
   const elCaja=document.getElementById('chCajaProj');
   if(elCaja && typeof Chart!=='undefined'){
     if(cajaRows.length) _contaCharts.push(new Chart(elCaja,{type:'bar',data:{labels:cajaRows.map(r=>r.name),datasets:[{label:'Gastos caja',data:cajaRows.map(r=>r.gas),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
     else elCaja.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin gastos de caja chica aún</div>';
+  }
+  const elComp=document.getElementById('chComprasProj');
+  if(elComp && typeof Chart!=='undefined'){
+    if(compRows.length) _contaCharts.push(new Chart(elComp,{type:'bar',data:{labels:compRows.map(r=>r.name),datasets:[{label:'Compras entregadas',data:compRows.map(r=>r.gas),backgroundColor:'#EA580C'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
+    else elComp.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin compras entregadas aún</div>';
   }
 }
 // ── Pendientes y compromisos mensuales ───────────────────────
