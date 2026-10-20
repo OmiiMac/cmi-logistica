@@ -432,6 +432,7 @@ ensureColumn('profiles', 'wa_optin', 'INTEGER DEFAULT 0'); // 1 = acepta recibir
 ensureColumn('licitaciones', 'responsable_presupuesto', 'TEXT'); // responsable del presupuesto
 ensureColumn('licitaciones', 'precio_costo', 'REAL');            // precio costo
 ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homologación
+ensureColumn('licitaciones', 'hora_homologacion', 'TEXT');      // hora de homologación
 ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
 ensureColumn('campanas', 'objetivo', 'TEXT');
 ensureColumn('campanas', 'drive_link', 'TEXT');
@@ -474,7 +475,7 @@ const SCHEMA = {
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
   movimientos:  ['id', 'asiento_id', 'cuenta_id', 'debe', 'haber', 'proyecto_id', 'descripcion'],
-  licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
+  licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'hora_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'objetivo', 'drive_link', 'created_by', 'created_at', 'updated_at'],
   mkt_push:     ['id', 'empresa', 'fecha', 'hora', 'titulo', 'mensaje', 'estado', 'responsable', 'observaciones', 'created_by', 'created_at', 'updated_at'],
   mkt_efemerides:['id', 'empresa', 'fecha', 'titulo', 'color', 'recurrente', 'created_by', 'created_at', 'updated_at'],

@@ -4428,8 +4428,13 @@ async function renderLicitaciones(){
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1000px">
     <div class="filter-chips" style="margin-bottom:16px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" onclick="mstate.licTab='${k}';renderLicitaciones()">${l}</span>`).join('')}</div>
     <div id="licBody"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
-  const {data}=await sb.from('licitaciones').select('*').order('created_at',{ascending:false});
-  mstate.lics=data||[];
+  const [licRes,compRes]=await Promise.all([
+    sb.from('licitaciones').select('*').order('created_at',{ascending:false}),
+    api('/api/select',{table:'lic_competidores',limit:5000})
+  ]);
+  mstate.lics=licRes.data||[];
+  const cc={}; (compRes.data||[]).forEach(c=>{ cc[c.licitacion_id]=(cc[c.licitacion_id]||0)+1; });
+  mstate.compCounts=cc;
   if(tab==='panel') renderLicPanel();
   else if(tab==='calendario') renderLicCalendario();
   else if(tab==='biblioteca') renderLicBiblioteca();
@@ -4439,10 +4444,15 @@ function renderLicList(){
   const list=document.getElementById('licBody'); if(!list) return;
   const data=mstate.lics||[];
   if(!data.length){ list.innerHTML='<div class="nodata" style="padding:30px">Sin licitaciones aún.</div>'; return; }
-  list.innerHTML=data.map(l=>`<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openLicDetail('${l.id}')">
+  const cc=mstate.compCounts||{};
+  list.innerHTML=data.map(l=>{
+    const n=cc[l.id]||0;
+    return `<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openLicDetail('${l.id}')">
     <div style="display:flex;justify-content:space-between;align-items:start;gap:10px"><div><div style="font-weight:700">${esc(l.titulo)}</div><div style="font-size:12px;color:var(--c-muted)">${esc(l.entidad||'')} ${l.numero?'· '+esc(l.numero):''}</div></div>${licBadge(l.estado)}</div>
-    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.monto_estimado?`<span>💰 Ref: ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.precio_costo?`<span>🏷️ Costo: ${money(l.precio_costo)}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}</div>
-  </div>`).join('');
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.fecha_homologacion?`<span>📋 Homolog.: ${esc(l.fecha_homologacion)}${l.hora_homologacion?' '+esc(l.hora_homologacion)+'h':''}</span>`:''}${l.monto_estimado?`<span>💰 Ref: ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.precio_costo?`<span>🏷️ Costo: ${money(l.precio_costo)}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}</div>
+    <div style="margin-top:10px;display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#fff;background:${n?'#9B1B30':'#6B7280'};padding:3px 10px;border-radius:20px">📊 ${n} competidor${n===1?'':'es'}</span><span style="font-size:11px;color:var(--c-primary);font-weight:600">Toca para ver y agregar análisis de competidores ›</span></div>
+  </div>`;
+  }).join('');
 }
 function renderLicPanel(){
   const b=document.getElementById('licBody'); if(!b) return;
@@ -4546,13 +4556,13 @@ function openLicModal(lic){
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Publicación</label><input id="liPub" type="date" value="${esc(lic.fecha_publicacion||'')}"></div><div class="form-group" style="flex:1"><label>Fecha límite</label><input id="liLim" type="date" value="${esc(lic.fecha_limite||'')}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Precio referencia (entidad)</label><input id="liMonto" type="number" step="0.01" value="${lic.monto_estimado||''}"></div><div class="form-group" style="flex:1"><label>Costo del proyecto (CMI)</label><input id="liCosto" type="number" step="0.01" value="${lic.precio_costo||''}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="liResp" value="${esc(lic.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Responsable de presupuesto</label><input id="liRespPres" value="${esc(lic.responsable_presupuesto||'')}"></div></div>
-      <div class="form-group"><label>Fecha de homologación</label><input id="liHomol" type="date" value="${esc(lic.fecha_homologacion||'')}"></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Fecha de homologación</label><input id="liHomol" type="date" value="${esc(lic.fecha_homologacion||'')}"></div><div class="form-group" style="flex:1"><label>Hora de homologación</label><input id="liHomolHora" type="time" value="${esc(lic.hora_homologacion||'')}"></div></div>
       <div class="form-group"><label>Notas</label><textarea id="liNotas" rows="2">${esc(lic.notas||'')}</textarea></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveLic('${lic.id||''}')">Guardar</button></div>`);
 }
 async function saveLic(id){
-  const row={titulo:document.getElementById('liTitulo').value.trim(),entidad:document.getElementById('liEntidad').value.trim(),numero:document.getElementById('liNumero').value.trim(),fecha_publicacion:document.getElementById('liPub').value||null,fecha_limite:document.getElementById('liLim').value||null,monto_estimado:Number(document.getElementById('liMonto').value)||null,precio_costo:Number(document.getElementById('liCosto').value)||null,responsable:document.getElementById('liResp').value.trim(),responsable_presupuesto:document.getElementById('liRespPres').value.trim(),fecha_homologacion:document.getElementById('liHomol').value||null,notas:document.getElementById('liNotas').value.trim()};
+  const row={titulo:document.getElementById('liTitulo').value.trim(),entidad:document.getElementById('liEntidad').value.trim(),numero:document.getElementById('liNumero').value.trim(),fecha_publicacion:document.getElementById('liPub').value||null,fecha_limite:document.getElementById('liLim').value||null,monto_estimado:Number(document.getElementById('liMonto').value)||null,precio_costo:Number(document.getElementById('liCosto').value)||null,responsable:document.getElementById('liResp').value.trim(),responsable_presupuesto:document.getElementById('liRespPres').value.trim(),fecha_homologacion:document.getElementById('liHomol').value||null,hora_homologacion:document.getElementById('liHomolHora').value||null,notas:document.getElementById('liNotas').value.trim()};
   if(!id) row.estado='en_preparacion';
   if(!row.titulo){ showToast('Falta el título','err'); return; }
   let error; if(id){ ({error}=await sb.from('licitaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('licitaciones').insert(row)); }
@@ -4574,7 +4584,7 @@ async function openLicDetail(id){
     l.numero?`<div><b>N°:</b> ${esc(l.numero)}</div>`:'',
     l.fecha_publicacion?`<div><b>Publicación:</b> ${esc(l.fecha_publicacion)}</div>`:'',
     l.fecha_limite?`<div><b>Fecha límite:</b> ${esc(l.fecha_limite)}</div>`:'',
-    l.fecha_homologacion?`<div style="color:var(--c-text)"><b>📋 Homologación:</b> <span style="color:#0F766E;font-weight:700">${esc(l.fecha_homologacion)}</span></div>`
+    l.fecha_homologacion?`<div style="color:var(--c-text)"><b>📋 Homologación:</b> <span style="color:#0F766E;font-weight:700">${esc(l.fecha_homologacion)}${l.hora_homologacion?' · '+esc(l.hora_homologacion)+' h':''}</span></div>`
       :`<div style="color:var(--c-muted)"><b>📋 Homologación:</b> <span style="font-style:italic">No definida</span></div>`,
     l.monto_estimado?`<div><b>💰 Precio referencia:</b> <span style="font-weight:700">${money(l.monto_estimado)} ${esc(l.moneda||'')}</span></div>`:'',
     l.precio_costo?`<div style="color:var(--c-text)"><b>🏷️ Costo del proyecto:</b> <span style="color:#9B1B30;font-weight:700">${money(l.precio_costo)} ${esc(l.moneda||'')}</span></div>`
