@@ -993,6 +993,17 @@ app.post('/api/admin/delete-user', (req, res) => {
   res.json({ data: { deleted: prof ? 1 : 0, id: userId }, error: null });
 });
 
+// Admin limpia todos los mensajes del chat general.
+app.post('/api/admin/clear-chat', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (!isFullAdmin(u)) return res.status(403).json({ error: { message: 'Solo el administrador principal' } });
+  const count = db.prepare('SELECT COUNT(*) AS c FROM messages').get().c;
+  db.prepare('DELETE FROM messages').run();
+  broadcast({ table: 'messages', eventType: 'CLEAR', new: null, old: null });
+  res.json({ data: { deleted: count }, error: null });
+});
+
 // ============================================================
 // PERMISOS DE ESCRITURA (equivalente a las políticas RLS)
 // ============================================================

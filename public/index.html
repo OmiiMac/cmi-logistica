@@ -3202,10 +3202,17 @@ async function renderUsers(){
     </div>`:''}
     ${full?`<div class="section-card" style="border-color:var(--c-err)">
       <div class="section-head"><h3><span class="section-head-bar" style="background:var(--c-err)"></span>Zona peligrosa</h3></div>
-      <div style="padding:14px 16px">
-        <div style="font-size:13px;color:var(--c-text);margin-bottom:4px"><b>Reiniciar usuarios</b></div>
-        <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Borra <b>todas las demás cuentas</b> (tu cuenta se mantiene). Los demás deberán registrarse de nuevo y vos los aprobás acá. No afecta proyectos, inventario ni rutas. <b>No se puede deshacer.</b></div>
-        <button class="btn btn-danger" onclick="resetOtherUsers()">Borrar los demás usuarios</button>
+      <div style="padding:14px 16px;display:flex;flex-direction:column;gap:16px">
+        <div>
+          <div style="font-size:13px;color:var(--c-text);margin-bottom:4px"><b>Limpiar chat general</b></div>
+          <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">Borra <b>todos los mensajes</b> del chat general. No afecta proyectos, inventario ni usuarios. <b>No se puede deshacer.</b></div>
+          <button class="btn btn-danger" onclick="clearChat()">Borrar todos los mensajes del chat</button>
+        </div>
+        <div>
+          <div style="font-size:13px;color:var(--c-text);margin-bottom:4px"><b>Reiniciar usuarios</b></div>
+          <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">Borra <b>todas las demás cuentas</b> (tu cuenta se mantiene). Los demás deberán registrarse de nuevo y vos los aprobás acá. No afecta proyectos, inventario ni rutas. <b>No se puede deshacer.</b></div>
+          <button class="btn btn-danger" onclick="resetOtherUsers()">Borrar los demás usuarios</button>
+        </div>
       </div>
     </div>`:''}
   </div>`;
@@ -3240,6 +3247,14 @@ async function deleteUser(id, name){
   if(error){ showToast(error.message,'err'); return; }
   showToast('Usuario eliminado','ok');
   renderUsers();
+}
+
+async function clearChat(){
+  if(!confirm('¿Borrar TODOS los mensajes del chat general?\n\nEsta acción NO se puede deshacer.')) return;
+  const {data,error}=await apiPost('/api/admin/clear-chat',{});
+  if(error){ showToast(error.message,'err'); return; }
+  showToast('Chat limpiado: '+((data&&data.deleted)||0)+' mensaje(s) eliminados.','ok');
+  if(state.view==='chat') render();
 }
 
 async function resetOtherUsers(){
