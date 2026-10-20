@@ -2270,14 +2270,15 @@ async function renderProjCompras(proj){
       <span style="font-size:11px;color:var(--c-muted)">Flujo: Solicitud → Cotizada → Aprobada → En camino → Entregada</span>
     </div>
     <div class="item-table"><table>
-      <thead><tr><th>Descripción</th><th>Cant.</th><th>Proveedor</th><th style="text-align:right">Monto</th><th>Estado</th><th>Avanzar</th>${state.isAdmin?'<th></th>':''}</tr></thead>
-      <tbody>${rows.length===0?`<tr><td colspan="7"><div class="empty-state">Sin solicitudes de compra aún</div></td></tr>`:rows.map(c=>{
+      <thead><tr><th>Descripción</th><th>Cant.</th><th>Proveedor</th><th>Encargado</th><th style="text-align:right">Monto</th><th>Estado</th><th>Avanzar</th>${state.isAdmin?'<th></th>':''}</tr></thead>
+      <tbody>${rows.length===0?`<tr><td colspan="8"><div class="empty-state">Sin solicitudes de compra aún</div></td></tr>`:rows.map(c=>{
         const idx=COMPRA_FLUJO.indexOf(c.estado||'solicitud');
         const next=idx>=0&&idx<COMPRA_FLUJO.length-1?COMPRA_FLUJO[idx+1]:null;
         return `<tr>
           <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cantidad||'')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.proveedor||'—')}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(c.encargado||'—')}</td>
           <td style="text-align:right;font-weight:700;white-space:nowrap">${c.monto?cajaMoney(c.monto):'—'}</td>
           <td>${estadoChip(c.estado||'solicitud')}</td>
           <td>${next?`<button class="btn btn-sm btn-ghost" onclick="setCompraEstado('${c.id}','${next}')">→ ${COMPRA_LABEL[next]}</button>`:'<span style="font-size:11px;color:var(--c-ok)">✓ Entregada</span>'}</td>
@@ -2295,7 +2296,10 @@ function showCompraModal(projectId,id){
       <div class="form-group"><label>Cantidad</label><input id="cmpCant" value="${esc(c?.cantidad||'')}" placeholder="Ej: 20 galones"></div>
       <div class="form-group"><label>Monto estimado</label><input id="cmpMonto" type="number" min="0" step="0.01" value="${c?.monto||''}"></div>
     </div>
-    <div class="form-group"><label>Proveedor (opcional)</label><input id="cmpProv" value="${esc(c?.proveedor||'')}" placeholder="Ej: Ferretería XYZ"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Proveedor (opcional)</label><input id="cmpProv" value="${esc(c?.proveedor||'')}" placeholder="Ej: Ferretería XYZ"></div>
+      <div class="form-group"><label>Encargado de la compra</label><input id="cmpEncargado" value="${esc(c?.encargado||'')}" placeholder="Ej: Juan Pérez"></div>
+    </div>
     <div class="form-group"><label>Factura / comprobante (foto, opcional)</label><input type="file" id="cmpFactura" accept="image/*"></div>
     <div class="form-group"><label>Notas (opcional)</label><textarea id="cmpNotas" rows="2">${esc(c?.notas||'')}</textarea></div>
     ${c?`<div class="form-group"><label>Estado</label><select id="cmpEstado">${COMPRA_FLUJO.map(s=>`<option value="${s}"${(c.estado||'solicitud')===s?' selected':''}>${COMPRA_LABEL[s]}</option>`).join('')}</select></div>`:''}
@@ -2305,7 +2309,7 @@ function showCompraModal(projectId,id){
 async function saveCompra(projectId,id){
   const descripcion=document.getElementById('cmpDesc').value.trim();
   if(!descripcion){ showToast('Describe qué se necesita','err'); return; }
-  const values={descripcion,cantidad:document.getElementById('cmpCant').value.trim(),proveedor:document.getElementById('cmpProv').value.trim(),monto:parseFloat(document.getElementById('cmpMonto').value)||0,notas:document.getElementById('cmpNotas').value.trim()};
+  const values={descripcion,cantidad:document.getElementById('cmpCant').value.trim(),proveedor:document.getElementById('cmpProv').value.trim(),encargado:document.getElementById('cmpEncargado').value.trim(),monto:parseFloat(document.getElementById('cmpMonto').value)||0,notas:document.getElementById('cmpNotas').value.trim()};
   if(id){
     const sel=document.getElementById('cmpEstado');
     if(sel){ values.estado=sel.value; if(sel.value==='entregada') values.fecha_entrega=todayStr(); }
@@ -2468,9 +2472,9 @@ async function renderComprasGlobal(){
     ${COMPRA_FLUJO.map(e=>`<button class="btn btn-sm ${fil===e?'btn-primary':'btn-ghost'}" onclick="state._comprasGlobalFil='${e}';renderComprasGlobal()">${COMPRA_LABEL[e]} <span style="opacity:.7">${byEst[e]}</span></button>`).join('')}
   </div>
   <div class="item-table"><table>
-    <thead><tr><th>Proyecto</th><th>Descripción</th><th>Cant.</th><th>Proveedor</th><th style="text-align:right">Monto</th><th>Estado</th><th>Avanzar</th>${state.isAdmin?'<th></th>':''}</tr></thead>
+    <thead><tr><th>Proyecto</th><th>Descripción</th><th>Cant.</th><th>Proveedor</th><th>Encargado</th><th style="text-align:right">Monto</th><th>Estado</th><th>Avanzar</th>${state.isAdmin?'<th></th>':''}</tr></thead>
     <tbody>${filRows.length===0
-      ?`<tr><td colspan="8"><div class="empty-state">Sin compras para este filtro</div></td></tr>`
+      ?`<tr><td colspan="9"><div class="empty-state">Sin compras para este filtro</div></td></tr>`
       :filRows.map(c=>{
         const idx=COMPRA_FLUJO.indexOf(c.estado||'solicitud');
         const next=idx>=0&&idx<COMPRA_FLUJO.length-1?COMPRA_FLUJO[idx+1]:null;
@@ -2480,6 +2484,7 @@ async function renderComprasGlobal(){
           <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cantidad||'')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.proveedor||'—')}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(c.encargado||'—')}</td>
           <td style="text-align:right;font-weight:700;white-space:nowrap">${c.monto?cajaMoney(c.monto):'—'}</td>
           <td>${estadoChip(c.estado||'solicitud')}</td>
           <td>${next?`<button class="btn btn-sm btn-ghost" onclick="setCompraEstadoGlobal('${c.id}','${next}')">→ ${COMPRA_LABEL[next]}</button>`:'<span style="font-size:11px;color:var(--c-ok)">✓ Entregada</span>'}</td>
