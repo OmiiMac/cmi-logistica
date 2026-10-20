@@ -998,8 +998,8 @@ app.post('/api/admin/clear-chat', (req, res) => {
   const u = getUser(req);
   if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
   if (!isFullAdmin(u)) return res.status(403).json({ error: { message: 'Solo el administrador principal' } });
-  const count = db.prepare('SELECT COUNT(*) AS c FROM messages').get().c;
-  db.prepare('DELETE FROM messages').run();
+  const count = db.prepare('SELECT COUNT(*) AS c FROM messages WHERE project_id IS NULL').get().c;
+  db.prepare('DELETE FROM messages WHERE project_id IS NULL').run();
   broadcast({ table: 'messages', eventType: 'CLEAR', new: null, old: null });
   res.json({ data: { deleted: count }, error: null });
 });
