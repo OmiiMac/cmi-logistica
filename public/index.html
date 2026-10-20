@@ -1275,7 +1275,7 @@ function nav(view, projectId){
   state.view = view;
   state.projectId = projectId||null;
   state.search = ''; state.cat = 'all';
-  if(view==='project') state.projTab='inventario';   // abrir un proyecto empieza en Inventario
+  if(view==='project') state.projTab='graficas';   // abrir un proyecto empieza en Gráficas
   closeSidebar(); render();
 }
 
@@ -1844,8 +1844,8 @@ function renderProject(){
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-sm btn-ghost" onclick="goChat('proyecto:${proj.id}','project','${proj.id}')">💬 Chat</button>`
     + (state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'');
-  const tab = state.projTab||'inventario';
-  const tabs=[['inventario','📦 Inventario'],['caja','💵 Caja Chica'],['salidas','📤 Salidas'],['compras','🛒 Compras'],['graficas','📊 Gráficas'],['resumen','📈 Resumen'],['archivos','📎 Archivos']];
+  const tab = state.projTab||'graficas';
+  const tabs=[['graficas','📊 Gráficas'],['inventario','📦 Inventario'],['caja','💵 Caja Chica'],['salidas','📤 Salidas'],['compras','🛒 Compras'],['resumen','📈 Resumen'],['archivos','📎 Archivos']];
   document.getElementById('view').innerHTML = `
     ${engineerName?`<div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Ingeniero asignado: <b>${esc(engineerName)}</b></div>`:''}
     <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="white-space:nowrap" onclick="state.projTab='${k}';renderProject()">${l}</span>`).join('')}</div>
