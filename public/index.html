@@ -1755,13 +1755,20 @@ function clearInvEstado(){ state.invEstado=null; renderInventario(); }
 
 function renderInvLista(){
   const all = [...state.items.values()];
+  const loc = state.invLoc || 'all';               // all | bodega | proyectos
   const estF = state.invEstado||null;
   const estMatch = i => !estF || (estF==='LOW' ? (i.minStock>0&&i.quantity<=i.minStock) : i.estado===estF);
+  const locMatch = i => loc==='all' || (loc==='bodega' ? i.projectId==='bodega' : i.projectId!=='bodega');
   const items = all
+    .filter(locMatch)
     .filter(i=>state.cat==='all'||i.category===state.cat)
     .filter(i=>!state.search||i.name.toLowerCase().includes(state.search.toLowerCase()))
     .filter(estMatch)
     .sort((a,b)=>a.name.localeCompare(b.name));
+  // Cantidades totales por ubicación (sobre todo el inventario)
+  const sumQty = arr => arr.reduce((s,i)=>s+(+i.quantity||0),0);
+  const qtyBodega = sumQty(all.filter(i=>i.projectId==='bodega'));
+  const qtyProy   = sumQty(all.filter(i=>i.projectId!=='bodega'));
   const low  = all.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length;
   const noOp = all.filter(i=>i.estado==='NO_OPERATIVA').length;
   const tile = (typeof kpiTile==='function') ? kpiTile : (l,v)=>`<div class="section-card" style="text-align:center"><div style="font-size:20px;font-weight:800">${v}</div><div style="font-size:11px;color:var(--c-muted)">${l}</div></div>`;
@@ -1778,6 +1785,19 @@ function renderInvLista(){
   });
   const summary=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
   const projBreak=g=>Object.keys(g.proj).map(pid=>esc((projName(pid)||pid)+': '+g.proj[pid])).join(' · ');
+  // Tabla comparativa (Base Central vs Proyectos) — se usa en la vista "Todo"
+  const summaryHtml = `<div class="item-table"><table>
+    <thead><tr><th>Artículo</th><th style="text-align:center">🏢 Base Central</th><th style="text-align:center">🏗️ Proyectos</th><th style="text-align:center">Total</th><th>¿Dónde está en proyectos?</th></tr></thead>
+    <tbody>${summary.length===0
+      ?`<tr><td colspan="5"><div class="empty-state">Sin artículos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
+      :summary.map(g=>`<tr>
+        <td><div style="display:flex;align-items:center;gap:9px">${invThumb(g.photoId,g.name)}<b style="font-size:13px">${esc(g.name)}</b></div></td>
+        <td style="text-align:center;font-weight:700;color:${g.bodega?'#1D4ED8':'var(--c-muted)'}">${g.bodega||'—'}</td>
+        <td style="text-align:center;font-weight:700;color:${g.proy?'#9B1B30':'var(--c-muted)'}">${g.proy||'—'}</td>
+        <td style="text-align:center;font-weight:800">${g.total}</td>
+        <td style="font-size:11px;color:var(--c-muted)">${projBreak(g)||'—'}</td>
+      </tr>`).join('')}</tbody>
+  </table></div>`;
   // ── Detalle agrupado en carpetas plegables por categoría ──────
   const catOrder = CATS.map(c=>c.id);
   const byCat = new Map();
@@ -1798,7 +1818,7 @@ function renderInvLista(){
             <span style="font-size:11px;font-weight:700;color:var(--c-muted);background:var(--c-bg);border:1px solid var(--c-border);border-radius:20px;padding:2px 9px">${list.length}</span>
           </div>
           ${isOpen?`<div class="item-table" style="border:none;border-radius:0;margin:0"><table>
-            <thead><tr><th>Artículo</th><th>Proyecto</th><th>Cantidad</th><th>Unidad</th><th>Estado</th>${state.isAdmin?'<th style="text-align:center">Acciones</th>':''}</tr></thead>
+            <thead><tr><th>Artículo</th><th>${loc==='bodega'?'Ubicación':'Proyecto'}</th><th>Cantidad</th><th>Unidad</th><th>Estado</th>${state.isAdmin?'<th style="text-align:center">Acciones</th>':''}</tr></thead>
             <tbody>${list.map(i=>`
               <tr onclick="nav('project','${i.projectId}')" style="cursor:pointer">
                 <td><div style="display:flex;align-items:center;gap:9px">${invThumb(i.photoId,i.name)}<b style="font-size:13px">${esc(i.name)}</b></div></td>
@@ -1813,9 +1833,17 @@ function renderInvLista(){
               </tr>`).join('')}</tbody></table></div>`:''}
         </div>`;
       }).join('');
+  const showSummary = loc==='all' && !estF;
+  const locBtn = (val,label,sub)=>`<button onclick="state.invLoc='${val}';renderInventario()" style="flex:1;min-width:130px;padding:12px 14px;border-radius:10px;border:1.5px solid ${loc===val?'var(--c-primary)':'var(--c-border)'};background:${loc===val?'var(--c-primary-lt)':'var(--c-card)'};color:${loc===val?'var(--c-primary)':'var(--c-text)'};font-weight:700;font-size:13px;cursor:pointer;transition:all .15s;text-align:center">${label}${sub!=null?`<div style="font-size:11px;font-weight:600;opacity:.75;margin-top:2px">${sub}</div>`:''}</button>`;
   document.getElementById('invBody').innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+      ${locBtn('all','Todo', 'vista comparativa')}
+      ${locBtn('bodega','🏢 Base Central', qtyBodega+' en stock')}
+      ${locBtn('proyectos','🏗️ Proyectos', qtyProy+' repartidos')}
+    </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px">
-      ${tile('Artículos', all.length, '#1D4ED8', '#DBEAFE')}
+      ${tile('En Base Central', qtyBodega, '#1D4ED8', '#DBEAFE')}
+      ${tile('En Proyectos', qtyProy, '#9B1B30', '#FDE8EC')}
       ${tile('Stock bajo', low, low?'#D97706':'#166534', low?'#FEF3C7':'#DCFCE7')}
       ${tile('No operativos', noOp, noOp?'#DC2626':'#166534', noOp?'#FEE2E2':'#DCFCE7')}
     </div>
@@ -1834,14 +1862,16 @@ function renderInvLista(){
       <span style="font-size:13px;font-weight:700;color:${estF==='NO_OPERATIVA'?'#DC2626':'#D97706'}">Mostrando solo: ${estF==='NO_OPERATIVA'?'No operativos':'Stock bajo'} (${items.length})</span>
       <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="clearInvEstado()">✕ Quitar filtro</button>
     </div>`:''}
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;flex-wrap:wrap">
-      <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0">Detalle por categoría</h3>
-      ${catKeys.length?`<div style="display:flex;gap:6px">
-        <span class="chip" onclick="invToggleAllCats(true)">Abrir todo</span>
-        <span class="chip" onclick="invToggleAllCats(false)">Cerrar todo</span>
-      </div>`:''}
-    </div>
-    ${foldersHtml}`;
+    ${showSummary
+      ? `<div style="margin:0 0 8px"><h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0">Resumen: ¿cuánto hay en Base Central vs Proyectos?</h3></div>${summaryHtml}`
+      : `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;flex-wrap:wrap">
+          <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0">${loc==='bodega'?'Artículos en Base Central':loc==='proyectos'?'Artículos repartidos en Proyectos':'Detalle por categoría'} · por categoría</h3>
+          ${catKeys.length?`<div style="display:flex;gap:6px">
+            <span class="chip" onclick="invToggleAllCats(true)">Abrir todo</span>
+            <span class="chip" onclick="invToggleAllCats(false)">Cerrar todo</span>
+          </div>`:''}
+        </div>
+        ${foldersHtml}`}`;
 }
 // Abre/cierra una carpeta de categoría del inventario
 function toggleInvCat(catId){ state.invOpenCats=state.invOpenCats||{}; state.invOpenCats[catId]=!state.invOpenCats[catId]; renderInventario(); }
