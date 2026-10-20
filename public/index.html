@@ -601,7 +601,7 @@ html{height:100%}
       </div>
       <div class="sb-nav-item" id="nav-chat" onclick="nav('chat')">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        Chat <span id="chatUnread" hidden class="unread-badge">!</span>
+        Comunicados <span id="chatUnread" hidden class="unread-badge">!</span>
       </div>
       <div class="sb-nav-item" id="nav-asistente" onclick="openAssistant()">
         <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M12 7V4M9 13h.01M15 13h.01M2 11v4M22 11v4"/></svg>
@@ -3205,7 +3205,7 @@ async function renderUsers(){
       <div style="padding:14px 16px;display:flex;flex-direction:column;gap:16px">
         <div>
           <div style="font-size:13px;color:var(--c-text);margin-bottom:4px"><b>Limpiar chat general</b></div>
-          <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">Borra <b>todos los mensajes</b> del chat general. No afecta proyectos, inventario ni usuarios. <b>No se puede deshacer.</b></div>
+          <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">Borra <b>todos los mensajes</b> del chat general. No afecta los chats de los proyectos ni el inventario. <b>No se puede deshacer.</b></div>
           <button class="btn btn-danger" onclick="clearChat()">Borrar todos los mensajes del chat</button>
         </div>
         <div>
