@@ -2257,6 +2257,7 @@ function showCompraModal(projectId,id){
     <div class="form-group"><label>Proveedor (opcional)</label><input id="cmpProv" value="${esc(c?.proveedor||'')}" placeholder="Ej: Ferretería XYZ"></div>
     <div class="form-group"><label>Factura / comprobante (foto, opcional)</label><input type="file" id="cmpFactura" accept="image/*"></div>
     <div class="form-group"><label>Notas (opcional)</label><textarea id="cmpNotas" rows="2">${esc(c?.notas||'')}</textarea></div>
+    ${c?`<div class="form-group"><label>Estado</label><select id="cmpEstado">${COMPRA_FLUJO.map(s=>`<option value="${s}"${(c.estado||'solicitud')===s?' selected':''}>${COMPRA_LABEL[s]}</option>`).join('')}</select></div>`:''}
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCompra('${projectId}',${id?`'${id}'`:'null'})">Guardar</button></div>`);
 }
@@ -2264,6 +2265,10 @@ async function saveCompra(projectId,id){
   const descripcion=document.getElementById('cmpDesc').value.trim();
   if(!descripcion){ showToast('Describe qué se necesita','err'); return; }
   const values={descripcion,cantidad:document.getElementById('cmpCant').value.trim(),proveedor:document.getElementById('cmpProv').value.trim(),monto:parseFloat(document.getElementById('cmpMonto').value)||0,notas:document.getElementById('cmpNotas').value.trim()};
+  if(id){
+    const sel=document.getElementById('cmpEstado');
+    if(sel){ values.estado=sel.value; if(sel.value==='entregada') values.fecha_entrega=todayStr(); }
+  }
   let compraId=id;
   if(id){ const d=await api('/api/update',{table:'compras',values,filters:[{col:'id',val:id}]}); if(d.error){showToast('Error','err');return;} }
   else { const d=await api('/api/insert',{table:'compras',values:{...values,project_id:projectId,estado:'solicitud',fecha_solicitud:todayStr(),created_at:new Date().toISOString()}}); if(d.error){showToast('Error: '+d.error.message,'err');return;} compraId=d.data&&d.data[0]&&d.data[0].id; }
