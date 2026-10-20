@@ -1845,7 +1845,7 @@ function renderProject(){
     `<button class="btn btn-sm btn-ghost" onclick="goChat('proyecto:${proj.id}','project','${proj.id}')">💬 Chat</button>`
     + (state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'');
   const tab = state.projTab||'inventario';
-  const tabs=[['inventario','📦 Inventario'],['caja','💵 Caja Chica'],['salidas','📤 Salidas'],['compras','🛒 Compras'],['resumen','📈 Resumen'],['archivos','📎 Archivos']];
+  const tabs=[['inventario','📦 Inventario'],['caja','💵 Caja Chica'],['salidas','📤 Salidas'],['compras','🛒 Compras'],['graficas','📊 Gráficas'],['resumen','📈 Resumen'],['archivos','📎 Archivos']];
   document.getElementById('view').innerHTML = `
     ${engineerName?`<div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Ingeniero asignado: <b>${esc(engineerName)}</b></div>`:''}
     <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="white-space:nowrap" onclick="state.projTab='${k}';renderProject()">${l}</span>`).join('')}</div>
@@ -1853,9 +1853,60 @@ function renderProject(){
   if(tab==='caja') renderProjCaja(proj);
   else if(tab==='salidas') renderProjSalidas(proj);
   else if(tab==='compras') renderProjCompras(proj);
+  else if(tab==='graficas') renderProjGraficas(proj);
   else if(tab==='resumen') renderProjResumen(proj);
   else if(tab==='archivos') renderProjArchivos(proj);
   else renderProjInventario(proj);
+}
+let _projCharts=[]; function destroyProjCharts(){ _projCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _projCharts=[]; }
+async function renderProjGraficas(proj){
+  const b=document.getElementById('projBody'); if(!b) return;
+  b.innerHTML=`<div class="nodata" style="padding:20px">Cargando gráficas…</div>`;
+  const [sd,cj,cp,rs]=await Promise.all([
+    api('/api/select',{table:'salidas_material',filters:[{col:'project_id',val:proj.id}],limit:1000}),
+    api('/api/select',{table:'caja_chica',filters:[{col:'project_id',val:proj.id}],limit:1000}),
+    api('/api/select',{table:'compras',filters:[{col:'project_id',val:proj.id}],limit:1000}),
+    api('/api/select',{table:'obra_resumen',filters:[{col:'id',val:proj.id}],limit:1})
+  ]);
+  if(state.view!=='project'||state.projectId!==proj.id||(state.projTab||'')!=='graficas') return;
+  const salidas=sd.data||[], caja=cj.data||[], compras=cp.data||[], resumen=(rs.data||[])[0]||{};
+  const items=[...state.items.values()].filter(i=>i.projectId===proj.id);
+  // KPIs
+  const unidades=items.reduce((s,i)=>s+(+i.quantity||0),0);
+  const retirado=salidas.reduce((s,r)=>s+(+r.cantidad||0),0);
+  const ingresos=caja.filter(c=>c.tipo==='ingreso').reduce((s,c)=>s+(+c.monto||0),0);
+  const gastos=caja.filter(c=>c.tipo==='gasto').reduce((s,c)=>s+(+c.monto||0),0);
+  const avance=+resumen.avance_pct||0;
+  b.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Unidades en stock',unidades,'#1D4ED8','rgba(29,78,216,.14)')}
+      ${kpiTile('Material retirado',(+retirado.toFixed(2)),'#D97706','rgba(217,119,6,.14)')}
+      ${kpiTile('Saldo caja chica',money(ingresos-gastos),(ingresos-gastos)<0?'#DC2626':'#166534',(ingresos-gastos)<0?'rgba(220,38,38,.14)':'rgba(22,101,52,.14)')}
+      ${kpiTile('Avance del proyecto',avance+'%','#7C3AED','rgba(124,58,237,.14)')}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;max-width:900px">
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">📦 Inventario por categoría</h3><div style="position:relative;height:260px"><canvas id="chProjCat"></canvas></div></div>
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">📤 Material más retirado</h3><div style="position:relative;height:260px"><canvas id="chProjUso"></canvas></div></div>
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">💵 Caja chica: ingresos vs gastos</h3><div style="position:relative;height:260px"><canvas id="chProjCaja"></canvas></div></div>
+      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">🛒 Compras por estado</h3><div style="position:relative;height:260px"><canvas id="chProjCompras"></canvas></div></div>
+    </div>`;
+  destroyProjCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
+  const noData=(id,txt)=>{ const e=document.getElementById(id); if(e) e.parentElement.innerHTML='<div class="nodata" style="font-size:12px;padding:40px">'+txt+'</div>'; };
+  // 1) Inventario por categoría
+  const catC={}; items.forEach(i=>{ const k=i.category||'otros'; catC[k]=(catC[k]||0)+1; });
+  const catK=Object.keys(catC);
+  if(catK.length){ const e=document.getElementById('chProjCat'); if(e) _projCharts.push(new Chart(e,{type:'doughnut',data:{labels:catK.map(k=>(CATS.find(c=>c.id===k)||{}).label||k),datasets:[{data:catK.map(k=>catC[k]),backgroundColor:catK.map(k=>CAT_COLOR[k]||'#6B6B78'),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12,padding:8}}}}})); } else noData('chProjCat','Sin artículos en este proyecto');
+  // 2) Material más retirado (top 8 por nombre)
+  const uso={}; salidas.forEach(r=>{ const k=r.item_name||'—'; uso[k]=(uso[k]||0)+(+r.cantidad||0); });
+  const usoK=Object.keys(uso).sort((a,b)=>uso[b]-uso[a]).slice(0,8);
+  if(usoK.length){ const e=document.getElementById('chProjUso'); if(e) _projCharts.push(new Chart(e,{type:'bar',data:{labels:usoK,datasets:[{label:'Retirado',data:usoK.map(k=>+uso[k].toFixed(2)),backgroundColor:'#D97706',borderRadius:6}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})})); } else noData('chProjUso','Aún no hay retiros de material');
+  // 3) Caja chica ingresos vs gastos
+  if(ingresos||gastos){ const e=document.getElementById('chProjCaja'); if(e) _projCharts.push(new Chart(e,{type:'bar',data:{labels:['Ingresos','Gastos'],datasets:[{data:[ingresos,gastos],backgroundColor:['#166534','#DC2626'],borderRadius:6}]},options:chartOpts({plugins:{legend:{display:false}}})})); } else noData('chProjCaja','Sin movimientos de caja chica');
+  // 4) Compras por estado
+  const COMPRA_LBL={solicitud:'Solicitud',cotizada:'Cotizada',aprobada:'Aprobada',en_camino:'En camino',entregada:'Entregada'};
+  const compC={}; compras.forEach(c=>{ const k=c.estado||'solicitud'; compC[k]=(compC[k]||0)+1; });
+  const compK=Object.keys(compC);
+  if(compK.length){ const e=document.getElementById('chProjCompras'); if(e) _projCharts.push(new Chart(e,{type:'doughnut',data:{labels:compK.map(k=>COMPRA_LBL[k]||k),datasets:[{data:compK.map(k=>compC[k]),backgroundColor:CHART_PALETTE,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12,padding:8}}}}})); } else noData('chProjCompras','Sin compras registradas');
 }
 
 async function renderProjInventario(proj){
