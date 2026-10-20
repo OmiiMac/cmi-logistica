@@ -3454,14 +3454,17 @@ function drawMessages(){
   let html = '';
   let lastDate = '';
   msgs.forEach(m => {
-    const d = m.created_at.slice(0,10);
+    const rawTs = m.created_at.replace(' ','T');
+    const tsZ = (rawTs.endsWith('Z')||rawTs.includes('+')) ? rawTs : rawTs+'Z';
+    const dtPA = new Date(tsZ);
+    const d = dtPA.toLocaleDateString('en-CA',{timeZone:'America/Panama'});
     if(d !== lastDate){
       lastDate = d;
       html += `<div class="chat-date-sep">${fmtDateLong(d)}</div>`;
     }
     const mine = m.user_id === state.userId;
     const name = state.profiles[m.user_id] || 'Usuario';
-    const time = m.created_at.slice(11,16);
+    const time = dtPA.toLocaleTimeString('es-PA',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:'America/Panama'});
     const initials = name.slice(0,2).toUpperCase();
     const img = m.file_id ? `<a href="${fileUrl(m.file_id)}" target="_blank"><img src="${fileUrl(m.file_id)}" loading="lazy" style="max-width:220px;max-height:240px;border-radius:10px;display:block;${m.content?'margin-bottom:6px':''}"></a>` : '';
     html += `<div class="msg-row ${mine?'mine':'other'}">
