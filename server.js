@@ -380,6 +380,22 @@ CREATE TABLE IF NOT EXISTS compras (
   updated_at    TEXT
 );
 
+-- Costos ejecutados del proyecto por rubro (mano de obra, material, equipo, transporte).
+CREATE TABLE IF NOT EXISTS proyecto_costos (
+  id             TEXT PRIMARY KEY,
+  project_id     TEXT NOT NULL,
+  rubro          TEXT NOT NULL,  -- mano_obra | material | equipo | transporte
+  concepto       TEXT,
+  monto          REAL DEFAULT 0,
+  fecha          TEXT,
+  proveedor      TEXT,
+  comprobante_file TEXT,
+  notas          TEXT,
+  created_by     TEXT,
+  created_at     TEXT,
+  updated_at     TEXT
+);
+
 -- Resumen gerencial por proyecto (avance físico y presupuesto). Una fila por proyecto (id = project_id).
 CREATE TABLE IF NOT EXISTS obra_resumen (
   id           TEXT PRIMARY KEY,
@@ -471,7 +487,8 @@ const SCHEMA = {
   salidas_material: ['id', 'project_id', 'item_id', 'item_name', 'cantidad', 'unidad', 'actividad', 'area', 'fecha', 'notas', 'created_by', 'created_at', 'updated_at'],
   compras:      ['id', 'project_id', 'descripcion', 'cantidad', 'proveedor', 'monto', 'estado', 'fecha_solicitud', 'fecha_entrega', 'aprobado_por', 'factura_file', 'notas', 'created_by', 'created_at', 'updated_at'],
   obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at'],
-  lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at']
+  lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at'],
+  proyecto_costos: ['id', 'project_id', 'rubro', 'concepto', 'monto', 'fecha', 'proveedor', 'comprobante_file', 'notas', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
