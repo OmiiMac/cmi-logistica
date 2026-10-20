@@ -1435,11 +1435,11 @@ function renderDashboard(){
       </div>
     </div>
     <div class="greeting-kpis">
-      <div class="greeting-kpi">
+      <div class="greeting-kpi" onclick="nav('rutas')" style="cursor:pointer">
         <div class="greeting-kpi-val">${todayRutas.length}</div>
         <div class="greeting-kpi-label">Rutas hoy</div>
       </div>
-      <div class="greeting-kpi">
+      <div class="greeting-kpi" onclick="nav('inventario')" style="cursor:pointer">
         <div class="greeting-kpi-val">${totalItems}</div>
         <div class="greeting-kpi-label">Artículos</div>
       </div>
@@ -1447,40 +1447,40 @@ function renderDashboard(){
   </div>
   ${alerts}
   <div class="stat-grid">
-    <div class="stat-card" style="--stat-color:#9B1B30">
+    <div class="stat-card" onclick="nav('inventario')" style="--stat-color:#9B1B30;cursor:pointer">
       <div class="stat-icon" style="background:rgba(155,27,48,.12);color:#9B1B30"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/></svg></div>
       <div class="stat-val" style="color:#9B1B30">${totalItems}</div>
       <div class="stat-label">Total Artículos</div>
     </div>
-    <div class="stat-card" style="--stat-color:#1D4ED8">
+    <div class="stat-card" onclick="nav('inventario')" style="--stat-color:#1D4ED8;cursor:pointer">
       <div class="stat-icon" style="background:rgba(29,78,216,.12);color:#1D4ED8"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
       <div class="stat-val" style="color:#1D4ED8">${activeProj}</div>
       <div class="stat-label">Proyectos Activos</div>
     </div>
-    <div class="stat-card" style="--stat-color:#DC2626">
+    <div class="stat-card" onclick="goInvEstado('NO_OPERATIVA')" style="--stat-color:#DC2626;cursor:pointer">
       <div class="stat-icon" style="background:rgba(220,38,38,.12);color:#DC2626"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
       <div class="stat-val" style="color:#DC2626">${noOp}</div>
       <div class="stat-label">No Operativa</div>
     </div>
-    <div class="stat-card" style="--stat-color:#D97706">
+    <div class="stat-card" onclick="goInvEstado('LOW')" style="--stat-color:#D97706;cursor:pointer">
       <div class="stat-icon" style="background:rgba(217,119,6,.12);color:#D97706"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div>
       <div class="stat-val" style="color:#D97706">${lowStock}</div>
       <div class="stat-label">Stock Bajo</div>
     </div>
     ${canModule('licit') ? `
-    <div class="stat-card" style="--stat-color:#0F766E">
+    <div class="stat-card" onclick="nav('licitaciones')" style="--stat-color:#0F766E;cursor:pointer">
       <div class="stat-icon" style="background:rgba(15,118,110,.12);color:#0F766E"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13l2 2 4-4"/></svg></div>
       <div class="stat-val" id="dashLicit" style="color:#0F766E">…</div>
       <div class="stat-label">Licitaciones</div>
     </div>` : ''}
     ${canModule('mkt') ? `
-    <div class="stat-card" style="--stat-color:#BE185D">
+    <div class="stat-card" onclick="nav('mercadeo')" style="--stat-color:#BE185D;cursor:pointer">
       <div class="stat-icon" style="background:rgba(190,24,93,.12);color:#BE185D"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 11-5.8-1.6"/></svg></div>
       <div class="stat-val" id="dashMkt" style="color:#BE185D">…</div>
       <div class="stat-label">Campañas</div>
     </div>` : ''}
     ${canModule('conta') ? `
-    <div class="stat-card" style="--stat-color:#7C3AED">
+    <div class="stat-card" onclick="nav('contabilidad')" style="--stat-color:#7C3AED;cursor:pointer">
       <div class="stat-icon" style="background:rgba(124,58,237,.12);color:#7C3AED"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M8 10h8M8 14h5"/></svg></div>
       <div class="stat-val" id="dashConta" style="color:#7C3AED">…</div>
       <div class="stat-label">Contabilidad</div>
@@ -1661,11 +1661,37 @@ function renderInventario(){
   if(tab==='archivos'){ renderInvArchivos(); return; }
   renderInvLista();
 }
+// Ver una foto en grande (lightbox). Se usa en inventario, proyectos y detalle.
+function openPhoto(url,title){
+  if(!url) return;
+  let o=document.getElementById('photoLightbox');
+  if(!o){ o=document.createElement('div'); o.id='photoLightbox'; document.body.appendChild(o); }
+  o.onclick=()=>o.remove();
+  o.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';
+  o.innerHTML=`<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:12px">
+    <img src="${url}" style="max-width:94vw;max-height:86vh;object-fit:contain;border-radius:12px;box-shadow:0 12px 50px rgba(0,0,0,.7)">
+    ${title?`<div style="color:#fff;font-size:15px;font-weight:600;text-align:center">${esc(title)}</div>`:''}
+    <button onclick="event.stopPropagation();document.getElementById('photoLightbox').remove()" title="Cerrar" style="position:absolute;top:-10px;right:-10px;width:36px;height:36px;border-radius:50%;border:none;background:#fff;color:#111;font-size:22px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4)">×</button>
+  </div>`;
+}
+function invThumb(photoId,name,size){
+  size=size||34;
+  if(!photoId) return `<div style="width:${size}px;height:${size}px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`;
+  const u=fileUrl(photoId);
+  return `<img src="${u}" loading="lazy" onclick="event.stopPropagation();openPhoto('${u}','${(name||'').replace(/'/g,"\\'")}')" title="Ver foto en grande" style="width:${size}px;height:${size}px;object-fit:cover;border-radius:6px;flex:none;cursor:zoom-in">`;
+}
+// Desde las casillas del Dashboard: filtrar el inventario por estado.
+function goInvEstado(estado){ state.invEstado=estado; state.cat='all'; state.search=''; nav('inventario'); }
+function clearInvEstado(){ state.invEstado=null; renderInventario(); }
+
 function renderInvLista(){
   const all = [...state.items.values()];
+  const estF = state.invEstado||null;
+  const estMatch = i => !estF || (estF==='LOW' ? (i.minStock>0&&i.quantity<=i.minStock) : i.estado===estF);
   const items = all
     .filter(i=>state.cat==='all'||i.category===state.cat)
     .filter(i=>!state.search||i.name.toLowerCase().includes(state.search.toLowerCase()))
+    .filter(estMatch)
     .sort((a,b)=>a.name.localeCompare(b.name));
   const low  = all.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length;
   const noOp = all.filter(i=>i.estado==='NO_OPERATIVA').length;
@@ -1693,7 +1719,7 @@ function renderInvLista(){
   const foldersHtml = catKeys.length===0
     ? `<div class="empty-state">Sin artículos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div>`
     : catKeys.map(k=>{
-        const list=byCat.get(k), isOpen=!!open[k];
+        const list=byCat.get(k), isOpen=!!open[k]||!!estF;
         const label=(CATS.find(c=>c.id===k)||{}).label||k, color=CAT_COLOR[k]||'#6B6B78';
         return `<div style="border:1px solid var(--c-border);border-radius:10px;margin-bottom:8px;overflow:hidden">
           <div onclick="toggleInvCat('${k}')" style="display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;user-select:none">
@@ -1706,7 +1732,7 @@ function renderInvLista(){
             <thead><tr><th>Artículo</th><th>Proyecto</th><th>Cantidad</th><th>Unidad</th><th>Estado</th>${state.isAdmin?'<th style="text-align:center">Acciones</th>':''}</tr></thead>
             <tbody>${list.map(i=>`
               <tr onclick="nav('project','${i.projectId}')" style="cursor:pointer">
-                <td><div style="display:flex;align-items:center;gap:9px">${i.photoId?`<img src="${fileUrl(i.photoId)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(i.name)}</b></div></td>
+                <td><div style="display:flex;align-items:center;gap:9px">${invThumb(i.photoId,i.name)}<b style="font-size:13px">${esc(i.name)}</b></div></td>
                 <td style="font-size:12px;color:var(--c-muted)">${esc(projName(i.projectId))}</td>
                 <td>${i.quantity}${i.minStock>0&&i.quantity<=i.minStock?' <span style="color:#D97706;font-size:11px">⚠</span>':''}</td>
                 <td style="font-size:12px;color:var(--c-muted)">${esc(i.unit)}</td>
@@ -1735,6 +1761,10 @@ function renderInvLista(){
       </div>
       <button class="btn btn-sm btn-primary" onclick="showItemModal()">+ Artículo</button>
     </div>
+    ${estF?`<div style="display:flex;align-items:center;gap:10px;background:${estF==='NO_OPERATIVA'?'rgba(220,38,38,.12)':'rgba(217,119,6,.12)'};border:1px solid var(--c-border);border-radius:10px;padding:8px 12px;margin:0 0 10px">
+      <span style="font-size:13px;font-weight:700;color:${estF==='NO_OPERATIVA'?'#DC2626':'#D97706'}">Mostrando solo: ${estF==='NO_OPERATIVA'?'No operativos':'Stock bajo'} (${items.length})</span>
+      <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="clearInvEstado()">✕ Quitar filtro</button>
+    </div>`:''}
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;flex-wrap:wrap">
       <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0">Detalle por categoría</h3>
       ${catKeys.length?`<div style="display:flex;gap:6px">
@@ -1828,13 +1858,17 @@ function renderProject(){
   else renderProjInventario(proj);
 }
 
-function renderProjInventario(proj){
+async function renderProjInventario(proj){
   const b=document.getElementById('projBody'); if(!b) return;
   const items = [...state.items.values()]
     .filter(i=>i.projectId===proj.id)
     .filter(i=>state.cat==='all'||i.category===state.cat)
     .filter(i=>!state.search||i.name.toLowerCase().includes(state.search.toLowerCase()))
     .sort((a,b)=>a.name.localeCompare(b.name));
+  // Totales de material retirado (salidas) por artículo, para el conteo con fecha
+  const sd = await api('/api/select',{table:'salidas_material',filters:[{col:'project_id',val:proj.id}],limit:1000});
+  if(state.view!=='project'||state.projectId!==proj.id||(state.projTab||'')!=='inventario') return;
+  const usado={}; (sd.data||[]).forEach(r=>{ const k=r.item_id; if(!k) return; const u=usado[k]||(usado[k]={tot:0,last:''}); u.tot+=(+r.cantidad||0); if((r.fecha||'')>u.last) u.last=r.fecha||''; });
   b.innerHTML = `
   <div class="toolbar">
     <div class="search-wrap">
@@ -1847,25 +1881,29 @@ function renderProjInventario(proj){
       ${CATS.map(c=>`<span class="chip ${state.cat===c.id?'active':''}" onclick="state.cat='${c.id}';renderProject()">${c.label}</span>`).join('')}
     </div>
     <button class="btn btn-sm btn-primary" onclick="showItemModal()">+ Articulo</button>
+    <button class="btn btn-sm btn-ghost" onclick="state.projTab='salidas';renderProject()" title="Ver todas las salidas con su fecha">📋 Historial de retiros</button>
     ${state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showTransferModal()">Transferir</button>`:''}
   </div>
   <div class="item-table">
     <table>
       <thead><tr>
-        <th>Articulo</th><th>Categoria</th><th>Cantidad</th><th>Unidad</th><th>Estado</th><th>Notas</th><th></th>
+        <th>Articulo</th><th>Categoria</th><th>Disponible</th><th>Unidad</th><th>Usado (retirado)</th><th>Estado</th><th></th>
       </tr></thead>
       <tbody>
         ${items.length===0
           ?`<tr><td colspan="7"><div class="empty-state">Sin articulos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
-          :items.map(item=>`
+          :items.map(item=>{ const u=usado[item.id]; return `
           <tr>
-            <td><div style="display:flex;align-items:center;gap:9px">${item.photoId?`<img src="${fileUrl(item.photoId)}" loading="lazy" style="width:34px;height:34px;object-fit:cover;border-radius:6px;flex:none">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--c-bg);border:1px solid var(--c-border);flex:none"></div>`}<b style="font-size:13px">${esc(item.name)}</b></div></td>
+            <td><div style="display:flex;align-items:center;gap:9px">${invThumb(item.photoId,item.name)}<b style="font-size:13px">${esc(item.name)}</b></div></td>
             <td>${catChip(item.category)}</td>
             <td><span class="qty-num ${item.minStock>0&&item.quantity<=item.minStock?'qty-low':''}">${item.quantity}</span></td>
             <td style="color:var(--c-muted);font-size:12px">${esc(item.unit)}</td>
+            <td style="font-size:12px">${u?`<b>${(+u.tot.toFixed(2))} ${esc(item.unit||'')}</b>${u.last?`<div style="color:var(--c-muted);font-size:11px">últ. retiro: ${esc(u.last)}</div>`:''}`:'<span style="color:var(--c-muted)">—</span>'}</td>
             <td><span class="estado-chip ${item.estado}">${item.estado.replace('_',' ')}</span></td>
-            <td style="font-size:12px;color:var(--c-muted);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(item.notes)}</td>
             <td style="white-space:nowrap">
+              <button class="act-btn" onclick="showSalidaModal('${proj.id}','${item.id}')" title="Registrar retiro / uso (descuenta del stock)" style="color:var(--c-primary)">
+                <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+              </button>
               <button class="act-btn" onclick="showItemModal('${item.id}')" title="Editar">
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
               </button>
@@ -1873,7 +1911,7 @@ function renderProjInventario(proj){
                 <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
               </button>`:''}
             </td>
-          </tr>`).join('')}
+          </tr>`;}).join('')}
       </tbody>
     </table>
   </div>`;
@@ -1978,11 +2016,11 @@ async function renderProjSalidas(proj){
   const rows=d.data||[];
   b.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-sm btn-primary" onclick="showSalidaModal('${proj.id}')">📤 Registrar salida de material</button>
-      <span style="font-size:11px;color:var(--c-muted)">Al registrar una salida se descuenta del inventario del proyecto.</span>
+      <button class="btn btn-sm btn-primary" onclick="showSalidaModal('${proj.id}')">📤 Registrar retiro de material</button>
+      <span style="font-size:11px;color:var(--c-muted)">Al registrar un retiro se descuenta del inventario del proyecto.</span>
     </div>
     <div class="item-table"><table>
-      <thead><tr><th>Fecha</th><th>Material</th><th style="text-align:right">Cantidad</th><th>Actividad</th><th>Área</th>${state.isAdmin?'<th></th>':''}</tr></thead>
+      <thead><tr><th>Fecha de retiro</th><th>Material</th><th style="text-align:right">Cantidad</th><th>Actividad</th><th>Área</th>${state.isAdmin?'<th></th>':''}</tr></thead>
       <tbody>${rows.length===0?`<tr><td colspan="6"><div class="empty-state">Sin salidas registradas aún</div></td></tr>`:rows.map(r=>`
         <tr>
           <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(r.fecha||'')}</td>
@@ -1994,18 +2032,18 @@ async function renderProjSalidas(proj){
         </tr>`).join('')}</tbody>
     </table></div>`;
 }
-function showSalidaModal(projectId){
+function showSalidaModal(projectId,preItemId){
   const items=[...state.items.values()].filter(i=>i.projectId===projectId).sort((a,b)=>a.name.localeCompare(b.name));
   if(!items.length){ showToast('Este proyecto no tiene artículos en inventario','err'); return; }
   openModal(`
-  <div class="modal-head"><h2>Registrar salida de material</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-head"><h2>Registrar retiro de material</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-group"><label>Material (del inventario del proyecto)</label>
-      <select id="salItem">${items.map(i=>`<option value="${i.id}">${esc(i.name)} — disponible ${i.quantity} ${esc(i.unit||'')}</option>`).join('')}</select>
+      <select id="salItem">${items.map(i=>`<option value="${i.id}" ${preItemId===i.id?'selected':''}>${esc(i.name)} — disponible ${i.quantity} ${esc(i.unit||'')}</option>`).join('')}</select>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Cantidad usada</label><input id="salCant" type="number" min="0" step="0.01" value=""></div>
-      <div class="form-group"><label>Fecha</label><input id="salFecha" type="date" value="${todayStr()}"></div>
+      <div class="form-group"><label>Fecha de retiro</label><input id="salFecha" type="date" value="${todayStr()}"></div>
     </div>
     <div class="form-group"><label>¿En qué actividad se usó?</label><input id="salActividad" placeholder="Ej: Pintura de paredes, Repello…"></div>
     <div class="form-group"><label>¿En qué edificación / área?</label><input id="salArea" placeholder="Ej: Torre A, piso 3, apartamento 302"></div>
@@ -2741,7 +2779,7 @@ function showItemModal(id){
       <label>Foto del artículo</label>
       <div style="display:flex;align-items:center;gap:12px">
         ${item?.photoId
-          ? `<img src="${fileUrl(item.photoId)}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border)">`
+          ? `<img src="${fileUrl(item.photoId)}" onclick="openPhoto('${fileUrl(item.photoId)}','${(item.name||'').replace(/'/g,"\\'")}')" title="Ver foto en grande" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border);cursor:zoom-in">`
           : `<div style="width:56px;height:56px;border-radius:8px;border:1px dashed var(--c-border);display:flex;align-items:center;justify-content:center;color:var(--c-muted);font-size:10px;text-align:center">sin<br>foto</div>`}
         <input type="file" id="iPhoto" accept="image/*" style="flex:1">
       </div>
