@@ -1529,11 +1529,12 @@ function renderDashboard(){
       <div class="stat-val" style="color:#D97706">${lowStock}</div>
       <div class="stat-label">Stock Bajo</div>
     </div>
+    ${(state.isAdmin||state.isContador)?`
     <div class="stat-card" onclick="nav('comprasGlobal')" style="--stat-color:#EA580C;cursor:pointer">
       <div class="stat-icon" style="background:rgba(234,88,12,.12);color:#EA580C"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.66a2 2 0 001.99-1.61L23 6H6"/></svg></div>
       <div class="stat-val" id="dashCompras" style="color:#EA580C">…</div>
       <div class="stat-label">Compras</div>
-    </div>
+    </div>`:''}
     ${canModule('licit') ? `
     <div class="stat-card" onclick="nav('licitaciones')" style="--stat-color:#0F766E;cursor:pointer">
       <div class="stat-icon" style="background:rgba(15,118,110,.12);color:#0F766E"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13l2 2 4-4"/></svg></div>
@@ -1657,7 +1658,7 @@ function renderDashboard(){
   if(canModule('licit')) sb.from('licitaciones').select('id').then(({data})=>{ const el=document.getElementById('dashLicit'); if(el) el.textContent=(data||[]).length; });
   if(canModule('mkt'))   sb.from('campanas').select('id').then(({data})=>{ const el=document.getElementById('dashMkt'); if(el) el.textContent=(data||[]).length; });
   if(canModule('conta')) sb.from('asientos').select('id').then(({data})=>{ const el=document.getElementById('dashConta'); if(el) el.textContent=(data||[]).length; });
-  api('/api/select',{table:'compras',limit:5000}).then(d=>{ const el=document.getElementById('dashCompras'); if(el) el.textContent=(d.data||[]).length; });
+  if(state.isAdmin||state.isContador) api('/api/select',{table:'compras',limit:5000}).then(d=>{ const el=document.getElementById('dashCompras'); if(el) el.textContent=(d.data||[]).length; });
 
   // Listado de licitaciones en el panel lateral (para quien tenga acceso)
   if(canModule('licit')) sb.from('licitaciones').select('*').order('created_at',{ascending:false}).then(({data})=>{
@@ -2300,6 +2301,7 @@ async function deleteCompra(id){
 
 // ── Vista global de compras (todos los proyectos) ──────────────
 async function renderComprasGlobal(){
+  if(!state.isAdmin && !state.isContador){ nav('dashboard'); return; }
   setTopbar('Compras — Todos los proyectos');
   const b=document.getElementById('view'); if(!b) return;
   b.innerHTML='<div class="nodata" style="padding:40px">Cargando compras…</div>';
