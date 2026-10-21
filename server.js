@@ -521,6 +521,13 @@ function fileModule(scope, refId) {
 function isFullAdmin(user) {
   return !!user && user.role === 'admin' && !(user.restrict_mods && String(user.restrict_mods).trim());
 }
+// Tablas financieras/confidenciales del proyecto: los supervisores no las ven ni editan.
+// (Contabilidad, licitaciones y mercadeo ya quedan fuera por módulo en roleCan.)
+const FINANZAS_PROYECTO = new Set(['caja_chica', 'compras', 'proyecto_costos', 'obra_resumen']);
+function supervisorBloqueado(table, user) {
+  return !!user && user.role === 'supervisor' && FINANZAS_PROYECTO.has(table);
+}
+
 function roleCan(module, user) {
   if (!module) return true;               // tabla no restringida
   if (!user) return false;
@@ -1052,12 +1059,15 @@ function canWrite(table, op, user, values, filters) {
       return op === 'insert';
     case 'equipo_movs':
       return op === 'delete' ? user.role === 'admin' : true; // crear/editar: cualquier activo; borrar: admin
-    case 'caja_chica':
     case 'salidas_material':
+      return op === 'delete' ? user.role === 'admin' : true; // logística de material: cualquier activo; borrar: admin
+    case 'caja_chica':
     case 'compras':
     case 'proyecto_costos':
+      if (user.role === 'supervisor') return false; // financiero del proyecto: confidencial para supervisores
       return op === 'delete' ? user.role === 'admin' : true; // registrar/editar: cualquier activo; borrar: admin
     case 'obra_resumen':
+      if (user.role === 'supervisor') return false; // presupuesto: confidencial para supervisores
       return op !== 'delete'; // crear/actualizar: cualquier activo; no se borra
     case 'messages':
       if (op !== 'insert') return false;
@@ -1206,6 +1216,7 @@ app.post('/api/select', (req, res) => {
   if (table === 'messages' && !((req.body.filters || []).some(f => f.col === 'room')))
     return res.status(400).json({ data: null, error: { message: 'Falta la sala del chat' } });
   if (!roleCan(module, u)) return res.status(403).json({ data: null, error: { message: 'No autorizado' } });
+  if (supervisorBloqueado(table, u)) return res.status(403).json({ data: null, error: { message: 'Información confidencial' } });
   try { res.json({ data: runSelect(table, req.body), error: null }); }
   catch (e) { res.json({ data: null, error: { message: e.message } }); }
 });

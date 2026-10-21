@@ -1959,8 +1959,14 @@ function renderProject(){
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-sm btn-ghost" onclick="goChat('proyecto:${proj.id}','project','${proj.id}')">💬 Chat</button>`
     + (state.isAdmin?`<button class="btn btn-sm btn-ghost" onclick="showProjectModal('${proj.id}')">Editar</button>`:'');
-  const tab = state.projTab||'graficas';
-  const tabs=[['graficas','Gráficas'],['inventario','Inventario'],['caja','Caja Chica'],['salidas','Salidas'],['compras','Compras'],['costos','Costos'],['resumen','Resumen'],['archivos','Archivos']];
+  // Los supervisores solo ven lo logístico del proyecto (inventario y salidas de material),
+  // nada financiero ni confidencial (caja chica, compras, costos, resumen, gráficas con montos).
+  const soloLogistica = state.isSupervisor && !state.isAdmin;
+  const tabs = soloLogistica
+    ? [['inventario','Inventario'],['salidas','Salidas']]
+    : [['graficas','Gráficas'],['inventario','Inventario'],['caja','Caja Chica'],['salidas','Salidas'],['compras','Compras'],['costos','Costos'],['resumen','Resumen'],['archivos','Archivos']];
+  let tab = state.projTab||(soloLogistica?'inventario':'graficas');
+  if(soloLogistica && !tabs.some(([k])=>k===tab)) tab='inventario';   // nunca caer en una pestaña financiera
   document.getElementById('view').innerHTML = `
     ${engineerName?`<div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Ingeniero asignado: <b>${esc(engineerName)}</b></div>`:''}
     <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px" onclick="state.projTab='${k}';renderProject()">${tabIcon(k)}${l}</span>`).join('')}</div>
