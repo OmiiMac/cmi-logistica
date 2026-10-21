@@ -829,6 +829,7 @@ async function doLogout(){
   state.userId=null;state.userName='';state.isAdmin=false;state.isSupervisor=false;state.restrict='';
   state.projects.clear();state.items.clear();state.transfers=[];state.rutas=[];
   closeSSE();
+  stopAutoRefresh();
   showLogin();
 }
 
@@ -990,6 +991,35 @@ function setupRealtime(){
   _sse.onerror=()=>{ closeSSE(); setTimeout(setupRealtime,8000); };
 }
 function closeSSE(){ if(_sse){_sse.close();_sse=null;} }
+
+// ── Auto-actualización periódica (red de seguridad sobre el tiempo real) ──
+// Aunque el canal en vivo (SSE) se caiga tras un rato de inactividad, la
+// página se mantiene al día sola: recarga los datos cada pocos segundos,
+// reabre la conexión si murió y refresca al instante al volver a la pestaña.
+let _autoRefreshTimer=null, _autoRefreshBound=false;
+async function autoRefresh(){
+  if(!getToken()) return;                                   // sin sesión: nada
+  if(!_sse || _sse.readyState===2) setupRealtime();         // reabrir canal si se cayó (2 = CLOSED)
+  // No interrumpir: formularios abiertos o mientras el usuario escribe.
+  const modalOpen = !document.getElementById('modalWrap').hidden;
+  const ae = document.activeElement;
+  const typing = ae && (ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.isContentEditable);
+  if(modalOpen || typing) return;                           // se reintenta en el próximo ciclo
+  try { await loadAll(); } catch(e){ return; }
+  try { await refreshChatUnread(); } catch(e){}
+  // Re-dibujar solo las vistas de monitoreo (evita saltos en formularios/proyecto).
+  if(['dashboard','rutas','transfers','inventario'].includes(state.view)) render();
+}
+function startAutoRefresh(){
+  stopAutoRefresh();
+  _autoRefreshTimer = setInterval(autoRefresh, 25000);      // cada 25 segundos
+  if(!_autoRefreshBound){
+    _autoRefreshBound = true;
+    document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') autoRefresh(); });
+    window.addEventListener('focus', autoRefresh);          // al volver a la ventana, al instante
+  }
+}
+function stopAutoRefresh(){ if(_autoRefreshTimer){ clearInterval(_autoRefreshTimer); _autoRefreshTimer=null; } }
 
 // ── Notificaciones de chat sin leer ───────────────────────────
 // Canales fijos con badge en el menú (ademas de 'general' y los de proyecto).
@@ -3931,6 +3961,7 @@ async function initApp(){
   await loadAll();
   await refreshChatUnread();
   setupRealtime();
+  startAutoRefresh();   // mantiene la página al día sola (rutas, inventario, etc.)
   render();
 }
 
