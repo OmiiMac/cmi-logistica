@@ -1055,6 +1055,7 @@ function canWrite(table, op, user, values, filters) {
     case 'caja_chica':
     case 'salidas_material':
     case 'compras':
+    case 'proyecto_costos':
       return op === 'delete' ? user.role === 'admin' : true; // registrar/editar: cualquier activo; borrar: admin
     case 'obra_resumen':
       return op !== 'delete'; // crear/actualizar: cualquier activo; no se borra
@@ -1087,6 +1088,8 @@ function canWrite(table, op, user, values, filters) {
       }
       return true; // crear/editar: admin + supervisor
     }
+    case 'lic_competidores':
+      return roleCan('licit', user); // competidores: admin + rol licitaciones (crear/editar/borrar)
     // ── Mercadeo ──
     case 'campanas':
     case 'publicaciones':

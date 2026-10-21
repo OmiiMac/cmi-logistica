@@ -4578,6 +4578,7 @@ async function openLicDetail(id){
   ]);
   const docs=docsRes.data||[];
   const competidores=compRes.data||[];
+  state._licCompCache=competidores;
   const estSel=canEdit?`<div class="form-group" style="margin-top:12px"><label>Estado</label><select onchange="setLicEstado('${id}',this.value)">${Object.entries(LIC_ESTADOS).filter(([k])=>k!=='aprobada'&&k!=='rechazada').map(([k,v])=>`<option value="${k}" ${l.estado===k?'selected':''}>${v}</option>`).join('')}</select></div>`:'';
   const infoItems=[
     l.entidad?`<div><b>Entidad:</b> ${esc(l.entidad)}</div>`:'',
@@ -4600,7 +4601,7 @@ async function openLicDetail(id){
     <td style="text-align:right;font-weight:700;color:var(--c-text)">${c.monto?money(c.monto):'—'}</td>
     <td><span style="font-size:10px;font-weight:700;color:#fff;background:${RES_COLOR[c.resultado]||'#6B7280'};padding:2px 7px;border-radius:20px">${RES_LABEL[c.resultado]||c.resultado}</span></td>
     <td style="font-size:11px;color:var(--c-muted)">${esc(c.notas||'')}</td>
-    ${canEdit?`<td><button class="act-btn del" onclick="deleteCompetidor('${c.id}','${id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>`:''}
+    ${canEdit?`<td style="white-space:nowrap"><button class="act-btn" onclick="showAddCompetidorModal('${id}',0,'${c.id}')" title="Editar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="deleteCompetidor('${c.id}','${id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>`:''}
   </tr>`).join('');
   const hasMontos=competidores.some(c=>c.monto)||l.precio_costo||l.monto_estimado;
   openModal(`
@@ -4645,30 +4646,34 @@ function drawLicCompChart(l, competidores){
   if(window._licCompChart) try{window._licCompChart.destroy()}catch(e){}
   window._licCompChart=new Chart(e,{type:'bar',data:{labels,datasets:[{label:'Monto ofertado',data:montos,backgroundColor:colors,borderRadius:4}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+money(ctx.raw)}}},scales:{x:{ticks:{callback:v=>money(v)}}}}});
 }
-function showAddCompetidorModal(licId, miMonto){
+function showAddCompetidorModal(licId, miMonto, id){
+  const c = id ? (state._licCompCache||[]).find(x=>x.id===id) : null;
+  const res=c?.resultado||'sin_info';
   openModal(`
-    <div class="modal-head"><h2>Agregar competidor</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h2>${c?'Editar competidor':'Agregar competidor'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <div class="form-group"><label>Empresa / Competidor</label><input id="compNombre" placeholder="Ej: Constructora XYZ"></div>
+      <div class="form-group"><label>Empresa / Competidor</label><input id="compNombre" value="${esc(c?.nombre||'')}" placeholder="Ej: Constructora XYZ"></div>
       <div class="form-row">
-        <div class="form-group"><label>Monto ofertado</label><input id="compMonto" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        <div class="form-group"><label>Monto ofertado</label><input id="compMonto" type="number" min="0" step="0.01" value="${c&&c.monto!=null?c.monto:''}" placeholder="0.00"></div>
         <div class="form-group"><label>Resultado</label><select id="compResultado">
-          <option value="sin_info">Sin información</option>
-          <option value="ganó">Ganó</option>
-          <option value="perdió">Perdió</option>
+          <option value="sin_info"${res==='sin_info'?' selected':''}>Sin información</option>
+          <option value="ganó"${res==='ganó'?' selected':''}>Ganó</option>
+          <option value="perdió"${res==='perdió'?' selected':''}>Perdió</option>
         </select></div>
       </div>
-      <div class="form-group"><label>Notas (opcional)</label><input id="compNotas" placeholder="Ej: Oferta más baja, experiencia en puentes"></div>
+      <div class="form-group"><label>Notas (opcional)</label><input id="compNotas" value="${esc(c?.notas||'')}" placeholder="Ej: Oferta más baja, experiencia en puentes"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCompetidor('${licId}')">Guardar</button></div>`);
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCompetidor('${licId}',${id?`'${id}'`:'null'})">Guardar</button></div>`);
 }
-async function saveCompetidor(licId){
+async function saveCompetidor(licId, id){
   const nombre=document.getElementById('compNombre').value.trim();
   if(!nombre){ showToast('Escribe el nombre del competidor','err'); return; }
-  const values={licitacion_id:licId,nombre,monto:parseFloat(document.getElementById('compMonto').value)||null,resultado:document.getElementById('compResultado').value,notas:document.getElementById('compNotas').value.trim(),created_at:new Date().toISOString()};
-  const d=await api('/api/insert',{table:'lic_competidores',values});
+  const values={nombre,monto:parseFloat(document.getElementById('compMonto').value)||null,resultado:document.getElementById('compResultado').value,notas:document.getElementById('compNotas').value.trim()};
+  let d;
+  if(id){ d=await api('/api/update',{table:'lic_competidores',values,filters:[{col:'id',val:id}]}); }
+  else { d=await api('/api/insert',{table:'lic_competidores',values:{...values,licitacion_id:licId,created_at:new Date().toISOString()}}); }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
-  showToast('Competidor agregado','ok'); openLicDetail(licId);
+  showToast(id?'Competidor actualizado':'Competidor agregado','ok'); openLicDetail(licId);
 }
 async function deleteCompetidor(compId, licId){
   if(!confirm('¿Eliminar este competidor?')) return;
