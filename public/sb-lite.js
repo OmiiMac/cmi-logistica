@@ -50,25 +50,32 @@
     }
     async _exec() {
       try {
+        let endpoint, payload;
         if (this._op === 'select') {
-          const { json } = await api('/api/select', {
-            table: this.t, columns: this._parseCols(), filters: this._filters,
-            order: this._order, limit: this._limit, single: this._single
-          });
-          return json;
+          endpoint = '/api/select';
+          payload = { table: this.t, columns: this._parseCols(), filters: this._filters, order: this._order, limit: this._limit, single: this._single };
+        } else if (this._op === 'insert') {
+          endpoint = '/api/insert'; payload = { table: this.t, values: this._values };
+        } else if (this._op === 'update') {
+          endpoint = '/api/update'; payload = { table: this.t, values: this._values, filters: this._filters };
+        } else if (this._op === 'delete') {
+          endpoint = '/api/delete'; payload = { table: this.t, filters: this._filters };
+        } else {
+          return { data: null, error: { message: 'Operación no soportada' } };
         }
-        if (this._op === 'insert') {
-          const { json } = await api('/api/insert', { table: this.t, values: this._values });
-          return json;
+        const { res, json } = await api(endpoint, payload);
+        // Si el servidor ya devolvió un error explícito, lo respetamos.
+        if (json && json.error) return { data: (json.data !== undefined ? json.data : null), error: json.error };
+        // Respuesta HTTP fallida sin JSON de error (502/503, reinicio, HTML de error):
+        // NO es un éxito. Nunca debe tratarse como guardado.
+        if (!res || !res.ok) {
+          return { data: null, error: { message: 'El servidor no confirmó la operación (código ' + ((res && res.status) || 'sin respuesta') + '). No se guardó; vuelve a intentarlo.' } };
         }
-        if (this._op === 'update') {
-          const { json } = await api('/api/update', { table: this.t, values: this._values, filters: this._filters });
-          return json;
+        // Escrituras: exigimos confirmación con 'data' presente. Sin ella, no damos por guardado.
+        if (this._op !== 'select' && (!json || json.data === undefined)) {
+          return { data: null, error: { message: 'No se recibió confirmación del servidor; no se guardó. Vuelve a intentarlo.' } };
         }
-        if (this._op === 'delete') {
-          const { json } = await api('/api/delete', { table: this.t, filters: this._filters });
-          return json;
-        }
+        return json;
       } catch (e) {
         return { data: null, error: { message: e.message } };
       }
