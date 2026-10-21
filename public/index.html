@@ -2064,7 +2064,7 @@ async function renderProjGraficas(proj){
   // 3) Caja chica ingresos vs gastos
   if(ingresos||gastos){ const e=document.getElementById('chProjCaja'); if(e) _projCharts.push(new Chart(e,{type:'bar',data:{labels:['Ingresos','Gastos'],datasets:[{data:[ingresos,gastos],backgroundColor:['#166534','#DC2626'],borderRadius:6}]},options:chartOpts({plugins:{legend:{display:false}}})})); } else noData('chProjCaja','Sin movimientos de caja chica');
   // 4) Compras por estado
-  const COMPRA_LBL={solicitud:'Solicitud',cotizada:'Cotizada',aprobada:'Aprobada',en_camino:'En camino',entregada:'Entregada'};
+  const COMPRA_LBL={solicitud:'Solicitud',comprado:'Comprado',en_camino:'En camino',entregada:'Entregada',cotizada:'Cotizada',aprobada:'Aprobada'};
   const compC={}; compras.forEach(c=>{ const k=c.estado||'solicitud'; compC[k]=(compC[k]||0)+1; });
   const compK=Object.keys(compC);
   if(compK.length){ const e=document.getElementById('chProjCompras'); if(e) _projCharts.push(new Chart(e,{type:'doughnut',data:{labels:compK.map(k=>COMPRA_LBL[k]||k),datasets:[{data:compK.map(k=>compC[k]),backgroundColor:CHART_PALETTE,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12,padding:8}}}}})); } else noData('chProjCompras','Sin compras registradas');
@@ -2293,9 +2293,10 @@ async function deleteSalida(id,itemId,cant){
 }
 
 // ── Compras y cotizaciones ────────────────────────────────────
-const COMPRA_FLUJO=['solicitud','cotizada','aprobada','en_camino','entregada'];
-const COMPRA_LABEL={solicitud:'Solicitud',cotizada:'Cotizada',aprobada:'Aprobada',en_camino:'En camino',entregada:'Entregada'};
-const COMPRA_COLOR={solicitud:'#6B6B78',cotizada:'#D97706',aprobada:'#1D4ED8',en_camino:'#9B1B30',entregada:'#166534'};
+const COMPRA_FLUJO=['solicitud','comprado','en_camino','entregada'];
+// 'cotizada'/'aprobada' quedan como etiquetas heredadas por compatibilidad con registros viejos.
+const COMPRA_LABEL={solicitud:'Solicitud',comprado:'Comprado',en_camino:'En camino',entregada:'Entregada',cotizada:'Cotizada',aprobada:'Aprobada'};
+const COMPRA_COLOR={solicitud:'#6B6B78',comprado:'#1D4ED8',en_camino:'#9B1B30',entregada:'#166534',cotizada:'#D97706',aprobada:'#7C3AED'};
 async function renderProjCompras(proj){
   const b=document.getElementById('projBody'); if(!b) return;
   b.innerHTML = `<div class="nodata" style="padding:20px">Cargando compras…</div>`;
@@ -2307,15 +2308,15 @@ async function renderProjCompras(proj){
   b.innerHTML = `
     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-sm btn-primary" onclick="showCompraModal('${proj.id}')">🛒 Nueva solicitud de compra</button>
-      <span style="font-size:11px;color:var(--c-muted)">Flujo: Solicitud → Cotizada → Aprobada → En camino → Entregada</span>
+      <span style="font-size:11px;color:var(--c-muted)">Flujo: Solicitud → Comprado → En camino → Entregada</span>
     </div>
     <div class="item-table"><table>
       <thead><tr><th>Descripción</th><th>Cant.</th><th>Proveedor</th><th>Encargado</th><th style="text-align:right">Monto</th><th>Estado</th><th>Avanzar</th>${state.isAdmin?'<th></th>':''}</tr></thead>
       <tbody>${rows.length===0?`<tr><td colspan="8"><div class="empty-state">Sin solicitudes de compra aún</div></td></tr>`:rows.map(c=>{
         const idx=COMPRA_FLUJO.indexOf(c.estado||'solicitud');
-        const next=idx>=0&&idx<COMPRA_FLUJO.length-1?COMPRA_FLUJO[idx+1]:null;
+        const next=idx<0?'comprado':(idx<COMPRA_FLUJO.length-1?COMPRA_FLUJO[idx+1]:null);
         return `<tr>
-          <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}</td>
+          <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}${c.observaciones?`<div style="font-size:11px;color:var(--c-muted);margin-top:2px">📝 ${esc(c.observaciones)}</div>`:''}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cantidad||'')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.proveedor||'—')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.encargado||'—')}</td>
@@ -2341,6 +2342,7 @@ function showCompraModal(projectId,id){
       <div class="form-group"><label>Encargado de la compra</label><input id="cmpEncargado" value="${esc(c?.encargado||'')}" placeholder="Ej: Juan Pérez"></div>
     </div>
     <div class="form-group"><label>Factura / comprobante (foto, opcional)</label><input type="file" id="cmpFactura" accept="image/*"></div>
+    <div class="form-group"><label>Observaciones</label><textarea id="cmpObserva" rows="2" placeholder="Ej: proveedor entrega el lunes, falta confirmar color…">${esc(c?.observaciones||'')}</textarea></div>
     <div class="form-group"><label>Notas (opcional)</label><textarea id="cmpNotas" rows="2">${esc(c?.notas||'')}</textarea></div>
     ${c?`<div class="form-group"><label>Estado</label><select id="cmpEstado">${COMPRA_FLUJO.map(s=>`<option value="${s}"${(c.estado||'solicitud')===s?' selected':''}>${COMPRA_LABEL[s]}</option>`).join('')}</select></div>`:''}
   </div>
@@ -2349,7 +2351,7 @@ function showCompraModal(projectId,id){
 async function saveCompra(projectId,id){
   const descripcion=document.getElementById('cmpDesc').value.trim();
   if(!descripcion){ showToast('Describe qué se necesita','err'); return; }
-  const values={descripcion,cantidad:document.getElementById('cmpCant').value.trim(),proveedor:document.getElementById('cmpProv').value.trim(),encargado:document.getElementById('cmpEncargado').value.trim(),monto:parseFloat(document.getElementById('cmpMonto').value)||0,notas:document.getElementById('cmpNotas').value.trim()};
+  const values={descripcion,cantidad:document.getElementById('cmpCant').value.trim(),proveedor:document.getElementById('cmpProv').value.trim(),encargado:document.getElementById('cmpEncargado').value.trim(),monto:parseFloat(document.getElementById('cmpMonto').value)||0,observaciones:document.getElementById('cmpObserva').value.trim(),notas:document.getElementById('cmpNotas').value.trim()};
   if(id){
     const sel=document.getElementById('cmpEstado');
     if(sel){ values.estado=sel.value; if(sel.value==='entregada') values.fecha_entrega=todayStr(); }
@@ -2517,11 +2519,11 @@ async function renderComprasGlobal(){
       ?`<tr><td colspan="9"><div class="empty-state">Sin compras para este filtro</div></td></tr>`
       :filRows.map(c=>{
         const idx=COMPRA_FLUJO.indexOf(c.estado||'solicitud');
-        const next=idx>=0&&idx<COMPRA_FLUJO.length-1?COMPRA_FLUJO[idx+1]:null;
+        const next=idx<0?'comprado':(idx<COMPRA_FLUJO.length-1?COMPRA_FLUJO[idx+1]:null);
         const pName=projName(c.project_id)||c.project_id||'—';
         return `<tr>
           <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(pName)}</td>
-          <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}</td>
+          <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}${c.observaciones?`<div style="font-size:11px;color:var(--c-muted);margin-top:2px">📝 ${esc(c.observaciones)}</div>`:''}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cantidad||'')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.proveedor||'—')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.encargado||'—')}</td>

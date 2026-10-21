@@ -434,6 +434,9 @@ ensureColumn('licitaciones', 'precio_costo', 'REAL');            // precio costo
 ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homologación
 ensureColumn('licitaciones', 'hora_homologacion', 'TEXT');      // hora de homologación
 ensureColumn('compras', 'encargado', 'TEXT');                   // encargado de la compra
+ensureColumn('compras', 'observaciones', 'TEXT');              // observaciones de la compra
+// Nuevo flujo de compras: solicitud → comprado → en_camino → entregada.
+db.exec("UPDATE compras SET estado='comprado' WHERE estado IN ('cotizada','aprobada')");
 ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
 ensureColumn('campanas', 'objetivo', 'TEXT');
 ensureColumn('campanas', 'drive_link', 'TEXT');
@@ -487,7 +490,7 @@ const SCHEMA = {
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   caja_chica:   ['id', 'project_id', 'fecha', 'concepto', 'tipo', 'monto', 'categoria', 'comprobante_file', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   salidas_material: ['id', 'project_id', 'item_id', 'item_name', 'cantidad', 'unidad', 'actividad', 'area', 'fecha', 'notas', 'created_by', 'created_at', 'updated_at'],
-  compras:      ['id', 'project_id', 'descripcion', 'cantidad', 'proveedor', 'monto', 'estado', 'fecha_solicitud', 'fecha_entrega', 'aprobado_por', 'encargado', 'factura_file', 'notas', 'created_by', 'created_at', 'updated_at'],
+  compras:      ['id', 'project_id', 'descripcion', 'cantidad', 'proveedor', 'monto', 'estado', 'fecha_solicitud', 'fecha_entrega', 'aprobado_por', 'encargado', 'observaciones', 'factura_file', 'notas', 'created_by', 'created_at', 'updated_at'],
   obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at'],
   lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at'],
   proyecto_costos: ['id', 'project_id', 'rubro', 'concepto', 'monto', 'fecha', 'proveedor', 'comprobante_file', 'notas', 'created_by', 'created_at', 'updated_at']
