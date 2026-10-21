@@ -981,9 +981,11 @@ function setupRealtime(){
         // Movimientos de proyecto: refrescar la vista si se está viendo
         if(state.view==='project') renderProject();
         else if(state.view==='contabilidad' && typeof mstate!=='undefined' && (mstate.contaTab==='caja'||mstate.contaTab==='panel'||mstate.contaTab==='inicio')) renderContabilidad();
-      } else if(table==='licitaciones'){
+      } else if(table==='equipo_movs'){
+        if(state.view==='transfers') renderTransfers();   // vales de salida/entrada
+      } else if(table==='licitaciones'||table==='lic_competidores'){
         modRefresh('licitaciones');
-      } else if(['campanas','publicaciones','mercadeo_tareas'].includes(table)){
+      } else if(['campanas','publicaciones','mercadeo_tareas','mkt_piezas','mkt_push','mkt_efemerides','mkt_biblioteca'].includes(table)){
         modRefresh('mercadeo');
       }
     } catch(ex){}
@@ -999,7 +1001,8 @@ function closeSSE(){ if(_sse){_sse.close();_sse=null;} }
 let _autoRefreshTimer=null, _autoRefreshBound=false;
 async function autoRefresh(){
   if(!getToken()) return;                                   // sin sesión: nada
-  if(!_sse || _sse.readyState===2) setupRealtime();         // reabrir canal si se cayó (2 = CLOSED)
+  let reconnected=false;
+  if(!_sse || _sse.readyState===2){ setupRealtime(); reconnected=true; }   // reabrir canal si se cayó (2 = CLOSED)
   // No interrumpir: formularios abiertos o mientras el usuario escribe.
   const modalOpen = !document.getElementById('modalWrap').hidden;
   const ae = document.activeElement;
@@ -1007,7 +1010,10 @@ async function autoRefresh(){
   if(modalOpen || typing) return;                           // se reintenta en el próximo ciclo
   try { await loadAll(); } catch(e){ return; }
   try { await refreshChatUnread(); } catch(e){}
-  // Re-dibujar solo las vistas de monitoreo (evita saltos en formularios/proyecto).
+  // Si el canal estuvo caído, re-sincronizamos la vista actual completa (cada módulo
+  // vuelve a cargar sus datos al dibujarse), así no se pierde nada de lo ocurrido.
+  if(reconnected && state.view!=='chat' && state.view!=='roomchat'){ render(); return; }
+  // En operación normal, solo re-dibujamos las vistas de monitoreo (sin saltos ni parpadeos).
   if(['dashboard','rutas','transfers','inventario'].includes(state.view)) render();
 }
 function startAutoRefresh(){
