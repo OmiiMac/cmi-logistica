@@ -1705,8 +1705,8 @@ function renderDashboard(){
 function renderInventario(){
   setTopbar('Inventario');
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('inventario','inventario')">💬 Chat</button>`;
-  const tab=state.invTab||'lista';
-  const tabs=[['lista','📋 Lista'],['graficas','📊 Gráficas'],['archivos','🗂️ Archivos']];
+  const tab=state.invTab||'graficas';
+  const tabs=[['graficas','📊 Gráficas'],['lista','📋 Lista'],['archivos','🗂️ Archivos']];
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px">
     <div class="filter-chips" style="margin-bottom:14px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" onclick="state.invTab='${k}';renderInventario()">${l}</span>`).join('')}</div>
     <div id="invBody"></div></div>`;
