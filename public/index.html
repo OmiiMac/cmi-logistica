@@ -3952,7 +3952,10 @@ function _tok(){ try{ return localStorage.getItem('cmi_token')||''; }catch(e){ r
 async function apiPost(path, body){
   try{
     const r = await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_tok()},body:JSON.stringify(body||{})});
-    return await r.json();
+    let j=null; try{ j = await r.json(); }catch(e){ j=null; }
+    if(j && j.error) return j;
+    if(!r.ok) return {data:null,error:{message:'El servidor no confirmó la operación (código '+r.status+'). No se guardó; vuelve a intentarlo.'}};
+    return j || {error:{message:'Respuesta vacía del servidor.'}};
   }catch(e){ return {error:{message:'Error de conexión'}}; }
 }
 async function apiUpload(scope, refId, file){
