@@ -1477,9 +1477,6 @@ function renderDashboard(){
   const noOp      = items.filter(i=>i.estado==='NO_OPERATIVA').length;
   const lowStock  = items.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length;
   const activeProj= projects.filter(p=>p.id!=='bodega').length;
-  const catCounts = {};
-  CATS.forEach(c=>{catCounts[c.id]=items.filter(i=>i.category===c.id).length;});
-  const maxCat = Math.max(1,...Object.values(catCounts));
 
   const hr = new Date().getHours();
   const greet = hr<12?'Buenos días':hr<18?'Buenas tardes':'Buenas noches';
@@ -1595,20 +1592,6 @@ function renderDashboard(){
         }).join('')}
       </div>
     </div>
-  </div>
-
-  <div class="cat-grid">
-    ${CATS.map(c=>{
-      const m   = CAT_META[c.id]||{color:'#9B1B30',icon:''};
-      const pct = Math.round(catCounts[c.id]/maxCat*100);
-      return `
-      <div class="cat-card" style="--cat-color:${m.color}">
-        <div class="cat-icon-wrap" style="background:${m.color}18;color:${m.color}">${m.icon}</div>
-        <div class="cat-card-num" style="color:${m.color}">${catCounts[c.id]}</div>
-        <div class="cat-card-label">${c.label}</div>
-        <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${m.color}"></div></div>
-      </div>`;
-    }).join('')}
   </div>
 
   <div class="two-col" style="margin-top:20px">
@@ -1886,7 +1869,19 @@ let _invCharts=[]; function destroyInvCharts(){ _invCharts.forEach(c=>{ try{c.de
 function renderInvGraficas(){
   const b=document.getElementById('invBody'); if(!b) return;
   const all=[...state.items.values()];
+  const catCounts={}; CATS.forEach(c=>{catCounts[c.id]=all.filter(i=>i.category===c.id).length;});
+  const maxCat=Math.max(1,...Object.values(catCounts));
+  const catGrid=`<div class="cat-grid">${CATS.map(c=>{
+    const m=CAT_META[c.id]||{color:'#9B1B30',icon:''};
+    const pct=Math.round(catCounts[c.id]/maxCat*100);
+    return `<div class="cat-card" style="--cat-color:${m.color}">
+      <div class="cat-icon-wrap" style="background:${m.color}18;color:${m.color}">${m.icon}</div>
+      <div class="cat-card-num" style="color:${m.color}">${catCounts[c.id]}</div>
+      <div class="cat-card-label">${c.label}</div>
+      <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${m.color}"></div></div>
+    </div>`;}).join('')}</div>`;
   b.innerHTML=`<div style="display:flex;flex-direction:column;gap:16px;max-width:900px">
+    ${catGrid}
     <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">Artículos por categoría</h3><div style="position:relative;height:280px"><canvas id="chInvCat"></canvas></div></div>
     <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">Unidades por ubicación</h3><div style="position:relative;height:280px"><canvas id="chInvUbic"></canvas></div></div>
     <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">Estado de los equipos</h3><div style="position:relative;height:280px"><canvas id="chInvEstado"></canvas></div></div>
