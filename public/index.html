@@ -4547,6 +4547,7 @@ async function renderLicitaciones(){
   if(!canModule('licit')){ nav('dashboard'); return; }
   setTopbar('Licitaciones');
   const tab=mstate.licTab||'panel';
+  if(tab!=='lista') state._licFilter=null;   // al salir del listado, volver a las casillas
   const canNew=state.isAdmin||state.isLicitaciones;
   const addBtn=(tab==='lista'&&canNew)?`<button class="btn btn-sm btn-primary" onclick="openLicModal()">+ Nueva licitación</button>`:'';
   document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-ghost" onclick="goChat('licitaciones','licitaciones')">💬 Chat</button>`+addBtn;
@@ -4578,19 +4579,31 @@ function renderLicList(){
     <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.fecha_homologacion?`<span>📋 Homolog.: ${esc(l.fecha_homologacion)}${l.hora_homologacion?' '+esc(l.hora_homologacion)+'h':''}</span>`:''}${l.monto_estimado?`<span>💰 Ref: ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.precio_costo?`<span>🏷️ Costo: ${money(l.precio_costo)}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}${u?`<a href="${esc(u)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--c-primary);font-weight:600">🔗 Abrir página</a>`:''}</div>
     <div style="margin-top:10px;display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#fff;background:${n?'#9B1B30':'#6B7280'};padding:3px 10px;border-radius:20px">📊 ${n} competidor${n===1?'':'es'}</span><span style="font-size:11px;color:var(--c-primary);font-weight:600">Toca para ver y agregar análisis de competidores ›</span></div>
   </div>`;};
-  const byEst={}; data.forEach(l=>{ const s=l.estado||'por_evaluar'; (byEst[s]=byEst[s]||[]).push(l); });
-  const keys=[...LIC_ORDER.filter(k=>byEst[k]), ...Object.keys(byEst).filter(k=>!LIC_ORDER.includes(k))];
-  list.innerHTML=keys.map(k=>{
-    const items=byEst[k]||[]; const color=(LIC_COLOR[k]||['','#6B7280'])[1];
-    return `<div style="margin-bottom:20px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;position:sticky;top:0;background:var(--c-bg);padding:4px 0;z-index:1">
-        <span style="width:11px;height:11px;border-radius:50%;background:${color};flex:none"></span>
-        <h3 style="font-size:15px;font-weight:800;margin:0">${LIC_ESTADOS[k]||k}</h3>
-        <span style="font-size:11px;font-weight:700;color:#fff;background:${color};border-radius:20px;padding:2px 9px">${items.length}</span>
-      </div>
-      ${items.map(card).join('')}
-    </div>`;
-  }).join('');
+  const byEst={}; LIC_ORDER.forEach(k=>byEst[k]=[]); data.forEach(l=>{ const s=l.estado||'por_evaluar'; (byEst[s]=byEst[s]||[]).push(l); });
+  const sel=state._licFilter;
+  if(!sel || !LIC_ORDER.includes(sel)){
+    // Vista de casillas (como el dashboard): una por estado.
+    const icon='<svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 14l2 2 4-4"/></svg>';
+    list.innerHTML=`<div class="stat-grid">${LIC_ORDER.map(k=>{
+      const color=(LIC_COLOR[k]||['','#6B7280'])[1]; const nn=(byEst[k]||[]).length;
+      return `<div class="stat-card" onclick="state._licFilter='${k}';renderLicitaciones()" style="--stat-color:${color};cursor:pointer">
+        <div class="stat-icon" style="background:${color}22;color:${color}">${icon}</div>
+        <div class="stat-val" style="color:${color}">${nn}</div>
+        <div class="stat-label">${LIC_ESTADOS[k]}</div>
+      </div>`;
+    }).join('')}</div>`;
+    return;
+  }
+  // Vista de un estado: al entrar a la casilla te topas con sus licitaciones.
+  const items=byEst[sel]||[]; const color=(LIC_COLOR[sel]||['','#6B7280'])[1];
+  list.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-ghost" onclick="state._licFilter=null;renderLicitaciones()">‹ Volver</button>
+      <span style="width:11px;height:11px;border-radius:50%;background:${color};flex:none"></span>
+      <h3 style="font-size:16px;font-weight:800;margin:0">${LIC_ESTADOS[sel]}</h3>
+      <span style="font-size:11px;font-weight:700;color:#fff;background:${color};border-radius:20px;padding:2px 9px">${items.length}</span>
+    </div>
+    ${items.length?items.map(card).join(''):'<div class="nodata" style="padding:30px">Sin licitaciones en este estado.</div>'}`;
 }
 function renderLicPanel(){
   const b=document.getElementById('licBody'); if(!b) return;
