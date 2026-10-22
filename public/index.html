@@ -2293,10 +2293,10 @@ async function deleteSalida(id,itemId,cant){
 }
 
 // ── Compras y cotizaciones ────────────────────────────────────
-const COMPRA_FLUJO=['solicitud','comprado','pagado','en_camino','entregada'];
+const COMPRA_FLUJO=['solicitud','aprobado','comprado','pagado','en_camino','entregada'];
 // 'cotizada'/'aprobada' quedan como etiquetas heredadas por compatibilidad con registros viejos.
-const COMPRA_LABEL={solicitud:'Solicitud',comprado:'Comprado',pagado:'Pagado',en_camino:'En camino',entregada:'Entregada',cotizada:'Cotizada',aprobada:'Aprobada'};
-const COMPRA_COLOR={solicitud:'#6B6B78',comprado:'#1D4ED8',pagado:'#0F766E',en_camino:'#9B1B30',entregada:'#166534',cotizada:'#D97706',aprobada:'#7C3AED'};
+const COMPRA_LABEL={solicitud:'Solicitud',aprobado:'Aprobado',comprado:'Comprado',pagado:'Pagado',en_camino:'En camino',entregada:'Entregada',cotizada:'Cotizada',aprobada:'Aprobado'};
+const COMPRA_COLOR={solicitud:'#6B6B78',aprobado:'#7C3AED',comprado:'#1D4ED8',pagado:'#0F766E',en_camino:'#9B1B30',entregada:'#166534',cotizada:'#D97706',aprobada:'#7C3AED'};
 function toggleComprasEntregadas(){ state._comprasEntregadasOpen=!state._comprasEntregadasOpen; renderProject(); }
 async function renderProjCompras(proj){
   const b=document.getElementById('projBody'); if(!b) return;
@@ -2312,7 +2312,7 @@ async function renderProjCompras(proj){
     const idx=COMPRA_FLUJO.indexOf(c.estado||'solicitud');
     const next=idx<0?'comprado':(idx<COMPRA_FLUJO.length-1?COMPRA_FLUJO[idx+1]:null);
     return `<tr>
-      <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}${(c.observaciones||c.observacion_file)?`<div style="font-size:11px;color:var(--c-muted);margin-top:2px">📝 ${esc(c.observaciones||'')}${c.observacion_file?` <a href="${fileUrl(c.observacion_file)}" target="_blank" style="color:var(--c-primary)">📷 foto</a>`:''}</div>`:''}</td>
+      <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}${(c.observaciones||c.observacion_file)?`<div style="font-size:11px;color:var(--c-muted);margin-top:2px">📝 ${esc(c.observaciones||'')}${c.observacion_file?` <a href="${fileUrl(c.observacion_file)}" target="_blank" style="color:var(--c-primary)">📷 foto</a>`:''}</div>`:''}${(c.fecha_solicitud||c.fecha_entrega)?`<div style="font-size:10px;color:var(--c-muted);margin-top:2px">📅 Solic.: ${esc(c.fecha_solicitud||'—')}${c.fecha_entrega?' · Entrega: '+esc(c.fecha_entrega):''}</div>`:''}</td>
       <td style="font-size:12px;color:var(--c-muted)">${esc(c.cantidad||'')}</td>
       <td style="font-size:12px;color:var(--c-muted)">${esc(c.proveedor||'—')}</td>
       <td style="font-size:12px;color:var(--c-muted)">${esc(c.encargado||'—')}</td>
@@ -2360,6 +2360,10 @@ function showCompraModal(projectId,id){
       <div class="form-group"><label>Proveedor (opcional)</label><input id="cmpProv" value="${esc(c?.proveedor||'')}" placeholder="Ej: Ferretería XYZ"></div>
       <div class="form-group"><label>Encargado de la compra</label><input id="cmpEncargado" value="${esc(c?.encargado||'')}" placeholder="Ej: Juan Pérez"></div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>Fecha de solicitud</label><input id="cmpFechaSol" type="date" value="${esc(c?.fecha_solicitud||todayStr())}"></div>
+      <div class="form-group"><label>Fecha de entrega</label><input id="cmpFechaEnt" type="date" value="${esc(c?.fecha_entrega||'')}"></div>
+    </div>
     <div class="form-group"><label>Factura / comprobante (foto, opcional)</label><input type="file" id="cmpFactura" accept="image/*"></div>
     <div class="form-group" style="border:1px solid var(--c-border);border-radius:10px;padding:12px;background:var(--c-bg)">
       <label style="font-weight:700">📝 Observaciones</label>
@@ -2375,14 +2379,14 @@ function showCompraModal(projectId,id){
 async function saveCompra(projectId,id){
   const descripcion=document.getElementById('cmpDesc').value.trim();
   if(!descripcion){ showToast('Describe qué se necesita','err'); return; }
-  const values={descripcion,cantidad:document.getElementById('cmpCant').value.trim(),proveedor:document.getElementById('cmpProv').value.trim(),encargado:document.getElementById('cmpEncargado').value.trim(),monto:parseFloat(document.getElementById('cmpMonto').value)||0,observaciones:document.getElementById('cmpObserva').value.trim()};
+  const values={descripcion,cantidad:document.getElementById('cmpCant').value.trim(),proveedor:document.getElementById('cmpProv').value.trim(),encargado:document.getElementById('cmpEncargado').value.trim(),monto:parseFloat(document.getElementById('cmpMonto').value)||0,observaciones:document.getElementById('cmpObserva').value.trim(),fecha_solicitud:document.getElementById('cmpFechaSol').value||todayStr(),fecha_entrega:document.getElementById('cmpFechaEnt').value||null};
   if(id){
     const sel=document.getElementById('cmpEstado');
-    if(sel){ values.estado=sel.value; if(sel.value==='entregada') values.fecha_entrega=todayStr(); }
+    if(sel){ values.estado=sel.value; if(sel.value==='entregada' && !values.fecha_entrega) values.fecha_entrega=todayStr(); }
   }
   let compraId=id;
   if(id){ const d=await api('/api/update',{table:'compras',values,filters:[{col:'id',val:id}]}); if(d.error){showToast('Error','err');return;} }
-  else { const d=await api('/api/insert',{table:'compras',values:{...values,project_id:projectId,estado:'solicitud',fecha_solicitud:todayStr(),created_at:new Date().toISOString()}}); if(d.error){showToast('Error: '+d.error.message,'err');return;} compraId=d.data&&d.data[0]&&d.data[0].id; }
+  else { const d=await api('/api/insert',{table:'compras',values:{...values,project_id:projectId,estado:'solicitud',created_at:new Date().toISOString()}}); if(d.error){showToast('Error: '+d.error.message,'err');return;} compraId=d.data&&d.data[0]&&d.data[0].id; }
   const fin=document.getElementById('cmpFactura');
   if(fin&&fin.files&&fin.files[0]&&compraId){ const up=await apiUpload('compra',compraId,fin.files[0]); if(!up.error) await api('/api/update',{table:'compras',values:{factura_file:up.data.id},filters:[{col:'id',val:compraId}]}); }
   const obf=document.getElementById('cmpObsFoto');
@@ -2552,7 +2556,7 @@ async function renderComprasGlobal(){
         const pName=projName(c.project_id)||c.project_id||'—';
         return `<tr>
           <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(pName)}</td>
-          <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}${(c.observaciones||c.observacion_file)?`<div style="font-size:11px;color:var(--c-muted);margin-top:2px">📝 ${esc(c.observaciones||'')}${c.observacion_file?` <a href="${fileUrl(c.observacion_file)}" target="_blank" style="color:var(--c-primary)">📷 foto</a>`:''}</div>`:''}</td>
+          <td><b style="font-size:13px">${esc(c.descripcion)}</b>${c.factura_file?` <a href="${fileUrl(c.factura_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">factura</a>`:''}${(c.observaciones||c.observacion_file)?`<div style="font-size:11px;color:var(--c-muted);margin-top:2px">📝 ${esc(c.observaciones||'')}${c.observacion_file?` <a href="${fileUrl(c.observacion_file)}" target="_blank" style="color:var(--c-primary)">📷 foto</a>`:''}</div>`:''}${(c.fecha_solicitud||c.fecha_entrega)?`<div style="font-size:10px;color:var(--c-muted);margin-top:2px">📅 Solic.: ${esc(c.fecha_solicitud||'—')}${c.fecha_entrega?' · Entrega: '+esc(c.fecha_entrega):''}</div>`:''}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cantidad||'')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.proveedor||'—')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.encargado||'—')}</td>

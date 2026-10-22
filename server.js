@@ -437,8 +437,8 @@ ensureColumn('compras', 'encargado', 'TEXT');                   // encargado de 
 ensureColumn('compras', 'observaciones', 'TEXT');              // observaciones de la compra
 ensureColumn('compras', 'observacion_file', 'TEXT');          // foto adjunta a la observación
 ensureColumn('items', 'obs_noop', 'TEXT');                     // observaciones de equipo no operativo
-// Nuevo flujo de compras: solicitud → comprado → en_camino → entregada.
-db.exec("UPDATE compras SET estado='comprado' WHERE estado IN ('cotizada','aprobada')");
+// Flujo de compras: solicitud → aprobado → comprado → pagado → en_camino → entregada.
+db.exec("UPDATE compras SET estado='aprobado' WHERE estado IN ('cotizada','aprobada')");
 ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
 ensureColumn('campanas', 'objetivo', 'TEXT');
 ensureColumn('campanas', 'drive_link', 'TEXT');
