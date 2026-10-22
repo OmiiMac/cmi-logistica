@@ -4605,6 +4605,7 @@ function renderLicList(){
     </div>
     ${items.length?items.map(card).join(''):'<div class="nodata" style="padding:30px">Sin licitaciones en este estado.</div>'}`;
 }
+function goLic(tab, filter){ mstate.licTab=tab||'lista'; state._licFilter=(filter!==undefined?filter:null); renderLicitaciones(); }
 function renderLicPanel(){
   const b=document.getElementById('licBody'); if(!b) return;
   const lics=mstate.lics||[];
@@ -4613,12 +4614,14 @@ function renderLicPanel(){
   const montoJuego=enJuego.reduce((a,l)=>a+(Number(l.monto_estimado)||0),0);
   const hoy=todayStr(), en15=ymd(new Date(Date.now()+15*86400000));
   const prox=lics.filter(l=>l.fecha_limite&&l.fecha_limite>=hoy&&l.fecha_limite<=en15&&activos.includes(l.estado)).length;
+  const tl=(inner,onclick,hint)=>`<div onclick="${onclick}" style="cursor:pointer" title="${hint||'Ver'}">${inner}</div>`;
   b.innerHTML=`
+    <div style="font-size:11px;color:var(--c-muted);margin-bottom:8px">Toca una casilla o la gráfica para ver las licitaciones.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
-      ${kpiTile('Total',lics.length,'#60A5FA','rgba(29,78,216,.14)')}
-      ${kpiTile('En juego',enJuego.length,'#F59E0B','rgba(217,119,6,.14)')}
-      ${kpiTile('Monto en juego',money(montoJuego),'#34D77F','rgba(34,197,94,.14)')}
-      ${kpiTile('Vencen en 15 días',prox,prox?'#F0556A':'#34D77F',prox?'rgba(220,38,38,.14)':'rgba(34,197,94,.14)')}
+      ${tl(kpiTile('Total',lics.length,'#60A5FA','rgba(29,78,216,.14)'),"goLic('lista',null)","Ver todas por estado")}
+      ${tl(kpiTile('En juego',enJuego.length,'#F59E0B','rgba(217,119,6,.14)'),"goLic('lista',null)","Ver activas")}
+      ${tl(kpiTile('Monto en juego',money(montoJuego),'#34D77F','rgba(34,197,94,.14)'),"goLic('lista',null)","Ver por estado")}
+      ${tl(kpiTile('Vencen en 15 días',prox,prox?'#F0556A':'#34D77F',prox?'rgba(220,38,38,.14)':'rgba(34,197,94,.14)'),"goLic('calendario')","Ver en el calendario")}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
       <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Licitaciones por estado</h3><canvas id="chLicEstado" height="190"></canvas></div>
@@ -4634,7 +4637,7 @@ function drawLicCharts(lics){
   const le=Object.keys(byEst);
   const estColor=s=>(LIC_COLOR[s]||['','#9B1B30'])[1];   // color propio de cada estado
   const e1=document.getElementById('chLicEstado');
-  if(e1){ if(le.length) _licCharts.push(new Chart(e1,{type:'doughnut',data:{labels:le.map(s=>LIC_ESTADOS[s]||s),datasets:[{data:le.map(s=>byEst[s]),backgroundColor:le.map(estColor)}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
+  if(e1){ if(le.length){ e1.style.cursor='pointer'; _licCharts.push(new Chart(e1,{type:'doughnut',data:{labels:le.map(s=>LIC_ESTADOS[s]||s),datasets:[{data:le.map(s=>byEst[s]),backgroundColor:le.map(estColor)}]},options:{responsive:true,maintainAspectRatio:true,onClick:(ev,els)=>{ if(els&&els.length){ goLic('lista',le[els[0].index]); } },plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); } else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin datos</div>'; }
   const byMes={}; lics.forEach(l=>{ if(l.fecha_limite){ const m=l.fecha_limite.slice(0,7); byMes[m]=(byMes[m]||0)+1; } });
   const ml=Object.keys(byMes).sort();
   const e2=document.getElementById('chLicMes');
