@@ -4631,7 +4631,7 @@ function renderLicCalendario(){
     const ds=ym+'-'+String(d).padStart(2,'0'); const list=byDay[d]||[]; const esHoy=ds===hoy;
     cells+=`<div style="min-height:86px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden">
       <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
-      ${list.slice(0,3).map(l=>`<div onclick="openLicDetail('${l.id}')" title="${esc(l.titulo)}" style="cursor:pointer;font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:rgba(198,32,64,.28);color:#F5E9EC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">⏰ ${esc(l.titulo)}</div>`).join('')}
+      ${list.slice(0,3).map(l=>`<div onclick="openLicDetail('${l.id}')" title="${esc(l.titulo)}" style="cursor:pointer;font-size:10px;font-weight:600;margin-top:2px;padding:2px 5px;border-radius:4px;background:#9B1B30;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">⏰ ${esc(l.titulo)}</div>`).join('')}
       ${list.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${list.length-3} más</div>`:''}
     </div>`;
   }
