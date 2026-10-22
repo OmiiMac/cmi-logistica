@@ -433,6 +433,7 @@ ensureColumn('licitaciones', 'responsable_presupuesto', 'TEXT'); // responsable 
 ensureColumn('licitaciones', 'precio_costo', 'REAL');            // precio costo
 ensureColumn('licitaciones', 'fecha_homologacion', 'TEXT');     // fecha de homologación
 ensureColumn('licitaciones', 'hora_homologacion', 'TEXT');      // hora de homologación
+ensureColumn('licitaciones', 'url', 'TEXT');                    // enlace a la página de la licitación
 ensureColumn('compras', 'encargado', 'TEXT');                   // encargado de la compra
 ensureColumn('compras', 'observaciones', 'TEXT');              // observaciones de la compra
 ensureColumn('compras', 'observacion_file', 'TEXT');          // foto adjunta a la observación
@@ -460,11 +461,11 @@ ensureColumn('mercadeo_tareas', 'campana_id', 'TEXT');
 ensureColumn('mercadeo_tareas', 'enlace', 'TEXT');
 db.exec("UPDATE mercadeo_tareas SET estado='en_proceso' WHERE estado='en_progreso'");
 db.exec("UPDATE mercadeo_tareas SET estado='completado' WHERE estado='hecho'");
-// Migración de estados de licitaciones al nuevo esquema (idempotente)
-db.exec("UPDATE licitaciones SET estado='en_preparacion' WHERE estado IN ('borrador','en_revision')");
-db.exec("UPDATE licitaciones SET estado='participada'    WHERE estado='presentada'");
-db.exec("UPDATE licitaciones SET estado='aprobada'       WHERE estado='adjudicada'");
-db.exec("UPDATE licitaciones SET estado='rechazada'      WHERE estado='perdida'");
+// Migración de estados de licitaciones al nuevo esquema (idempotente):
+// por_evaluar, aprobada, participada, rechazada, adjudicada.
+db.exec("UPDATE licitaciones SET estado='por_evaluar' WHERE estado IN ('borrador','en_revision','en_preparacion')");
+db.exec("UPDATE licitaciones SET estado='participada' WHERE estado='presentada'");
+db.exec("UPDATE licitaciones SET estado='rechazada'   WHERE estado='perdida'");
 // Backfill idempotente: mensajes previos quedan en su sala correcta.
 db.exec("UPDATE messages SET room = 'proyecto:' || project_id WHERE room IS NULL AND project_id IS NOT NULL");
 db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
@@ -482,7 +483,7 @@ const SCHEMA = {
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
   asientos:     ['id', 'fecha', 'descripcion', 'referencia', 'estado', 'comprobante_file', 'created_by', 'created_at', 'updated_at'],
   movimientos:  ['id', 'asiento_id', 'cuenta_id', 'debe', 'haber', 'proyecto_id', 'descripcion'],
-  licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'hora_homologacion', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
+  licitaciones: ['id', 'titulo', 'entidad', 'numero', 'fecha_publicacion', 'fecha_limite', 'monto_estimado', 'precio_costo', 'moneda', 'estado', 'responsable', 'responsable_presupuesto', 'fecha_homologacion', 'hora_homologacion', 'url', 'notas', 'aprobado_por', 'aprobado_at', 'created_by', 'created_at', 'updated_at'],
   campanas:     ['id', 'nombre', 'descripcion', 'estado', 'fecha_inicio', 'fecha_fin', 'responsable', 'empresa', 'objetivo', 'drive_link', 'created_by', 'created_at', 'updated_at'],
   mkt_push:     ['id', 'empresa', 'fecha', 'hora', 'titulo', 'mensaje', 'estado', 'responsable', 'observaciones', 'created_by', 'created_at', 'updated_at'],
   mkt_efemerides:['id', 'empresa', 'fecha', 'titulo', 'color', 'recurrente', 'created_by', 'created_at', 'updated_at'],

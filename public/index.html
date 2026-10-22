@@ -4530,14 +4530,19 @@ async function saveAsiento(){
 }
 
 /* ================= LICITACIONES ================= */
-const LIC_ESTADOS={en_preparacion:'En preparación',participada:'Participada',aprobada:'Aprobada',rechazada:'Rechazada'};
+const LIC_ESTADOS={por_evaluar:'Por evaluar',aprobada:'Aprobada',participada:'Participada',rechazada:'Rechazada',adjudicada:'Adjudicada'};
+const LIC_ORDER=['por_evaluar','aprobada','participada','rechazada','adjudicada'];
 const LIC_COLOR={
-  en_preparacion: ['rgba(139,136,150,.18)','#B0909A'], // gris: en preparación
-  participada:    ['rgba(96,165,250,.22)','#60A5FA'],  // azul: participada (en espera de resultado)
-  aprobada:       ['rgba(34,197,94,.22)','#22C55E'],   // VERDE: aprobada
-  rechazada:      ['rgba(240,85,106,.22)','#F0556A']   // ROJO: rechazada
+  por_evaluar: ['rgba(139,136,150,.18)','#6B7280'],   // gris: por evaluar
+  aprobada:    ['rgba(34,197,94,.22)','#16A34A'],     // verde: aprobada
+  participada: ['rgba(96,165,250,.22)','#2563EB'],    // azul: participada
+  rechazada:   ['rgba(240,85,106,.22)','#DC2626'],    // rojo: rechazada
+  adjudicada:  ['rgba(200,150,12,.22)','#D97706']     // ámbar: adjudicada (ganada)
 };
-function licBadge(e){ const c=LIC_COLOR[e]||['#eee','#555']; return `<span style="font-size:11px;background:${c[0]};color:${c[1]};padding:2px 8px;border-radius:20px;font-weight:700">${LIC_ESTADOS[e]||e}</span>`; }
+// Badge sólido con texto blanco: legible en tema claro y oscuro.
+function licBadge(e){ const c=(LIC_COLOR[e]||['#eee','#6B7280'])[1]; return `<span style="font-size:11px;background:${c};color:#fff;padding:2px 8px;border-radius:20px;font-weight:700">${LIC_ESTADOS[e]||e}</span>`; }
+// Normaliza un enlace: agrega https:// si falta protocolo.
+function licUrl(u){ u=String(u||'').trim(); if(!u) return ''; return /^https?:\/\//i.test(u)?u:'https://'+u; }
 async function renderLicitaciones(){
   if(!canModule('licit')){ nav('dashboard'); return; }
   setTopbar('Licitaciones');
@@ -4566,19 +4571,31 @@ function renderLicList(){
   const data=mstate.lics||[];
   if(!data.length){ list.innerHTML='<div class="nodata" style="padding:30px">Sin licitaciones aún.</div>'; return; }
   const cc=mstate.compCounts||{};
-  list.innerHTML=data.map(l=>{
-    const n=cc[l.id]||0;
+  const card=l=>{
+    const n=cc[l.id]||0; const u=licUrl(l.url);
     return `<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openLicDetail('${l.id}')">
     <div style="display:flex;justify-content:space-between;align-items:start;gap:10px"><div><div style="font-weight:700">${esc(l.titulo)}</div><div style="font-size:12px;color:var(--c-muted)">${esc(l.entidad||'')} ${l.numero?'· '+esc(l.numero):''}</div></div>${licBadge(l.estado)}</div>
-    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.fecha_homologacion?`<span>📋 Homolog.: ${esc(l.fecha_homologacion)}${l.hora_homologacion?' '+esc(l.hora_homologacion)+'h':''}</span>`:''}${l.monto_estimado?`<span>💰 Ref: ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.precio_costo?`<span>🏷️ Costo: ${money(l.precio_costo)}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}</div>
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--c-muted);flex-wrap:wrap">${l.fecha_limite?`<span>📅 Límite: ${esc(l.fecha_limite)}</span>`:''}${l.fecha_homologacion?`<span>📋 Homolog.: ${esc(l.fecha_homologacion)}${l.hora_homologacion?' '+esc(l.hora_homologacion)+'h':''}</span>`:''}${l.monto_estimado?`<span>💰 Ref: ${money(l.monto_estimado)} ${esc(l.moneda||'')}</span>`:''}${l.precio_costo?`<span>🏷️ Costo: ${money(l.precio_costo)}</span>`:''}${l.responsable?`<span>👤 ${esc(l.responsable)}</span>`:''}${u?`<a href="${esc(u)}" target="_blank" onclick="event.stopPropagation()" style="color:var(--c-primary);font-weight:600">🔗 Abrir página</a>`:''}</div>
     <div style="margin-top:10px;display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:700;color:#fff;background:${n?'#9B1B30':'#6B7280'};padding:3px 10px;border-radius:20px">📊 ${n} competidor${n===1?'':'es'}</span><span style="font-size:11px;color:var(--c-primary);font-weight:600">Toca para ver y agregar análisis de competidores ›</span></div>
-  </div>`;
+  </div>`;};
+  const byEst={}; data.forEach(l=>{ const s=l.estado||'por_evaluar'; (byEst[s]=byEst[s]||[]).push(l); });
+  const keys=[...LIC_ORDER.filter(k=>byEst[k]), ...Object.keys(byEst).filter(k=>!LIC_ORDER.includes(k))];
+  list.innerHTML=keys.map(k=>{
+    const items=byEst[k]||[]; const color=(LIC_COLOR[k]||['','#6B7280'])[1];
+    return `<div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;position:sticky;top:0;background:var(--c-bg);padding:4px 0;z-index:1">
+        <span style="width:11px;height:11px;border-radius:50%;background:${color};flex:none"></span>
+        <h3 style="font-size:15px;font-weight:800;margin:0">${LIC_ESTADOS[k]||k}</h3>
+        <span style="font-size:11px;font-weight:700;color:#fff;background:${color};border-radius:20px;padding:2px 9px">${items.length}</span>
+      </div>
+      ${items.map(card).join('')}
+    </div>`;
   }).join('');
 }
 function renderLicPanel(){
   const b=document.getElementById('licBody'); if(!b) return;
   const lics=mstate.lics||[];
-  const activos=['en_preparacion','participada'];
+  const activos=['por_evaluar','aprobada','participada'];
   const enJuego=lics.filter(l=>activos.includes(l.estado));
   const montoJuego=enJuego.reduce((a,l)=>a+(Number(l.monto_estimado)||0),0);
   const hoy=todayStr(), en15=ymd(new Date(Date.now()+15*86400000));
@@ -4678,13 +4695,16 @@ function openLicModal(lic){
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Precio referencia (entidad)</label><input id="liMonto" type="number" step="0.01" value="${lic.monto_estimado||''}"></div><div class="form-group" style="flex:1"><label>Costo del proyecto (CMI)</label><input id="liCosto" type="number" step="0.01" value="${lic.precio_costo||''}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="liResp" value="${esc(lic.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Responsable de presupuesto</label><input id="liRespPres" value="${esc(lic.responsable_presupuesto||'')}"></div></div>
       <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Fecha de homologación</label><input id="liHomol" type="date" value="${esc(lic.fecha_homologacion||'')}"></div><div class="form-group" style="flex:1"><label>Hora de homologación</label><input id="liHomolHora" type="time" value="${esc(lic.hora_homologacion||'')}"></div></div>
+      <div class="form-group"><label>🔗 Enlace / Página de la licitación</label><input id="liUrl" value="${esc(lic.url||'')}" placeholder="https://…  (se abre con un clic)"></div>
+      ${lic.id?`<div class="form-group"><label>Estado</label><select id="liEstado">${LIC_ORDER.map(k=>`<option value="${k}"${(lic.estado||'por_evaluar')===k?' selected':''}>${LIC_ESTADOS[k]}</option>`).join('')}</select></div>`:''}
       <div class="form-group"><label>Notas</label><textarea id="liNotas" rows="2">${esc(lic.notas||'')}</textarea></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveLic('${lic.id||''}')">Guardar</button></div>`);
 }
 async function saveLic(id){
-  const row={titulo:document.getElementById('liTitulo').value.trim(),entidad:document.getElementById('liEntidad').value.trim(),numero:document.getElementById('liNumero').value.trim(),fecha_publicacion:document.getElementById('liPub').value||null,fecha_limite:document.getElementById('liLim').value||null,monto_estimado:Number(document.getElementById('liMonto').value)||null,precio_costo:Number(document.getElementById('liCosto').value)||null,responsable:document.getElementById('liResp').value.trim(),responsable_presupuesto:document.getElementById('liRespPres').value.trim(),fecha_homologacion:document.getElementById('liHomol').value||null,hora_homologacion:document.getElementById('liHomolHora').value||null,notas:document.getElementById('liNotas').value.trim()};
-  if(!id) row.estado='en_preparacion';
+  const row={titulo:document.getElementById('liTitulo').value.trim(),entidad:document.getElementById('liEntidad').value.trim(),numero:document.getElementById('liNumero').value.trim(),fecha_publicacion:document.getElementById('liPub').value||null,fecha_limite:document.getElementById('liLim').value||null,monto_estimado:Number(document.getElementById('liMonto').value)||null,precio_costo:Number(document.getElementById('liCosto').value)||null,responsable:document.getElementById('liResp').value.trim(),responsable_presupuesto:document.getElementById('liRespPres').value.trim(),fecha_homologacion:document.getElementById('liHomol').value||null,hora_homologacion:document.getElementById('liHomolHora').value||null,url:document.getElementById('liUrl').value.trim(),notas:document.getElementById('liNotas').value.trim()};
+  const estSel=document.getElementById('liEstado'); if(estSel) row.estado=estSel.value;
+  if(!id) row.estado='por_evaluar';
   if(!row.titulo){ showToast('Falta el título','err'); return; }
   let error; if(id){ ({error}=await sb.from('licitaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('licitaciones').insert(row)); }
   if(error){ showToast(error.message,'err'); return; }
@@ -4700,8 +4720,10 @@ async function openLicDetail(id){
   const docs=docsRes.data||[];
   const competidores=compRes.data||[];
   state._licCompCache=competidores;
-  const estSel=canEdit?`<div class="form-group" style="margin-top:12px"><label>Estado</label><select onchange="setLicEstado('${id}',this.value)">${Object.entries(LIC_ESTADOS).filter(([k])=>k!=='aprobada'&&k!=='rechazada').map(([k,v])=>`<option value="${k}" ${l.estado===k?'selected':''}>${v}</option>`).join('')}</select></div>`:'';
+  const estSel=canEdit?`<div class="form-group" style="margin-top:12px"><label>Estado (puedes reasignarlo)</label><select onchange="setLicEstado('${id}',this.value)">${LIC_ORDER.map(k=>`<option value="${k}" ${l.estado===k?'selected':''}>${LIC_ESTADOS[k]}</option>`).join('')}</select></div>`:'';
+  const _lu=licUrl(l.url);
   const infoItems=[
+    _lu?`<div><b>🔗 Página:</b> <a href="${esc(_lu)}" target="_blank" style="color:var(--c-primary);font-weight:600">Abrir licitación</a></div>`:'',
     l.entidad?`<div><b>Entidad:</b> ${esc(l.entidad)}</div>`:'',
     l.numero?`<div><b>N°:</b> ${esc(l.numero)}</div>`:'',
     l.fecha_publicacion?`<div><b>Publicación:</b> ${esc(l.fecha_publicacion)}</div>`:'',
