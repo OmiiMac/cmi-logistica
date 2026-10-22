@@ -778,7 +778,7 @@ function normalizeProject(r){
 function normalizeItem(r){
   return {id:r.id,name:r.name,category:r.category,unit:r.unit||'unidades',
           quantity:r.quantity||0,minStock:r.min_stock||0,estado:r.estado||'OPERATIVA',
-          notes:r.notes||'',obsNoop:r.obs_noop||'',photoId:r.photo_id||null,projectId:r.project_id,updatedBy:r.updated_by||null,
+          notes:r.notes||'',obsNoop:r.obs_noop||'',costo:+r.costo||0,photoId:r.photo_id||null,projectId:r.project_id,updatedBy:r.updated_by||null,
           updatedAt:r.updated_at};
 }
 function normalizeTransfer(r){
@@ -2093,7 +2093,22 @@ async function renderProjInventario(proj){
   const sd = await api('/api/select',{table:'salidas_material',filters:[{col:'project_id',val:proj.id}],limit:1000});
   if(state.view!=='project'||state.projectId!==proj.id||(state.projTab||'')!=='inventario') return;
   const usado={}; (sd.data||[]).forEach(r=>{ const k=r.item_id; if(!k) return; const u=usado[k]||(usado[k]={tot:0,last:''}); u.tot+=(+r.cantidad||0); if((r.fecha||'')>u.last) u.last=r.fecha||''; });
+  // Valor del inventario del proyecto (cantidad × costo), total y por categoría.
+  const allProjItems=[...state.items.values()].filter(i=>i.projectId===proj.id);
+  const valorTotal=allProjItems.reduce((s,i)=>s+((+i.quantity||0)*(+i.costo||0)),0);
+  const valByCat={}; allProjItems.forEach(i=>{ const c=i.category||'otros'; valByCat[c]=(valByCat[c]||0)+((+i.quantity||0)*(+i.costo||0)); });
+  const valorBanner=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px;margin-bottom:14px">
+    <div style="background:var(--c-ok-lt);border-radius:10px;padding:12px 14px">
+      <div style="font-size:10px;color:var(--c-muted);text-transform:uppercase;font-weight:700;letter-spacing:.04em">💰 Valor total</div>
+      <div style="font-size:20px;font-weight:800;color:#166534">${cajaMoney(valorTotal)}</div>
+    </div>
+    ${CATS.filter(c=>valByCat[c.id]).map(c=>`<div style="background:var(--c-card);border:1px solid var(--c-border);border-radius:10px;padding:12px 14px">
+      <div style="font-size:10px;color:var(--c-muted);text-transform:uppercase;font-weight:700;letter-spacing:.04em">${c.label}</div>
+      <div style="font-size:16px;font-weight:700;color:${CAT_COLOR[c.id]||'#9B1B30'}">${cajaMoney(valByCat[c.id])}</div>
+    </div>`).join('')}
+  </div>`;
   b.innerHTML = `
+  ${valorBanner}
   <div class="toolbar">
     <div class="search-wrap">
       <span class="search-icon"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg></span>
@@ -2111,17 +2126,18 @@ async function renderProjInventario(proj){
   <div class="item-table">
     <table>
       <thead><tr>
-        <th>Articulo</th><th>Categoria</th><th>Disponible</th><th>Unidad</th><th>Usado (retirado)</th><th>Estado</th><th></th>
+        <th>Articulo</th><th>Categoria</th><th>Disponible</th><th>Unidad</th><th style="text-align:right">Valor</th><th>Usado (retirado)</th><th>Estado</th><th></th>
       </tr></thead>
       <tbody>
         ${items.length===0
-          ?`<tr><td colspan="7"><div class="empty-state">Sin articulos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
+          ?`<tr><td colspan="8"><div class="empty-state">Sin articulos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
           :items.map(item=>{ const u=usado[item.id]; return `
           <tr>
             <td><div style="display:flex;align-items:center;gap:9px;cursor:pointer" onclick="showItemDetail('${item.id}')" title="Ver notas y observaciones">${invThumb(item.photoId,item.name)}<b style="font-size:13px;color:var(--c-primary)">${esc(item.name)}</b>${item.estado==='NO_OPERATIVA'?' <span style="font-size:11px">⚠</span>':''}</div></td>
             <td>${catChip(item.category)}</td>
             <td><span class="qty-num ${item.minStock>0&&item.quantity<=item.minStock?'qty-low':''}">${item.quantity}</span></td>
             <td style="color:var(--c-muted);font-size:12px">${esc(item.unit)}</td>
+            <td style="text-align:right;font-size:12px">${item.costo?`<b>${cajaMoney((item.quantity||0)*(item.costo||0))}</b><div style="color:var(--c-muted);font-size:10px">${cajaMoney(item.costo)} c/u</div>`:'<span style="color:var(--c-muted)">—</span>'}</td>
             <td style="font-size:12px">${u?`<b>${(+u.tot.toFixed(2))} ${esc(item.unit||'')}</b>${u.last?`<div style="color:var(--c-muted);font-size:11px">últ. retiro: ${esc(u.last)}</div>`:''}`:'<span style="color:var(--c-muted)">—</span>'}</td>
             <td><span class="estado-chip ${item.estado}">${item.estado.replace('_',' ')}</span></td>
             <td style="white-space:nowrap">
@@ -3228,6 +3244,7 @@ async function showItemDetail(id){
       ${item.photoId?`<img src="${fileUrl(item.photoId)}" onclick="openPhoto('${fileUrl(item.photoId)}','${(item.name||'').replace(/'/g,"\\'")}')" style="width:66px;height:66px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border);cursor:zoom-in">`:''}
       <div>
         <div style="font-size:13px;color:var(--c-muted)">${esc(catLbl)} · ${item.quantity} ${esc(item.unit||'')}</div>
+        ${item.costo?`<div style="font-size:12px;color:#166534;font-weight:700;margin-top:2px">${cajaMoney(item.costo)} c/u · Valor: ${cajaMoney((item.quantity||0)*(item.costo||0))}</div>`:''}
         <div style="margin-top:5px"><span class="estado-chip ${item.estado}">${item.estado.replace('_',' ')}</span></div>
       </div>
     </div>
@@ -3278,6 +3295,7 @@ function showItemModal(id){
       </div>
       <div class="form-group"><label>Stock Minimo</label><input id="iMin" type="number" min="0" value="${item?.minStock||0}"></div>
     </div>
+    <div class="form-group"><label>Costo unitario ($)</label><input id="iCosto" type="number" min="0" step="0.01" value="${item&&item.costo?item.costo:''}" placeholder="Costo por unidad del equipo/herramienta/material/pintura"></div>
     <div class="form-group"><label>Estado</label>
       <select id="iEstado" onchange="document.getElementById('noopBox').style.display=this.value==='NO_OPERATIVA'?'block':'none'">${ESTADOS.map(e=>`<option ${item?.estado===e?'selected':''}>${e}</option>`).join('')}</select>
     </div>
@@ -3327,7 +3345,8 @@ async function saveItem(id){
   const obsNoopEl = document.getElementById('iObsNoop');
   const obsNoop = obsNoopEl ? obsNoopEl.value.trim() : '';
   if(!name){toast('Ingresa el nombre','err');return;}
-  const row = {name,category:cat,unit,quantity:qty,min_stock:min,estado,notes,obs_noop:obsNoop,updated_by:state.userId,updated_at:new Date().toISOString()};
+  const costo = parseFloat(document.getElementById('iCosto').value)||0;
+  const row = {name,category:cat,unit,quantity:qty,min_stock:min,estado,notes,obs_noop:obsNoop,costo,updated_by:state.userId,updated_at:new Date().toISOString()};
   const photoInput = document.getElementById('iPhoto');
   const photoFile = photoInput && photoInput.files && photoInput.files[0];
   let itemId = id;
