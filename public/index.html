@@ -2118,7 +2118,7 @@ async function renderProjInventario(proj){
           ?`<tr><td colspan="7"><div class="empty-state">Sin articulos${state.search||state.cat!=='all'?' (ajusta filtros)':''}</div></td></tr>`
           :items.map(item=>{ const u=usado[item.id]; return `
           <tr>
-            <td><div style="display:flex;align-items:center;gap:9px">${invThumb(item.photoId,item.name)}<b style="font-size:13px">${esc(item.name)}</b></div></td>
+            <td><div style="display:flex;align-items:center;gap:9px;cursor:pointer" onclick="showItemDetail('${item.id}')" title="Ver notas y observaciones">${invThumb(item.photoId,item.name)}<b style="font-size:13px;color:var(--c-primary)">${esc(item.name)}</b>${item.estado==='NO_OPERATIVA'?' <span style="font-size:11px">⚠</span>':''}</div></td>
             <td>${catChip(item.category)}</td>
             <td><span class="qty-num ${item.minStock>0&&item.quantity<=item.minStock?'qty-low':''}">${item.quantity}</span></td>
             <td style="color:var(--c-muted);font-size:12px">${esc(item.unit)}</td>
@@ -3215,6 +3215,32 @@ async function saveProject(id){
 }
 
 // Item modal
+async function showItemDetail(id){
+  const item=state.items.get(id); if(!item) return;
+  const catLbl=(CATS.find(c=>c.id===item.category)||{}).label||item.category;
+  const noop=item.estado==='NO_OPERATIVA';
+  let files=[];
+  if(noop){ try{ const d=await sb.from('files').select('*').eq('scope','item_noop').eq('ref_id',id); files=d.data||[]; }catch(e){} }
+  openModal(`
+  <div class="modal-head"><h2>${esc(item.name)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body" style="max-height:78vh;overflow-y:auto">
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:14px">
+      ${item.photoId?`<img src="${fileUrl(item.photoId)}" onclick="openPhoto('${fileUrl(item.photoId)}','${(item.name||'').replace(/'/g,"\\'")}')" style="width:66px;height:66px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border);cursor:zoom-in">`:''}
+      <div>
+        <div style="font-size:13px;color:var(--c-muted)">${esc(catLbl)} · ${item.quantity} ${esc(item.unit||'')}</div>
+        <div style="margin-top:5px"><span class="estado-chip ${item.estado}">${item.estado.replace('_',' ')}</span></div>
+      </div>
+    </div>
+    ${item.notes?`<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--c-muted);margin-bottom:4px">Notas</div><div style="font-size:13px;line-height:1.5">${esc(item.notes)}</div></div>`:''}
+    ${noop?`<div style="border:1px solid var(--c-err);border-radius:10px;padding:12px;background:var(--c-err-lt)">
+      <div style="font-weight:700;color:var(--c-err);margin-bottom:6px">⚠ Observaciones (equipo no operativo)</div>
+      <div style="font-size:13px;line-height:1.5">${item.obsNoop?esc(item.obsNoop):'<span style="color:var(--c-muted);font-style:italic">Sin observaciones</span>'}</div>
+      ${files.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px">${files.map(f=>`<img src="${fileUrl(f.id)}" onclick="openPhoto('${fileUrl(f.id)}','Daño')" title="Ver en grande" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border);cursor:zoom-in">`).join('')}</div>`:'<div style="font-size:11px;color:var(--c-muted);margin-top:8px">Sin fotos del daño</div>'}
+    </div>`:''}
+    ${(!item.notes && !noop)?`<div class="nodata" style="padding:16px;font-size:12px">Sin notas ni observaciones para este artículo.</div>`:''}
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>${state.isAdmin?`<button class="btn btn-primary" onclick="showItemModal('${id}')">Editar</button>`:''}</div>`);
+}
 function showItemModal(id){
   const item = id ? state.items.get(id) : null;
   const isNew = !item;
