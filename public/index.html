@@ -778,7 +778,7 @@ function normalizeProject(r){
 function normalizeItem(r){
   return {id:r.id,name:r.name,category:r.category,unit:r.unit||'unidades',
           quantity:r.quantity||0,minStock:r.min_stock||0,estado:r.estado||'OPERATIVA',
-          notes:r.notes||'',photoId:r.photo_id||null,projectId:r.project_id,updatedBy:r.updated_by||null,
+          notes:r.notes||'',obsNoop:r.obs_noop||'',photoId:r.photo_id||null,projectId:r.project_id,updatedBy:r.updated_by||null,
           updatedAt:r.updated_at};
 }
 function normalizeTransfer(r){
@@ -3229,7 +3229,14 @@ function showItemModal(id){
       <div class="form-group"><label>Stock Minimo</label><input id="iMin" type="number" min="0" value="${item?.minStock||0}"></div>
     </div>
     <div class="form-group"><label>Estado</label>
-      <select id="iEstado">${ESTADOS.map(e=>`<option ${item?.estado===e?'selected':''}>${e}</option>`).join('')}</select>
+      <select id="iEstado" onchange="document.getElementById('noopBox').style.display=this.value==='NO_OPERATIVA'?'block':'none'">${ESTADOS.map(e=>`<option ${item?.estado===e?'selected':''}>${e}</option>`).join('')}</select>
+    </div>
+    <div class="form-group" id="noopBox" style="display:${item?.estado==='NO_OPERATIVA'?'block':'none'};border:1px solid var(--c-err);border-radius:10px;padding:12px;background:var(--c-err-lt)">
+      <label style="font-weight:700;color:var(--c-err)">⚠ Observaciones (equipo no operativo)</label>
+      <textarea id="iObsNoop" rows="3" placeholder="Describe la falla o el motivo por el que no está operativo…">${esc(item?.obsNoop||'')}</textarea>
+      <label style="font-size:11px;color:var(--c-muted);margin-top:8px;display:block">Fotos del daño (puedes subir varias a la vez)</label>
+      <input type="file" id="iNoopFotos" accept="image/*" multiple>
+      <div id="noopFotosActuales" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${id?'<span style="font-size:11px;color:var(--c-muted)">Cargando fotos…</span>':''}</div>
     </div>
     <div class="form-group"><label>Notas</label><textarea id="iNotes" rows="2">${esc(item?.notes||'')}</textarea></div>
   </div>
@@ -3237,8 +3244,23 @@ function showItemModal(id){
     <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-primary" onclick="saveItem(${id?`'${id}'`:'null'})">Guardar</button>
   </div>`);
+  if(id) loadNoopFotos(id);
 }
-
+async function loadNoopFotos(itemId){
+  const cont=document.getElementById('noopFotosActuales'); if(!cont) return;
+  const d=await sb.from('files').select('*').eq('scope','item_noop').eq('ref_id',itemId);
+  const files=d.data||[];
+  if(!files.length){ cont.innerHTML='<span style="font-size:11px;color:var(--c-muted)">Sin fotos aún</span>'; return; }
+  cont.innerHTML=files.map(f=>`<div style="position:relative">
+    <img src="${fileUrl(f.id)}" onclick="openPhoto('${fileUrl(f.id)}','Daño')" title="Ver en grande" style="width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--c-border);cursor:zoom-in">
+    <button onclick="delNoopFoto('${f.id}','${itemId}')" title="Eliminar" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:none;background:#DC2626;color:#fff;font-size:12px;line-height:1;cursor:pointer">×</button>
+  </div>`).join('');
+}
+async function delNoopFoto(fileId,itemId){
+  const d=await apiDelete('/api/files/'+fileId);
+  if(d&&d.error){ toast('Error al eliminar','err'); return; }
+  loadNoopFotos(itemId);
+}
 function adjQty(delta){
   const inp = document.getElementById('iQty');
   inp.value = Math.max(0,(+inp.value||0)+delta);
@@ -3252,8 +3274,10 @@ async function saveItem(id){
   const min    = parseInt(document.getElementById('iMin').value)||0;
   const estado = document.getElementById('iEstado').value;
   const notes  = document.getElementById('iNotes').value.trim();
+  const obsNoopEl = document.getElementById('iObsNoop');
+  const obsNoop = obsNoopEl ? obsNoopEl.value.trim() : '';
   if(!name){toast('Ingresa el nombre','err');return;}
-  const row = {name,category:cat,unit,quantity:qty,min_stock:min,estado,notes,updated_by:state.userId,updated_at:new Date().toISOString()};
+  const row = {name,category:cat,unit,quantity:qty,min_stock:min,estado,notes,obs_noop:obsNoop,updated_by:state.userId,updated_at:new Date().toISOString()};
   const photoInput = document.getElementById('iPhoto');
   const photoFile = photoInput && photoInput.files && photoInput.files[0];
   let itemId = id;
@@ -3271,6 +3295,11 @@ async function saveItem(id){
     const up = await apiUpload('item', itemId, photoFile);
     if(up.error){ toast('Articulo guardado (la foto fallo)','err'); }
     else { await api('/api/update',{table:'items',values:{photo_id: up.data.id},filters:[{col:'id',val:itemId}]}); }
+  }
+  // Fotos del equipo no operativo (varias)
+  const noopFotos = document.getElementById('iNoopFotos');
+  if(noopFotos && noopFotos.files && noopFotos.files.length && itemId){
+    for(const f of noopFotos.files){ try{ await apiUpload('item_noop', itemId, f); }catch(e){} }
   }
   closeModal(); toast('Articulo guardado','ok');
 }

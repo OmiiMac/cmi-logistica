@@ -436,6 +436,7 @@ ensureColumn('licitaciones', 'hora_homologacion', 'TEXT');      // hora de homol
 ensureColumn('compras', 'encargado', 'TEXT');                   // encargado de la compra
 ensureColumn('compras', 'observaciones', 'TEXT');              // observaciones de la compra
 ensureColumn('compras', 'observacion_file', 'TEXT');          // foto adjunta a la observación
+ensureColumn('items', 'obs_noop', 'TEXT');                     // observaciones de equipo no operativo
 // Nuevo flujo de compras: solicitud → comprado → en_camino → entregada.
 db.exec("UPDATE compras SET estado='comprado' WHERE estado IN ('cotizada','aprobada')");
 ensureColumn('campanas', 'empresa', 'TEXT');           // mercadeo por empresa
@@ -471,7 +472,7 @@ db.exec("UPDATE messages SET room = 'general' WHERE room IS NULL");
 const SCHEMA = {
   profiles:  ['id', 'email', 'name', 'role', 'status', 'restrict_mods', 'phone', 'wa_optin', 'created_at', 'updated_at'],
   projects:  ['id', 'name', 'address', 'supervisor', 'engineer_id', 'color', 'status', 'notes', 'created_at', 'updated_at'],
-  items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
+  items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'obs_noop', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'origen_id', 'destino_id', 'created_by', 'created_at', 'updated_at'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
