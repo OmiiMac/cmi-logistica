@@ -999,6 +999,16 @@ function closeSSE(){ if(_sse){_sse.close();_sse=null;} }
 // página se mantiene al día sola: recarga los datos cada pocos segundos,
 // reabre la conexión si murió y refresca al instante al volver a la pestaña.
 let _autoRefreshTimer=null, _autoRefreshBound=false;
+let _lastDataSig=null;
+// Firma ligera de los datos que importan: si no cambia, no se redibuja (evita el parpadeo).
+function _dataSig(){
+  const p=[];
+  (state.rutas||[]).forEach(r=>p.push('r'+r.id+r.status+r.date+(r.hora||'')+(r.descripcion||'')+(r.destino||'')+(r.conductor||'')));
+  state.items.forEach(i=>p.push('i'+i.id+i.quantity+i.estado+(i.updatedAt||'')));
+  state.projects.forEach(pr=>p.push('p'+pr.id+(pr.name||'')+(pr.status||'')+(pr.supervisor||'')));
+  p.push('t'+(state.transfers||[]).length+((state.transfers&&state.transfers[0]&&state.transfers[0].id)||''));
+  return p.join('|');
+}
 async function autoRefresh(){
   if(!getToken()) return;                                   // sin sesión: nada
   let reconnected=false;
@@ -1010,11 +1020,13 @@ async function autoRefresh(){
   if(modalOpen || typing) return;                           // se reintenta en el próximo ciclo
   try { await loadAll(); } catch(e){ return; }
   try { await refreshChatUnread(); } catch(e){}
-  // Si el canal estuvo caído, re-sincronizamos la vista actual completa (cada módulo
-  // vuelve a cargar sus datos al dibujarse), así no se pierde nada de lo ocurrido.
+  const sig=_dataSig();
+  const changed = (_lastDataSig!==null && sig!==_lastDataSig);
+  _lastDataSig=sig;
+  // Si el canal estuvo caído, re-sincronizamos la vista actual completa al reconectar.
   if(reconnected && state.view!=='chat' && state.view!=='roomchat'){ render(); return; }
-  // En operación normal, solo re-dibujamos las vistas de monitoreo (sin saltos ni parpadeos).
-  if(['dashboard','rutas','transfers','inventario'].includes(state.view)) render();
+  // En operación normal SOLO redibujamos si de verdad hubo cambios (sin parpadeo cuando está quieto).
+  if(changed && ['dashboard','rutas','transfers','inventario'].includes(state.view)) render();
 }
 function startAutoRefresh(){
   stopAutoRefresh();
