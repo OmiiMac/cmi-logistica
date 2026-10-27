@@ -173,6 +173,29 @@ CREATE TABLE IF NOT EXISTS licitaciones (
   updated_at        TEXT
 );
 
+-- ── Carga Express: vehículos (kilometraje actual) y registro de combustible ──
+CREATE TABLE IF NOT EXISTS vehiculos (
+  id         TEXT PRIMARY KEY,
+  placa      TEXT,
+  nombre     TEXT,
+  km_actual  REAL DEFAULT 0,
+  activo     INTEGER DEFAULT 1,
+  created_at TEXT
+);
+CREATE TABLE IF NOT EXISTS combustible (
+  id          TEXT PRIMARY KEY,
+  placa       TEXT,
+  vehiculo_id TEXT,
+  fecha       TEXT,
+  monto       REAL,
+  galones     REAL,
+  km          REAL,
+  estacion    TEXT,
+  notas       TEXT,
+  created_by  TEXT,
+  created_at  TEXT
+);
+
 -- ── Competidores por licitación ──
 CREATE TABLE IF NOT EXISTS lic_competidores (
   id              TEXT PRIMARY KEY,
@@ -439,6 +462,16 @@ ensureColumn('compras', 'observaciones', 'TEXT');              // observaciones 
 ensureColumn('compras', 'observacion_file', 'TEXT');          // foto adjunta a la observación
 ensureColumn('items', 'obs_noop', 'TEXT');                     // observaciones de equipo no operativo
 ensureColumn('items', 'costo', 'REAL DEFAULT 0');             // costo unitario del artículo
+// Carga Express (rutas): vehículo, carga, cliente, flete, kilometraje y entrega.
+ensureColumn('rutas', 'placa', 'TEXT');
+ensureColumn('rutas', 'tipo_carga', 'TEXT');
+ensureColumn('rutas', 'cliente', 'TEXT');
+ensureColumn('rutas', 'costo_flete', 'REAL');
+ensureColumn('rutas', 'km_salida', 'REAL');
+ensureColumn('rutas', 'km_entrada', 'REAL');
+ensureColumn('rutas', 'observaciones', 'TEXT');
+ensureColumn('rutas', 'recibido_por', 'TEXT');
+ensureColumn('rutas', 'comprobante_file', 'TEXT');
 // Flujo de compras: solicitud → aprobado → comprado → en_camino → entregada.
 db.exec("UPDATE compras SET estado='aprobado' WHERE estado IN ('cotizada','aprobada')");
 db.exec("UPDATE compras SET estado='comprado' WHERE estado='pagado'");
@@ -478,7 +511,9 @@ const SCHEMA = {
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'obs_noop', 'costo', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'origen_id', 'destino_id', 'created_by', 'created_at', 'updated_at'],
-  rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'updated_by', 'updated_at', 'created_at'],
+  rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'placa', 'tipo_carga', 'cliente', 'costo_flete', 'km_salida', 'km_entrada', 'observaciones', 'recibido_por', 'comprobante_file', 'updated_by', 'updated_at', 'created_at'],
+  vehiculos: ['id', 'placa', 'nombre', 'km_actual', 'activo', 'created_at'],
+  combustible: ['id', 'placa', 'vehiculo_id', 'fecha', 'monto', 'galones', 'km', 'estacion', 'notas', 'created_by', 'created_at'],
   messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'file_id', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
@@ -1061,6 +1096,9 @@ function canWrite(table, op, user, values, filters) {
       return user.role === 'admin';
     case 'rutas':
       return op === 'update' ? true : user.role === 'admin'; // status: cualquiera; alta/baja: admin
+    case 'vehiculos':
+    case 'combustible':
+      return op === 'delete' ? user.role === 'admin' : true; // registrar/editar: cualquier activo; borrar: admin
     case 'items':
       return true;
     case 'transfers':
