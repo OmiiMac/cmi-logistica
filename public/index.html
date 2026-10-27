@@ -2786,7 +2786,7 @@ function renderRutas(){
 }
 // ── Rutas: gráficas y biblioteca ──────────────────────────────
 let _rutaCharts=[]; function destroyRutaCharts(){ _rutaCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _rutaCharts=[]; }
-function renderRutaGraficas(){
+async function renderRutaGraficas(){
   const b=document.getElementById('rutaBody'); if(!b) return;
   const rutas=state.rutas||[];
   b.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
@@ -2794,6 +2794,8 @@ function renderRutaGraficas(){
     <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por día de la semana</h3><canvas id="chRutaDow" height="190"></canvas></div>
     <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por conductor</h3><canvas id="chRutaCond" height="190"></canvas></div>
     <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Destinos más frecuentes</h3><canvas id="chRutaDest" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">🚚 Km recorrido por vehículo</h3><canvas id="chRutaKmVeh" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">⛽ Gasto de diésel por vehículo</h3><canvas id="chRutaDieselVeh" height="190"></canvas></div>
   </div>`;
   destroyRutaCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
   // por estado
@@ -2814,6 +2816,17 @@ function renderRutaGraficas(){
   const dp=Object.entries(dest).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const e4=document.getElementById('chRutaDest');
   if(e4) _rutaCharts.push(new Chart(e4,{type:'bar',data:{labels:dp.map(x=>x[0]),datasets:[{label:'Rutas',data:dp.map(x=>x[1]),backgroundColor:'#22C55E'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})}));
+  // Km recorrido y diésel por vehículo (requieren cargar kilometraje y combustible)
+  const [kmR,cbR]=await Promise.all([api('/api/select',{table:'kilometraje',limit:5000}),api('/api/select',{table:'combustible',limit:5000})]);
+  if((state.rutaMode||'')!=='graficas') return;
+  const kmVeh={}; (kmR.data||[]).forEach(r=>{ if(r.km_entrada!=null&&r.km_salida!=null){ const dd=+r.km_entrada-+r.km_salida; if(dd>0){ const k=vehName(r); kmVeh[k]=(kmVeh[k]||0)+dd; } } });
+  const kv=Object.entries(kmVeh).sort((a,b)=>b[1]-a[1]);
+  const ek=document.getElementById('chRutaKmVeh');
+  if(ek){ if(kv.length) _rutaCharts.push(new Chart(ek,{type:'bar',data:{labels:kv.map(x=>x[0]),datasets:[{label:'Km recorrido',data:kv.map(x=>x[1]),backgroundColor:'#0F766E'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})})); else ek.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin kilometraje registrado</div>'; }
+  const dVeh={}; (cbR.data||[]).forEach(c=>{ const k=vehName(c); dVeh[k]=(dVeh[k]||0)+(+c.monto||0); });
+  const dv=Object.entries(dVeh).sort((a,b)=>b[1]-a[1]);
+  const ed=document.getElementById('chRutaDieselVeh');
+  if(ed){ if(dv.length) _rutaCharts.push(new Chart(ed,{type:'bar',data:{labels:dv.map(x=>x[0]),datasets:[{label:'Diésel ($)',data:dv.map(x=>x[1]),backgroundColor:'#EA580C'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})})); else ed.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin diésel registrado</div>'; }
 }
 async function renderRutaArchivos(){
   const b=document.getElementById('rutaBody'); if(!b) return;
