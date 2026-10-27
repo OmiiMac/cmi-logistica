@@ -2850,20 +2850,18 @@ async function renderRutaPanel(){
   const delMes=(cb.data||[]).filter(c=>(c.fecha||'').slice(0,7)===mes);
   const dieselMes=delMes.reduce((s,c)=>s+(+c.monto||0),0);
   const galMes=delMes.reduce((s,c)=>s+(+c.galones||0),0);
+  const infoCard=(ic,bg,col,val,label,onclick)=>`<div ${onclick?`onclick="${onclick}" style="cursor:pointer;`:'style="'}flex:1;min-width:170px;display:flex;align-items:center;gap:12px;background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:13px 15px">
+    <div style="width:42px;height:42px;border-radius:12px;background:${bg};color:${col};display:flex;align-items:center;justify-content:center;font-size:21px;flex:none">${ic}</div>
+    <div style="min-width:0"><div style="font-size:21px;font-weight:800;line-height:1.1">${val}</div><div style="font-size:11px;color:var(--c-muted)">${label}</div></div>
+  </div>`;
   b.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
-      ${kpiTile('Rutas de hoy',rutasHoy.length,'#1D4ED8','#DBEAFE')}
-      ${kpiTile('Km del mes',(+kmMes).toLocaleString('es'),'#0F766E','#D1FAE5')}
-      ${kpiTile('Diésel del mes',money(dieselMes),'#EA580C','#FFEDD5')}
-      ${kpiTile('Galones del mes',(+galMes.toFixed(2)).toLocaleString('es'),'#9B1B30','#FDE8EC')}
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+      ${infoCard('🚚','rgba(29,78,216,.12)','#1D4ED8',rutasHoy.length,'Rutas de hoy',null)}
+      ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),'Diésel del mes · '+(+galMes.toFixed(0))+' gal',"setRutaMode('diesel')")}
     </div>
-    <div class="ruta-day-card" style="margin-bottom:14px">
+    <div class="ruta-day-card">
       <div class="ruta-day-head"><span>🚚 Ruta(s) de hoy · ${fmtDateLong(hoy)}</span><span style="font-size:11px">${rutasHoy.length} ruta(s)</span></div>
       ${rutasHoy.length?rutasHoy.map(rutaRowHtml).join(''):'<div class="no-rutas">Sin rutas para hoy.</div>'}
-    </div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-sm btn-ghost" onclick="setRutaMode('kilometraje')">📏 Kilometraje</button>
-      <button class="btn btn-sm btn-ghost" onclick="setRutaMode('diesel')">⛽ Diésel</button>
     </div>`;
 }
 // ── Carga Express: Kilometraje (salida / entrada por vehículo) ──
