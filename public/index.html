@@ -4960,6 +4960,29 @@ async function renderMercadeo(){
 }
 
 // ── Dashboard de inicio de Mercadeo (consolidado 5 empresas) ──
+function mktEmpChip(e){ const col=MKT_EMP_COLOR[e]||'#BE185D'; return `<span style="font-size:10px;font-weight:700;color:#fff;background:${col};padding:2px 8px;border-radius:20px;white-space:nowrap">${MKT_EMP_EMOJI[e]||''} ${esc(e||'—')}</span>`; }
+function mktGo(emp,tab){ closeModal(); if(emp) mstate.mktEmpresa=emp; mstate.mktTab=tab||'panel'; renderMercadeo(); }
+// Vista consolidada (todas las empresas) al tocar una casilla o panel del inicio de Mercadeo.
+function mktHomeDrill(type){
+  const d=mstate._mktHome||{}; const pubs=d.pubs||[],tareas=d.tareas||[],piezas=d.piezas||[],camps=d.camps||[];
+  const hoy=todayStr(), mesAct=hoy.slice(0,7);
+  const addDays=(s,n)=>{ const dt=new Date(s+'T00:00:00'); dt.setDate(dt.getDate()+n); return dt.toISOString().slice(0,10); };
+  const in7=addDays(hoy,7);
+  const openT=t=>!['completado','cancelado'].includes(t.estado);
+  if(type==='empresas'){
+    const list=MKT_EMPRESAS.map(e=>`<div onclick="mktGo('${e.replace(/'/g,"\\'")}','panel')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--c-border)">${mktEmpChip(e)}<span style="flex:1;font-weight:600">${esc(e)}</span><span style="color:var(--c-muted)">›</span></div>`).join('');
+    openModal(`<div class="modal-head"><h2>Empresas</h2><button class="overlay-close" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:72vh;overflow-y:auto">${list}</div>`); return;
+  }
+  let title='', tab='panel', items=[];
+  if(type==='camp'){ title='Campañas activas'; tab='campanas'; items=camps.filter(c=>c.estado==='activa').map(c=>({emp:c.empresa,txt:c.nombre||'(campaña)',sub:c.objetivo||''})); }
+  else if(type==='pend'){ title='Pendientes'; tab='tareas'; items=tareas.filter(openT).map(t=>({emp:t.empresa,txt:t.titulo||t.descripcion||'(pendiente)',sub:t.fecha_limite?('Vence '+t.fecha_limite):''})); }
+  else if(type==='revisar'){ title='Piezas por revisar'; tab='preaprobados'; items=piezas.filter(p=>['borrador','enviado'].includes(p.estado)).map(p=>({emp:p.empresa,txt:p.titulo||'(pieza)',sub:p.estado||''})); }
+  else if(type==='prox7'){ title='Publican en 7 días'; tab='calendario'; items=pubs.filter(p=>p.fecha&&p.fecha>=hoy&&p.fecha<=in7).map(p=>({emp:p.empresa,txt:p.titulo||p.contenido||'(publicación)',sub:p.fecha||''})); }
+  else if(type==='pubmes'){ title='Publicaciones del mes'; tab='calendario'; items=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).map(p=>({emp:p.empresa,txt:p.titulo||p.contenido||'(publicación)',sub:p.fecha||''})); }
+  items.sort((a,b)=>String(a.emp||'').localeCompare(String(b.emp||'')));
+  const rows=items.length?items.map(it=>`<div onclick="mktGo('${String(it.emp||'').replace(/'/g,"\\'")}','${tab}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid var(--c-border)">${mktEmpChip(it.emp)}<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.txt)}</div>${it.sub?`<div style="font-size:11px;color:var(--c-muted)">${esc(it.sub)}</div>`:''}</div><span style="color:var(--c-muted)">›</span></div>`).join(''):'<div class="nodata" style="padding:24px">Nada por aquí.</div>';
+  openModal(`<div class="modal-head"><h2>${title} <span style="font-size:12px;color:var(--c-muted)">· todas las empresas (${items.length})</span></h2><button class="overlay-close" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:72vh;overflow-y:auto">${rows}</div>`);
+}
 async function renderMktHome(){
   const host=document.getElementById('mktHome'); if(!host) return;
   const [rp,rt,rz,rc]=await Promise.all([
@@ -4969,6 +4992,7 @@ async function renderMktHome(){
     sb.from('campanas').select('*')
   ]);
   const pubs=rp.data||[], tareas=rt.data||[], piezas=rz.data||[], camps=rc.data||[];
+  mstate._mktHome={pubs,tareas,piezas,camps};   // cache para los paneles clickeables
   const hoy=todayStr(), mesAct=hoy.slice(0,7);
   const addDays=(s,n)=>{ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
   const in7=addDays(hoy,7);
@@ -4987,10 +5011,10 @@ async function renderMktHome(){
   });
   const stats=Object.fromEntries(MKT_EMPRESAS.map(e=>[e,perEmp(e)]));
   const maxAct=Math.max(1,...MKT_EMPRESAS.map(e=>stats[e].pend+stats[e].pubMes+stats[e].revisar));
-  const bigKpi=(emoji,val,label,c1,c2)=>`<div style="position:relative;overflow:hidden;border-radius:16px;padding:16px 16px 18px;background:linear-gradient(135deg,${c1},${c2});color:#fff;box-shadow:0 6px 18px -8px ${c1}">
+  const bigKpi=(emoji,val,label,c1,c2,onclick)=>`<div ${onclick?`onclick="${onclick}"`:''} style="position:relative;overflow:hidden;border-radius:16px;padding:16px 16px 18px;background:linear-gradient(135deg,${c1},${c2});color:#fff;box-shadow:0 6px 18px -8px ${c1}${onclick?';cursor:pointer':''}">
     <div style="font-size:26px;line-height:1;opacity:.95">${emoji}</div>
     <div style="font-size:30px;font-weight:900;margin-top:8px;text-shadow:0 1px 6px rgba(0,0,0,.25)">${val}</div>
-    <div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.92;margin-top:2px">${label}</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.92;margin-top:2px">${label}${onclick?' ›':''}</div>
   </div>`;
   host.innerHTML=`
     <div class="greeting-bar">
@@ -5006,18 +5030,19 @@ async function renderMktHome(){
         <div class="greeting-kpi"><div class="greeting-kpi-val">${pendTot}</div><div class="greeting-kpi-label">Pendientes</div></div>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0">
-      ${bigKpi('🏢',MKT_EMPRESAS.length,'Empresas','#3B82F6','#1D4ED8')}
-      ${bigKpi('🚀',campTot,'Campañas activas','#22C55E','#15803D')}
-      ${bigKpi('📋',pendTot,'Pendientes','#F59E0B','#D97706')}
-      ${bigKpi('🎨',revisarTot,'Por revisar','#A78BFA','#7C3AED')}
-      ${bigKpi('🔥',prox7,'Publican (7 días)','#FB7185','#E8384A')}
+    <div style="font-size:12px;color:var(--c-muted);margin:14px 0 6px">Toca una casilla o un panel para ver la información consolidada de todas las empresas.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 16px">
+      ${bigKpi('🏢',MKT_EMPRESAS.length,'Empresas','#3B82F6','#1D4ED8',"mktHomeDrill('empresas')")}
+      ${bigKpi('🚀',campTot,'Campañas activas','#22C55E','#15803D',"mktHomeDrill('camp')")}
+      ${bigKpi('📋',pendTot,'Pendientes','#F59E0B','#D97706',"mktHomeDrill('pend')")}
+      ${bigKpi('🎨',revisarTot,'Por revisar','#A78BFA','#7C3AED',"mktHomeDrill('revisar')")}
+      ${bigKpi('🔥',prox7,'Publican (7 días)','#FB7185','#E8384A',"mktHomeDrill('prox7')")}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
-      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">🏢 Actividad por empresa</h3><canvas id="chHomeEmp" height="210"></canvas></div>
-      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">📣 Publicaciones del mes por empresa</h3><canvas id="chHomePubEmp" height="210"></canvas></div>
-      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">📈 Publicaciones por mes (todas)</h3><canvas id="chHomeMes" height="210"></canvas></div>
-      <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">✅ Pipeline de piezas</h3><canvas id="chHomePiezas" height="210"></canvas></div>
+      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('empresas')"><h3 style="font-size:13px;margin:0 0 12px">🏢 Actividad por empresa ›</h3><canvas id="chHomeEmp" height="210"></canvas></div>
+      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('pubmes')"><h3 style="font-size:13px;margin:0 0 12px">📣 Publicaciones del mes por empresa ›</h3><canvas id="chHomePubEmp" height="210"></canvas></div>
+      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('pubmes')"><h3 style="font-size:13px;margin:0 0 12px">📈 Publicaciones por mes (todas) ›</h3><canvas id="chHomeMes" height="210"></canvas></div>
+      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('revisar')"><h3 style="font-size:13px;margin:0 0 12px">✅ Pipeline de piezas ›</h3><canvas id="chHomePiezas" height="210"></canvas></div>
     </div>
     <h2 style="font-size:15px;margin:4px 0 6px">Empresas</h2>
     <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Toca una para entrar (también están en el menú de la izquierda).</div>
