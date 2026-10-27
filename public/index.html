@@ -2887,7 +2887,7 @@ async function renderRutaKm(){
       <tbody>${rows.length===0?`<tr><td colspan="6"><div class="empty-state">Sin registros. Agrega el primero con "+ Registrar salida / entrada".</div></td></tr>`:rows.map(r=>{ const v=rec(r); return `
         <tr>
           <td style="white-space:nowrap">${esc(r.fecha||'')}</td>
-          <td><b>${esc(r.placa||'—')}</b></td>
+          <td><b>${esc(vehName(r))}</b></td>
           <td style="text-align:right">${r.km_salida!=null?(+r.km_salida).toLocaleString('es'):'—'}</td>
           <td style="text-align:right">${r.km_entrada!=null?(+r.km_entrada).toLocaleString('es'):'<span style="color:var(--c-warn);font-size:11px">pendiente</span>'}</td>
           <td style="text-align:right;font-weight:700">${v!=null?(+v).toLocaleString('es')+' km':'—'}</td>
@@ -2919,7 +2919,7 @@ async function saveKm(id){
   const kmSal=g('kmSal')!==''?parseFloat(g('kmSal')):null;
   const kmEnt=g('kmEnt')!==''?parseFloat(g('kmEnt')):null;
   if(kmSal==null&&kmEnt==null){ showToast('Ingresa al menos un kilometraje','err'); return; }
-  const values={placa:veh?veh.placa:'',vehiculo_id:vehId||null,fecha:g('kmFecha')||todayStr(),km_salida:kmSal,km_entrada:kmEnt,notas:g('kmNotas').trim()};
+  const values={placa:veh?(veh.placa||veh.nombre):'',vehiculo_id:vehId||null,fecha:g('kmFecha')||todayStr(),km_salida:kmSal,km_entrada:kmEnt,notas:g('kmNotas').trim()};
   let d;
   if(id){ d=await api('/api/update',{table:'kilometraje',values,filters:[{col:'id',val:id}]}); }
   else { d=await api('/api/insert',{table:'kilometraje',values:{...values,created_at:new Date().toISOString()}}); }
@@ -2931,6 +2931,12 @@ async function saveKm(id){
 async function reloadVehiculos(){
   const vR=await api('/api/select',{table:'vehiculos',order:[{col:'placa',asc:true}]});
   state.vehiculos=(vR.data||[]).map(v=>({id:v.id,placa:v.placa||'',nombre:v.nombre||'',kmActual:+v.km_actual||0,activo:v.activo!==0}));
+}
+// Nombre a mostrar de un vehículo en registros (resuelve por id; usa placa o nombre).
+function vehName(rec){
+  const v=(state.vehiculos||[]).find(x=>x.id===rec.vehiculo_id) || (rec.placa?(state.vehiculos||[]).find(x=>x.placa===rec.placa):null);
+  if(v) return v.placa || v.nombre || '—';
+  return rec.placa || '—';
 }
 async function deleteKm(id){
   if(!confirm('¿Eliminar este registro?')) return;
@@ -3001,7 +3007,7 @@ async function renderRutaDiesel(){
   const totMes=delMes.reduce((s,c)=>s+(+c.monto||0),0);
   const galMes=delMes.reduce((s,c)=>s+(+c.galones||0),0);
   const tot=rows.reduce((s,c)=>s+(+c.monto||0),0);
-  const porVeh={}; delMes.forEach(c=>{ const k=c.placa||'—'; porVeh[k]=(porVeh[k]||0)+(+c.monto||0); });
+  const porVeh={}; delMes.forEach(c=>{ const k=vehName(c); porVeh[k]=(porVeh[k]||0)+(+c.monto||0); });
   b.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <h3 style="font-size:14px;margin:0">⛽ Registro de diésel</h3>
@@ -3019,7 +3025,7 @@ async function renderRutaDiesel(){
       <tbody>${rows.length===0?`<tr><td colspan="7"><div class="empty-state">Sin tanqueos registrados. Agrega el primero con "+ Registrar tanqueo".</div></td></tr>`:rows.map(c=>`
         <tr>
           <td style="white-space:nowrap">${esc(c.fecha||'')}</td>
-          <td><b>${esc(c.placa||'—')}</b></td>
+          <td><b>${esc(vehName(c))}</b></td>
           <td style="text-align:right;font-weight:700">${money(c.monto)}</td>
           <td style="text-align:right;color:var(--c-muted)">${c.galones?(+c.galones):'—'}</td>
           <td style="text-align:right;color:var(--c-muted)">${c.km?(+c.km).toLocaleString('es'):'—'}</td>
@@ -3052,7 +3058,7 @@ async function saveDiesel(){
   const monto=parseFloat(document.getElementById('dsMonto').value)||0;
   if(!monto){ showToast('Ingresa el monto','err'); return; }
   const km=document.getElementById('dsKm').value!==''?parseFloat(document.getElementById('dsKm').value):null;
-  const values={placa:veh?veh.placa:'',vehiculo_id:vehId||null,fecha:document.getElementById('dsFecha').value||todayStr(),monto,galones:parseFloat(document.getElementById('dsGal').value)||null,km,estacion:document.getElementById('dsEst').value.trim(),notas:document.getElementById('dsNotas').value.trim(),created_at:new Date().toISOString()};
+  const values={placa:veh?(veh.placa||veh.nombre):'',vehiculo_id:vehId||null,fecha:document.getElementById('dsFecha').value||todayStr(),monto,galones:parseFloat(document.getElementById('dsGal').value)||null,km,estacion:document.getElementById('dsEst').value.trim(),notas:document.getElementById('dsNotas').value.trim(),created_at:new Date().toISOString()};
   const d=await api('/api/insert',{table:'combustible',values});
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
   if(veh && km!=null && km>veh.kmActual){ await api('/api/update',{table:'vehiculos',values:{km_actual:km},filters:[{col:'id',val:veh.id}]}); await reloadVehiculos(); }
