@@ -4962,6 +4962,7 @@ async function renderMercadeo(){
 // ── Dashboard de inicio de Mercadeo (consolidado 5 empresas) ──
 function mktEmpChip(e){ const col=MKT_EMP_COLOR[e]||'#BE185D'; return `<span style="font-size:10px;font-weight:700;color:#fff;background:${col};padding:2px 8px;border-radius:20px;white-space:nowrap">${MKT_EMP_EMOJI[e]||''} ${esc(e||'—')}</span>`; }
 function mktGo(emp,tab){ closeModal(); if(emp) mstate.mktEmpresa=emp; mstate.mktTab=tab||'panel'; renderMercadeo(); }
+function shiftMktHomeMonth(dir){ const ym=mstate.mktHomeMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.mktHomeMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderMktHome(); }
 // Vista consolidada (todas las empresas) al tocar una casilla o panel del inicio de Mercadeo.
 function mktHomeDrill(type){
   const d=mstate._mktHome||{}; const pubs=d.pubs||[],tareas=d.tareas||[],piezas=d.piezas||[],camps=d.camps||[];
@@ -5016,6 +5017,31 @@ async function renderMktHome(){
     <div style="font-size:30px;font-weight:900;margin-top:8px;text-shadow:0 1px 6px rgba(0,0,0,.25)">${val}</div>
     <div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.92;margin-top:2px">${label}${onclick?' ›':''}</div>
   </div>`;
+  // Calendario consolidado de las 5 empresas (para no salir del inicio).
+  const ymH=mstate.mktHomeMonth||mesAct;
+  const [HY,HM]=ymH.split('-').map(Number);
+  const startDowH=(new Date(HY,HM-1,1).getDay()+6)%7;
+  const daysH=new Date(HY,HM,0).getDate();
+  const pubByDayH={}; pubs.forEach(p=>{ if((p.fecha||'').slice(0,7)===ymH){ const dd=+p.fecha.slice(8,10); (pubByDayH[dd]=pubByDayH[dd]||[]).push(p); } });
+  let cellsH=''; for(let i=0;i<startDowH;i++) cellsH+='<div></div>';
+  for(let dd=1;dd<=daysH;dd++){
+    const ds=ymH+'-'+String(dd).padStart(2,'0'); const lst=pubByDayH[dd]||[]; const esHoy=ds===hoy;
+    cellsH+=`<div style="min-height:72px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:4px;background:var(--c-card);overflow:hidden">
+      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${dd}</div>
+      ${lst.slice(0,3).map(p=>{ const col=MKT_EMP_COLOR[p.empresa]||'#6B6B78'; return `<div onclick="mktGo('${String(p.empresa||'').replace(/'/g,"\\'")}','calendario')" title="${esc(p.empresa||'')}: ${esc(p.titulo||p.contenido||'')}" style="cursor:pointer;font-size:9px;font-weight:600;margin-top:2px;padding:1px 4px;border-radius:4px;background:${col};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${MKT_EMP_EMOJI[p.empresa]||''} ${esc(p.titulo||p.contenido||'')}</div>`; }).join('')}
+      ${lst.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${lst.length-3} más</div>`:''}
+    </div>`;
+  }
+  const dowH=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  const calHtml=`<div class="section-card" style="padding:16px;margin-bottom:18px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <h3 style="font-size:13px;margin:0">📅 Calendario de publicaciones · 5 empresas</h3>
+      <div class="date-strip-wrap" style="gap:8px"><button class="nav-arrow" onclick="shiftMktHomeMonth(-1)">‹</button><div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${MESES_ES[HM-1]} ${HY}</div><button class="nav-arrow" onclick="shiftMktHomeMonth(1)">›</button></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${MKT_EMPRESAS.map(e=>`<span style="font-size:10px;display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${MKT_EMP_COLOR[e]||'#6B6B78'}"></span>${esc(e)}</span>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px">${dowH.map(d=>`<div style="text-align:center;font-size:9px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${cellsH}</div>
+  </div>`;
   host.innerHTML=`
     <div class="greeting-bar">
       <div style="display:flex;align-items:center;gap:18px;position:relative;z-index:1">
@@ -5044,6 +5070,7 @@ async function renderMktHome(){
       <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('pubmes')"><h3 style="font-size:13px;margin:0 0 12px">📈 Publicaciones por mes (todas) ›</h3><canvas id="chHomeMes" height="210"></canvas></div>
       <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('revisar')"><h3 style="font-size:13px;margin:0 0 12px">✅ Pipeline de piezas ›</h3><canvas id="chHomePiezas" height="210"></canvas></div>
     </div>
+    ${calHtml}
     <h2 style="font-size:15px;margin:4px 0 6px">Empresas</h2>
     <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Toca una para entrar (también están en el menú de la izquierda).</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
