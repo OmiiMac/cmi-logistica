@@ -2744,7 +2744,7 @@ function renderRutas(){
 
   const mode = state.rutaMode || 'panel';
   const toggle = `<div class="filter-chips" style="margin-bottom:14px">
-    ${[['panel','📊 Panel'],['dia','Día'],['semana','Semana'],['mes','Mes'],['vehiculos','🚛 Vehículos'],['diesel','⛽ Diésel'],['graficas','📈 Gráficas'],['archivos','🗂️ Archivos']].map(([m,l])=>`<span class="chip ${mode===m?'active':''}" onclick="setRutaMode('${m}')">${l}</span>`).join('')}
+    ${[['panel','📊 Panel'],['dia','Día'],['semana','Semana'],['mes','Mes'],['kilometraje','📏 Kilometraje'],['diesel','⛽ Diésel'],['vehiculos','🚛 Vehículos'],['graficas','📈 Gráficas'],['archivos','🗂️ Archivos']].map(([m,l])=>`<span class="chip ${mode===m?'active':''}" onclick="setRutaMode('${m}')">${l}</span>`).join('')}
   </div>`;
 
   let body;
@@ -2782,6 +2782,7 @@ function renderRutas(){
   else if(mode==='panel') renderRutaPanel();
   else if(mode==='vehiculos') renderRutaVehiculos();
   else if(mode==='diesel') renderRutaDiesel();
+  else if(mode==='kilometraje') renderRutaKm();
 }
 // ── Rutas: gráficas y biblioteca ──────────────────────────────
 let _rutaCharts=[]; function destroyRutaCharts(){ _rutaCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _rutaCharts=[]; }
@@ -2835,50 +2836,105 @@ async function uploadRutaFile(){
 }
 async function delRutaFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderRutaArchivos(); }
 
-// ── Carga Express: Panel (dashboard con casillas) ─────────────
+// ── Carga Express: Panel limpio (ruta del día, kilómetros, diésel) ──
 async function renderRutaPanel(){
   const b=document.getElementById('rutaBody'); if(!b) return;
-  const rutas=state.rutas||[];
   const hoy=todayStr(), mes=hoy.slice(0,7);
-  const rutasMes=rutas.filter(r=>(r.date||'').slice(0,7)===mes);
-  const hoyN=rutas.filter(r=>r.date===hoy).length;
-  const pend=rutas.filter(r=>r.status==='pendiente').length;
-  const enRuta=rutas.filter(r=>r.status==='en_ruta').length;
-  const compMes=rutasMes.filter(r=>r.status==='completada').length;
-  const fleteMes=rutasMes.reduce((s,r)=>s+(+r.costoFlete||0),0);
-  const kmMes=rutasMes.reduce((s,r)=>{ const d=(r.kmEntrada!=null&&r.kmSalida!=null)?(r.kmEntrada-r.kmSalida):0; return s+(d>0?d:0); },0);
-  const cb=await api('/api/select',{table:'combustible',limit:5000});
+  const rutasHoy=(state.rutas||[]).filter(r=>r.date===hoy).sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+  const [km,cb]=await Promise.all([
+    api('/api/select',{table:'kilometraje',limit:5000}),
+    api('/api/select',{table:'combustible',limit:5000})
+  ]);
   if((state.rutaMode||'panel')!=='panel') return;
-  const dieselMes=(cb.data||[]).filter(c=>(c.fecha||'').slice(0,7)===mes).reduce((s,c)=>s+(+c.monto||0),0);
-  const fil=state._rutaFil||null, grp=state._rutaGrp||'estado';
-  const tile=(label,val,color,bg,onclick)=>`<div ${onclick?`onclick="${onclick}" style="cursor:pointer"`:''}>${kpiTile(label,val,color,bg)}</div>`;
-  let shown=rutasMes.slice(); if(fil) shown=shown.filter(r=>r.status===fil);
-  const groups={};
-  if(grp==='estado'){ shown.forEach(r=>{ const k=RUTA_ST_LABEL[r.status]||r.status; (groups[k]=groups[k]||[]).push(r); }); }
-  else if(grp==='conductor'){ shown.forEach(r=>{ const k=(r.conductor||'').trim()||'Sin asignar'; (groups[k]=groups[k]||[]).push(r); }); }
-  else { shown.forEach(r=>{ const k=r.date||'—'; (groups[k]=groups[k]||[]).push(r); }); }
-  const grpKeys=Object.keys(groups).filter(k=>groups[k].length).sort();
+  const kmMes=(km.data||[]).filter(k=>(k.fecha||'').slice(0,7)===mes).reduce((s,k)=>{ const d=(k.km_entrada!=null&&k.km_salida!=null)?(k.km_entrada-k.km_salida):0; return s+(d>0?d:0); },0);
+  const delMes=(cb.data||[]).filter(c=>(c.fecha||'').slice(0,7)===mes);
+  const dieselMes=delMes.reduce((s,c)=>s+(+c.monto||0),0);
+  const galMes=delMes.reduce((s,c)=>s+(+c.galones||0),0);
   b.innerHTML=`
-    <div style="font-size:11px;color:var(--c-muted);margin-bottom:8px">Toca una casilla para filtrar las rutas del mes.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px">
-      ${tile('Rutas hoy',hoyN,'#1D4ED8','#DBEAFE',"state._rutaFil=null;renderRutas()")}
-      ${tile('Pendientes',pend,'#D97706','#FEF3C7',"state._rutaFil='pendiente';renderRutas()")}
-      ${tile('En ruta',enRuta,'#2563EB','#DBEAFE',"state._rutaFil='en_ruta';renderRutas()")}
-      ${tile('Completadas (mes)',compMes,'#166534','#DCFCE7',"state._rutaFil='completada';renderRutas()")}
-      ${tile('Flete del mes',money(fleteMes),'#9B1B30','#FDE8EC',null)}
-      ${tile('Km recorridos (mes)',kmMes.toLocaleString('es'),'#0F766E','#D1FAE5',null)}
-      ${tile('Diésel del mes',money(dieselMes),'#EA580C','#FFEDD5',"setRutaMode('diesel')")}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Rutas de hoy',rutasHoy.length,'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Km del mes',(+kmMes).toLocaleString('es'),'#0F766E','#D1FAE5')}
+      ${kpiTile('Diésel del mes',money(dieselMes),'#EA580C','#FFEDD5')}
+      ${kpiTile('Galones del mes',(+galMes.toFixed(2)).toLocaleString('es'),'#9B1B30','#FDE8EC')}
     </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
-      <span style="font-size:12px;color:var(--c-muted)">Agrupar por:</span>
-      <div class="filter-chips">${[['estado','Estado'],['conductor','Conductor'],['dia','Día']].map(([k,l])=>`<span class="chip ${grp===k?'active':''}" onclick="state._rutaGrp='${k}';renderRutas()">${l}</span>`).join('')}</div>
-      ${fil?`<button class="btn btn-sm btn-ghost" onclick="state._rutaFil=null;renderRutas()">✕ Quitar filtro: ${RUTA_ST_LABEL[fil]}</button>`:''}
+    <div class="ruta-day-card" style="margin-bottom:14px">
+      <div class="ruta-day-head"><span>🚚 Ruta(s) de hoy · ${fmtDateLong(hoy)}</span><span style="font-size:11px">${rutasHoy.length} ruta(s)</span></div>
+      ${rutasHoy.length?rutasHoy.map(rutaRowHtml).join(''):'<div class="no-rutas">Sin rutas para hoy.</div>'}
     </div>
-    ${grpKeys.length===0?'<div class="nodata" style="padding:20px">Sin rutas este mes'+(fil?' con ese estado':'')+'.</div>':grpKeys.map(k=>`
-      <div class="ruta-day-card" style="margin-bottom:12px">
-        <div class="ruta-day-head"><span>${esc(grp==='dia'?fmtDateLong(k):k)}</span><span style="font-size:11px">${groups[k].length} ruta(s)</span></div>
-        ${groups[k].sort((a,b)=>(a.date+(a.hora||'')).localeCompare(b.date+(b.hora||''))).map(rutaRowHtml).join('')}
-      </div>`).join('')}`;
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-ghost" onclick="setRutaMode('kilometraje')">📏 Kilometraje</button>
+      <button class="btn btn-sm btn-ghost" onclick="setRutaMode('diesel')">⛽ Diésel</button>
+    </div>`;
+}
+// ── Carga Express: Kilometraje (salida / entrada por vehículo) ──
+async function renderRutaKm(){
+  const b=document.getElementById('rutaBody'); if(!b) return;
+  b.innerHTML='<div class="nodata" style="padding:20px">Cargando kilometraje…</div>';
+  const d=await api('/api/select',{table:'kilometraje',order:[{col:'fecha',asc:false}],limit:5000});
+  if((state.rutaMode||'')!=='kilometraje') return;
+  const rows=d.data||[]; state._kmCache=rows; const mes=todayStr().slice(0,7);
+  const rec=r=>(r.km_entrada!=null&&r.km_salida!=null)?(+r.km_entrada-+r.km_salida):null;
+  const kmMes=rows.filter(r=>(r.fecha||'').slice(0,7)===mes).reduce((s,r)=>{ const v=rec(r); return s+(v&&v>0?v:0); },0);
+  b.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <h3 style="font-size:14px;margin:0">📏 Kilometraje</h3>
+      <button class="btn btn-sm btn-primary" onclick="showKmModal()">+ Registrar salida / entrada</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:14px">
+      ${kpiTile('Km recorridos (mes)',(+kmMes).toLocaleString('es'),'#0F766E','#D1FAE5')}
+      ${kpiTile('Registros (mes)',rows.filter(r=>(r.fecha||'').slice(0,7)===mes).length,'#1D4ED8','#DBEAFE')}
+    </div>
+    <div class="item-table"><table>
+      <thead><tr><th>Fecha</th><th>Vehículo</th><th style="text-align:right">Km salida</th><th style="text-align:right">Km entrada</th><th style="text-align:right">Recorrido</th>${state.isAdmin?'<th></th>':''}</tr></thead>
+      <tbody>${rows.length===0?`<tr><td colspan="6"><div class="empty-state">Sin registros. Agrega el primero con "+ Registrar salida / entrada".</div></td></tr>`:rows.map(r=>{ const v=rec(r); return `
+        <tr>
+          <td style="white-space:nowrap">${esc(r.fecha||'')}</td>
+          <td><b>${esc(r.placa||'—')}</b></td>
+          <td style="text-align:right">${r.km_salida!=null?(+r.km_salida).toLocaleString('es'):'—'}</td>
+          <td style="text-align:right">${r.km_entrada!=null?(+r.km_entrada).toLocaleString('es'):'<span style="color:var(--c-warn);font-size:11px">pendiente</span>'}</td>
+          <td style="text-align:right;font-weight:700">${v!=null?(+v).toLocaleString('es')+' km':'—'}</td>
+          ${state.isAdmin?`<td style="text-align:right"><button class="act-btn" onclick="showKmModal('${r.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="deleteKm('${r.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>`:''}
+        </tr>`;}).join('')}</tbody>
+    </table></div>`;
+}
+function showKmModal(id){
+  const vehs=(state.vehiculos||[]).filter(v=>v.activo);
+  const r=id?(state._kmCache||[]).find(x=>x.id===id):null;
+  openModal(`<div class="modal-head"><h2>${r?'Editar registro':'Registrar salida / entrada'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Vehículo</label><select id="kmVeh" onchange="kmVehChange()">${vehs.length?vehs.map(v=>`<option value="${v.id}" data-km="${v.kmActual}" ${r&&r.placa===v.placa?'selected':''}>${esc(v.placa||v.nombre)} — ${v.kmActual} km</option>`).join(''):'<option value="">(agrega vehículos primero)</option>'}</select></div>
+    <div class="form-group"><label>Fecha</label><input id="kmFecha" type="date" value="${esc(r?.fecha||todayStr())}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Km de salida</label><input id="kmSal" type="number" min="0" step="1" value="${r&&r.km_salida!=null?r.km_salida:''}" placeholder="Se completa con el vehículo"></div>
+      <div class="form-group"><label>Km de entrada</label><input id="kmEnt" type="number" min="0" step="1" value="${r&&r.km_entrada!=null?r.km_entrada:''}" placeholder="Al regresar"></div>
+    </div>
+    <div class="form-group"><label>Notas (opcional)</label><input id="kmNotas" value="${esc(r?.notas||'')}"></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveKm(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+  if(!r) kmVehChange();
+}
+function kmVehChange(){ const sel=document.getElementById('kmVeh'), km=document.getElementById('kmSal'); if(!sel||!km) return; const opt=sel.options[sel.selectedIndex]; const v=opt?opt.getAttribute('data-km'):null; if(v!=null&&v!==''&&!km.value) km.value=v; }
+async function saveKm(id){
+  const vehId=document.getElementById('kmVeh').value;
+  const veh=(state.vehiculos||[]).find(v=>v.id===vehId);
+  const g=i=>{ const el=document.getElementById(i); return el?el.value:''; };
+  const kmSal=g('kmSal')!==''?parseFloat(g('kmSal')):null;
+  const kmEnt=g('kmEnt')!==''?parseFloat(g('kmEnt')):null;
+  if(kmSal==null&&kmEnt==null){ showToast('Ingresa al menos un kilometraje','err'); return; }
+  const values={placa:veh?veh.placa:'',vehiculo_id:vehId||null,fecha:g('kmFecha')||todayStr(),km_salida:kmSal,km_entrada:kmEnt,notas:g('kmNotas').trim()};
+  let d;
+  if(id){ d=await api('/api/update',{table:'kilometraje',values,filters:[{col:'id',val:id}]}); }
+  else { d=await api('/api/insert',{table:'kilometraje',values:{...values,created_at:new Date().toISOString()}}); }
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  // El km de entrada queda como km actual del vehículo (para la siguiente salida).
+  if(veh && kmEnt!=null){ await api('/api/update',{table:'vehiculos',values:{km_actual:kmEnt},filters:[{col:'id',val:veh.id}]}); veh.kmActual=kmEnt; }
+  closeModal(); showToast('Guardado','ok'); renderRutaKm();
+}
+async function deleteKm(id){
+  if(!confirm('¿Eliminar este registro?')) return;
+  const d=await api('/api/delete',{table:'kilometraje',filters:[{col:'id',val:id}]});
+  if(d.error){ showToast('Error','err'); return; }
+  showToast('Eliminado','ok'); renderRutaKm();
 }
 
 // ── Carga Express: Vehículos ──────────────────────────────────
@@ -3674,36 +3730,9 @@ async function showRutaModal(id){
         <datalist id="emailList">${(state.regEmails||[]).map(p=>`<option value="${esc(p.email)}">${esc(p.name||'')}</option>`).join('')}</datalist>
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Vehículo</label>
-        <select id="rVehiculo" onchange="rutaVehChange()">
-          <option value="">— Elegir vehículo —</option>
-          ${(state.vehiculos||[]).filter(v=>v.activo).map(v=>`<option value="${v.id}" data-km="${v.kmActual}" ${r&&r.placa&&r.placa===v.placa?'selected':''}>${esc(v.placa||v.nombre||'Vehículo')}${v.nombre&&v.placa?(' · '+esc(v.nombre)):''} — ${v.kmActual} km</option>`).join('')}
-        </select>
-        ${(state.vehiculos||[]).filter(v=>v.activo).length===0?'<div style="font-size:11px;color:var(--c-muted);margin-top:3px">Agrega vehículos en la pestaña 🚛 Vehículos.</div>':''}
-      </div>
-      <div class="form-group"><label>Cliente</label><input id="rCliente" value="${esc(r?.cliente||'')}" placeholder="Cliente del flete"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Tipo de carga</label><input id="rTipoCarga" value="${esc(r?.tipoCarga||'')}" placeholder="Ej: materiales, equipo…"></div>
-      <div class="form-group"><label>Costo del flete ($)</label><input id="rCostoFlete" type="number" min="0" step="0.01" value="${r&&r.costoFlete?r.costoFlete:''}"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Km de salida</label><input id="rKmSalida" type="number" min="0" step="1" value="${r&&r.kmSalida!=null?r.kmSalida:''}" placeholder="Se completa con el vehículo"></div>
-      <div class="form-group"><label>Km de entrada (al regresar)</label><input id="rKmEntrada" type="number" min="0" step="1" value="${r&&r.kmEntrada!=null?r.kmEntrada:''}"></div>
-    </div>
     <div class="form-group"><label>Descripcion</label><textarea id="rDesc" rows="2">${esc(r?.descripcion||'')}</textarea></div>
     <div class="form-group"><label>Estado</label>
       <select id="rStatus">${RUTA_ST.map(s=>`<option value="${s}" ${r?.status===s?'selected':''}>${RUTA_ST_LABEL[s]}</option>`).join('')}</select>
-    </div>
-    <div class="form-group" style="border:1px solid var(--c-border);border-radius:10px;padding:12px;background:var(--c-bg)">
-      <label style="font-weight:700">📦 Entrega</label>
-      <div class="form-row" style="margin-top:4px">
-        <div class="form-group"><label style="font-size:11px">Recibido por (firma)</label><input id="rRecibido" value="${esc(r?.recibidoPor||'')}" placeholder="Nombre de quien recibe"></div>
-      </div>
-      <div class="form-group" style="margin-bottom:6px"><label style="font-size:11px">Observaciones</label><textarea id="rObserva" rows="2">${esc(r?.observaciones||'')}</textarea></div>
-      <label style="font-size:11px;color:var(--c-muted)">Comprobante de entrega (fotos, varias)</label>
-      <input type="file" id="rComprob" accept="image/*" multiple>
     </div>
   </div>
   <div class="modal-foot">
@@ -3722,32 +3751,13 @@ async function saveRuta(id){
   const desc      = document.getElementById('rDesc').value.trim();
   const status    = document.getElementById('rStatus').value;
   if(!date||!desc){showToast('Completa fecha y descripcion','err');return;}
-  const vehId=document.getElementById('rVehiculo').value;
-  const veh=(state.vehiculos||[]).find(v=>v.id===vehId);
-  const g=i=>{ const el=document.getElementById(i); return el?el.value:''; };
-  const kmSalida=g('rKmSalida')!==''?parseFloat(g('rKmSalida')):null;
-  const kmEntrada=g('rKmEntrada')!==''?parseFloat(g('rKmEntrada')):null;
-  const row = {date,hora,origen,destino,conductor,descripcion:desc,status,
-    placa:veh?veh.placa:'',tipo_carga:g('rTipoCarga').trim(),cliente:g('rCliente').trim(),
-    costo_flete:parseFloat(g('rCostoFlete'))||0,km_salida:kmSalida,km_entrada:kmEntrada,
-    observaciones:g('rObserva').trim(),recibido_por:g('rRecibido').trim(),
-    updated_by:state.userId,updated_at:new Date().toISOString()};
-  let rutaId=id;
+  const row = {date,hora,origen,destino,conductor,descripcion:desc,status,updated_by:state.userId,updated_at:new Date().toISOString()};
   if(id){
     const d=await api('/api/update',{table:'rutas',values:row,filters:[{col:'id',val:id}]});
     if(d.error){showToast('Error al guardar','err');return;}
   } else {
     const d=await api('/api/insert',{table:'rutas',values:{...row,created_at:new Date().toISOString()}});
     if(d.error){showToast('Error al crear','err');return;}
-    rutaId=d.data&&d.data[0]&&d.data[0].id;
-  }
-  // Comprobantes de entrega (varias fotos)
-  const cf=document.getElementById('rComprob');
-  if(cf&&cf.files&&cf.files.length&&rutaId){ for(const f of cf.files){ try{ await apiUpload('ruta',rutaId,f); }catch(e){} } }
-  // Kilometraje: el km de entrada queda como km actual del vehículo (para la siguiente salida).
-  if(veh && kmEntrada!=null){
-    await api('/api/update',{table:'vehiculos',values:{km_actual:kmEntrada},filters:[{col:'id',val:veh.id}]});
-    veh.kmActual=kmEntrada;
   }
   closeModal(); showToast('Ruta guardada','ok');
   if(email){

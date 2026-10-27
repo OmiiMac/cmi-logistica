@@ -195,6 +195,17 @@ CREATE TABLE IF NOT EXISTS combustible (
   created_by  TEXT,
   created_at  TEXT
 );
+CREATE TABLE IF NOT EXISTS kilometraje (
+  id          TEXT PRIMARY KEY,
+  placa       TEXT,
+  vehiculo_id TEXT,
+  fecha       TEXT,
+  km_salida   REAL,
+  km_entrada  REAL,
+  notas       TEXT,
+  created_by  TEXT,
+  created_at  TEXT
+);
 
 -- ── Competidores por licitación ──
 CREATE TABLE IF NOT EXISTS lic_competidores (
@@ -472,6 +483,15 @@ ensureColumn('rutas', 'km_entrada', 'REAL');
 ensureColumn('rutas', 'observaciones', 'TEXT');
 ensureColumn('rutas', 'recibido_por', 'TEXT');
 ensureColumn('rutas', 'comprobante_file', 'TEXT');
+// Siembra inicial de la flota (solo si no hay vehículos): HINO, JMC, L200 y Ford Figo.
+try {
+  if (db.prepare('SELECT COUNT(*) AS c FROM vehiculos').get().c === 0) {
+    const now = new Date().toISOString();
+    const ins = db.prepare('INSERT INTO vehiculos (id,placa,nombre,km_actual,activo,created_at) VALUES (?,?,?,?,1,?)');
+    [['', 'Camión HINO'], ['', 'Camión JMC'], ['', 'Pickup Mitsubishi L200'], ['', 'Sedán Ford Figo']]
+      .forEach(([placa, nombre]) => ins.run(crypto.randomUUID(), placa, nombre, 0, now));
+  }
+} catch (e) { console.error('seed vehiculos:', e.message); }
 // Flujo de compras: solicitud → aprobado → comprado → en_camino → entregada.
 db.exec("UPDATE compras SET estado='aprobado' WHERE estado IN ('cotizada','aprobada')");
 db.exec("UPDATE compras SET estado='comprado' WHERE estado='pagado'");
@@ -514,6 +534,7 @@ const SCHEMA = {
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'placa', 'tipo_carga', 'cliente', 'costo_flete', 'km_salida', 'km_entrada', 'observaciones', 'recibido_por', 'comprobante_file', 'updated_by', 'updated_at', 'created_at'],
   vehiculos: ['id', 'placa', 'nombre', 'km_actual', 'activo', 'created_at'],
   combustible: ['id', 'placa', 'vehiculo_id', 'fecha', 'monto', 'galones', 'km', 'estacion', 'notas', 'created_by', 'created_at'],
+  kilometraje: ['id', 'placa', 'vehiculo_id', 'fecha', 'km_salida', 'km_entrada', 'notas', 'created_by', 'created_at'],
   messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'file_id', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
@@ -1098,6 +1119,7 @@ function canWrite(table, op, user, values, filters) {
       return op === 'update' ? true : user.role === 'admin'; // status: cualquiera; alta/baja: admin
     case 'vehiculos':
     case 'combustible':
+    case 'kilometraje':
       return op === 'delete' ? user.role === 'admin' : true; // registrar/editar: cualquier activo; borrar: admin
     case 'items':
       return true;
