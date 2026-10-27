@@ -2925,8 +2925,12 @@ async function saveKm(id){
   else { d=await api('/api/insert',{table:'kilometraje',values:{...values,created_at:new Date().toISOString()}}); }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
   // El km de entrada queda como km actual del vehículo (para la siguiente salida).
-  if(veh && kmEnt!=null){ await api('/api/update',{table:'vehiculos',values:{km_actual:kmEnt},filters:[{col:'id',val:veh.id}]}); veh.kmActual=kmEnt; }
-  closeModal(); showToast('Guardado','ok'); renderRutaKm();
+  if(veh && kmEnt!=null){ await api('/api/update',{table:'vehiculos',values:{km_actual:kmEnt},filters:[{col:'id',val:veh.id}]}); await reloadVehiculos(); }
+  closeModal(); showToast(kmEnt!=null?'Guardado · km del vehículo actualizado':'Guardado','ok'); renderRutaKm();
+}
+async function reloadVehiculos(){
+  const vR=await api('/api/select',{table:'vehiculos',order:[{col:'placa',asc:true}]});
+  state.vehiculos=(vR.data||[]).map(v=>({id:v.id,placa:v.placa||'',nombre:v.nombre||'',kmActual:+v.km_actual||0,activo:v.activo!==0}));
 }
 async function deleteKm(id){
   if(!confirm('¿Eliminar este registro?')) return;
@@ -3051,7 +3055,7 @@ async function saveDiesel(){
   const values={placa:veh?veh.placa:'',vehiculo_id:vehId||null,fecha:document.getElementById('dsFecha').value||todayStr(),monto,galones:parseFloat(document.getElementById('dsGal').value)||null,km,estacion:document.getElementById('dsEst').value.trim(),notas:document.getElementById('dsNotas').value.trim(),created_at:new Date().toISOString()};
   const d=await api('/api/insert',{table:'combustible',values});
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
-  if(veh && km!=null && km>veh.kmActual){ await api('/api/update',{table:'vehiculos',values:{km_actual:km},filters:[{col:'id',val:veh.id}]}); veh.kmActual=km; }
+  if(veh && km!=null && km>veh.kmActual){ await api('/api/update',{table:'vehiculos',values:{km_actual:km},filters:[{col:'id',val:veh.id}]}); await reloadVehiculos(); }
   closeModal(); showToast('Tanqueo registrado','ok'); renderRutaDiesel();
 }
 async function deleteDiesel(id){
