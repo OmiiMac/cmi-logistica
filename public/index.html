@@ -2884,11 +2884,22 @@ async function renderRutaPanel(){
     <div style="width:42px;height:42px;border-radius:12px;background:${bg};color:${col};display:flex;align-items:center;justify-content:center;font-size:21px;flex:none">${ic}</div>
     <div style="min-width:0"><div style="font-size:21px;font-weight:800;line-height:1.1">${val}</div><div style="font-size:11px;color:var(--c-muted)">${label}</div></div>
   </div>`;
+  // Alerta de mantenimiento: vehículos que necesitan o están en mantenimiento
+  const mant=(state.vehiculos||[]).filter(v=>v.condicion==='necesita_mant'||v.condicion==='en_mant');
+  const mantHtml = mant.length ? `<div onclick="setRutaMode('vehiculos')" style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.35);border-radius:12px;padding:11px 14px;margin-bottom:14px">
+      <span style="font-size:18px;line-height:1">🔧</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:800;font-size:13px;color:#DC2626">${mant.length} vehículo(s) requieren atención de mantenimiento</div>
+        <div style="font-size:12px;color:var(--c-muted);margin-top:3px">${mant.map(v=>`${esc(v.placa||v.nombre)} — ${v.condicion==='en_mant'?'🔴 en mantenimiento':'🟠 necesita mantenimiento'}`).join(' · ')}</div>
+      </div>
+      <span style="font-size:11px;color:#DC2626;white-space:nowrap">Ver ›</span>
+    </div>` : '';
   b.innerHTML=`
+    ${mantHtml}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${infoCard('🚚','rgba(29,78,216,.12)','#1D4ED8',rutasHoy.length,'Rutas de hoy',null)}
       ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),'Combustible del mes · '+(+galMes.toFixed(0))+' gal',"setRutaMode('diesel')")}
-    </div>
+    </div>`;
     <div class="ruta-day-card">
       <div class="ruta-day-head"><span>🚚 Ruta(s) de hoy · ${fmtDateLong(hoy)}</span><span style="font-size:11px">${rutasHoy.length} ruta(s)</span></div>
       ${rutasHoy.length?rutasHoy.map(rutaRowHtml).join(''):'<div class="no-rutas">Sin rutas para hoy.</div>'}
@@ -4880,7 +4891,15 @@ async function renderContaPanel(){
   const sum=(tipo,signo)=>s.filter(c=>c.tipo===tipo).reduce((a,c)=>a+(signo==='d'?(c.debe-c.haber):(c.haber-c.debe)),0);
   const totIng=sum('ingreso','h'), totGas=sum('gasto','d'), util=totIng-totGas;
   const activo=sum('activo','d'), pasivo=sum('pasivo','h'), patr=sum('patrimonio','h')+util;
+  // Vehículos en/necesitan mantenimiento — Contabilidad debe estar al pendiente del gasto
+  const vmant=(state.vehiculos||[]).filter(v=>v.condicion==='necesita_mant'||v.condicion==='en_mant');
+  const vmantHtml = vmant.length ? `<div style="display:flex;align-items:flex-start;gap:10px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);border-radius:12px;padding:11px 14px;margin-bottom:14px">
+      <span style="font-size:18px;line-height:1">🔧</span>
+      <div style="flex:1;min-width:0"><div style="font-weight:800;font-size:13px;color:#DC2626">Flota: ${vmant.length} vehículo(s) con mantenimiento pendiente</div>
+      <div style="font-size:12px;color:var(--c-muted);margin-top:3px">${vmant.map(v=>`${esc(v.placa||v.nombre)} — ${v.condicion==='en_mant'?'en mantenimiento':'necesita mantenimiento'}`).join(' · ')}</div></div>
+    </div>` : '';
   body.innerHTML=`
+    ${vmantHtml}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px">
       ${kpiTile('Ingresos',money(totIng),'#166534','#DCFCE7')}
       ${kpiTile('Gastos',money(totGas),'#DC2626','#FEE2E2')}
