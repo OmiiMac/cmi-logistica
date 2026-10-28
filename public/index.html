@@ -1635,7 +1635,7 @@ function renderDashboard(){
         ${state.isAdmin?`<button class="btn btn-sm btn-primary" onclick="showProjectModal()">+ Proyecto</button>`:''}
       </div>
       <div class="section-body">
-        ${projects.map(p=>{
+        ${projects.filter(p=>p.id!=='bodega').map(p=>{
           const cnt = [...state.items.values()].filter(i=>i.projectId===p.id).length;
           return `<div class="proj-list-item" onclick="nav('project','${p.id}')">
             <span class="proj-color-bar" style="background:${p.color}"></span>
