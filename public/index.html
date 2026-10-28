@@ -5728,6 +5728,14 @@ function drawMktCharts(pubs,tareas){
 const PUB_EST=[['programado','Programado'],['publicado','Publicado'],['no_publicado','No publicado'],['reprogramado','Reprogramado'],['sustituido','Sustituido']];
 const PUB_LBL=Object.fromEntries(PUB_EST);
 const PUB_COLOR={programado:'#D97706',publicado:'#22C55E',no_publicado:'#9CA3AF',reprogramado:'#1D4ED8',sustituido:'#C62040'};
+// Paleta de colores que el usuario puede elegir por publicación (tipo de publicación)
+const PUB_PALETTE=[['#DC2626','Rojo'],['#EA580C','Naranja'],['#EAB308','Amarillo'],['#16A34A','Verde'],['#2563EB','Azul']];
+// Color efectivo de la publicación: el elegido por el usuario, o el del estado como respaldo
+function pubColorOf(p){ return (p&&p.color) ? p.color : (PUB_COLOR[p&&p.estado]||'#9B1B30'); }
+// Texto legible (negro/blanco) según qué tan claro sea el color de fondo
+function fgFor(hex){ try{ const h=hex.replace('#',''); const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return (0.299*r+0.587*g+0.114*b)>150?'#1b1b20':'#fff'; }catch(e){ return '#fff'; } }
+// Selector de color (swatches) para el modal de publicación
+function pickPubColor(hex){ const inp=document.getElementById('puColor'); if(inp) inp.value=hex; document.querySelectorAll('.pub-sw').forEach(s=>{ s.style.outline = (s.dataset.hex===hex)?'3px solid var(--c-text)':'none'; s.style.outlineOffset='2px'; }); }
 async function renderMktCalendario(){
   const b=document.getElementById('mktBody'); if(!b) return;
   const efemOn=mstate.mktEfem!==false;
@@ -5765,7 +5773,7 @@ async function renderMktCalendario(){
           <td style="font-size:12px;color:var(--c-muted)">${esc(p.hora||'')}</td>
           <td style="font-size:12px">${esc(p.canal||'')}</td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(p.formato||'')}</td>
-          <td><b style="font-size:13px">${esc(p.titulo||p.contenido||'')}</b></td>
+          <td><div style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:50%;flex:none;background:${pubColorOf(p)}"></span><b style="font-size:13px">${esc(p.titulo||p.contenido||'')}</b></div></td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(p.responsable||'')}</td>
           <td>${chip(p.estado||'programado')}</td>
           <td style="text-align:right"><button class="act-btn del" onclick="event.stopPropagation();delPubCal('${p.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
@@ -5784,7 +5792,7 @@ async function renderMktCalendario(){
     cells+=`<div style="min-height:88px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="openPubModal(null,'${ds}')">
       <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
       ${ef.map(e=>`<div onclick="event.stopPropagation();openEfemModal('${e.id}')" title="Efeméride: ${esc(e.titulo)}" style="font-size:9px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${esc(e.color||'#7C3AED')};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">⭐ ${esc(e.titulo)}</div>`).join('')}
-      ${l.slice(0,3).map(p=>`<div onclick="event.stopPropagation();openPubModal('${p.id}')" title="${esc((p.canal?p.canal+': ':'')+(p.titulo||p.contenido||''))}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${PUB_COLOR[p.estado]||'#9B1B30'};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.titulo||p.canal||p.contenido||'Publicación')}</div>`).join('')}
+      ${l.slice(0,3).map(p=>{const bg=pubColorOf(p);return `<div onclick="event.stopPropagation();openPubModal('${p.id}')" title="${esc((p.canal?p.canal+': ':'')+(p.titulo||p.contenido||''))}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${bg};color:${fgFor(bg)};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.titulo||p.canal||p.contenido||'Publicación')}</div>`}).join('')}
       ${l.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${l.length-3} más</div>`:''}
     </div>`;
   }
@@ -5792,7 +5800,7 @@ async function renderMktCalendario(){
   b.innerHTML=header+`
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Toca un día para agregar, o una publicación para editar su estado. Colores = estado.</div>`;
+    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Toca un día para agregar, o una publicación para editarla. El color de cada publicación se elige en su ficha (o sigue el estado).</div>`;
 }
 async function openPubModal(id,defFecha){
   const p = id ? (mstate._pubs||[]).find(x=>x.id===id)||{} : {};
@@ -5807,6 +5815,14 @@ async function openPubModal(id,defFecha){
       <div class="form-group"><label>Copy / contenido</label><textarea id="puCont" rows="2">${esc(p.contenido||'')}</textarea></div>
       <div class="form-row"><div class="form-group"><label>Responsable</label><input id="puResp" value="${esc(p.responsable||'')}"></div><div class="form-group"><label>Campaña</label><select id="puCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${p.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div></div>
       <div class="form-group"><label>Estado</label><select id="puEstado" onchange="document.getElementById('puSust').style.display=this.value==='sustituido'?'block':'none'">${PUB_EST.map(([k,l])=>`<option value="${k}" ${est===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Color en el calendario</label>
+        <input type="hidden" id="puColor" value="${esc(p.color||'')}">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <span class="pub-sw" data-hex="" onclick="pickPubColor('')" title="Por estado (automático)" style="width:30px;height:30px;border-radius:50%;cursor:pointer;background:conic-gradient(#D97706,#22C55E,#1D4ED8,#C62040,#D97706);border:2px solid var(--c-border);outline:${!p.color?'3px solid var(--c-text)':'none'};outline-offset:2px" ></span>
+          ${PUB_PALETTE.map(([hex,name])=>`<span class="pub-sw" data-hex="${hex}" onclick="pickPubColor('${hex}')" title="${name}" style="width:30px;height:30px;border-radius:50%;cursor:pointer;background:${hex};border:2px solid #fff;box-shadow:0 0 0 1px var(--c-border);outline:${p.color===hex?'3px solid var(--c-text)':'none'};outline-offset:2px"></span>`).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--c-muted);margin-top:5px">El primer círculo usa el color del estado. Los demás fijan un color para esta publicación.</div>
+      </div>
       <div id="puSust" style="display:${est==='sustituido'?'block':'none'}">
         <div class="form-group"><label>Sustituida por (nombre o enlace de la pieza que la reemplaza)</label><input id="puReemplazo" value="${esc(p.reemplazo||'')}"></div>
         <div class="form-group"><label>Motivo</label><input id="puMotivo" value="${esc(p.motivo||'')}"></div>
@@ -5816,7 +5832,7 @@ async function openPubModal(id,defFecha){
 }
 async function saveCalPub(id){
   const fecha=document.getElementById('puFecha').value||todayStr();
-  const row={fecha,hora:document.getElementById('puHora').value||'',canal:document.getElementById('puCanal').value.trim(),formato:document.getElementById('puFormato').value.trim(),titulo:document.getElementById('puTitulo').value.trim(),contenido:document.getElementById('puCont').value.trim(),responsable:document.getElementById('puResp').value.trim(),campana_id:document.getElementById('puCampana').value||null,estado:document.getElementById('puEstado').value,reemplazo:document.getElementById('puReemplazo')?document.getElementById('puReemplazo').value.trim():'',motivo:document.getElementById('puMotivo')?document.getElementById('puMotivo').value.trim():''};
+  const row={fecha,hora:document.getElementById('puHora').value||'',canal:document.getElementById('puCanal').value.trim(),formato:document.getElementById('puFormato').value.trim(),titulo:document.getElementById('puTitulo').value.trim(),contenido:document.getElementById('puCont').value.trim(),responsable:document.getElementById('puResp').value.trim(),campana_id:document.getElementById('puCampana').value||null,estado:document.getElementById('puEstado').value,color:(document.getElementById('puColor')?document.getElementById('puColor').value:'')||'',reemplazo:document.getElementById('puReemplazo')?document.getElementById('puReemplazo').value.trim():'',motivo:document.getElementById('puMotivo')?document.getElementById('puMotivo').value.trim():''};
   if(row.estado==='sustituido' && !row.reemplazo){ showToast('Indica qué publicación la reemplaza','err'); return; }
   let error; if(id){ ({error}=await sb.from('publicaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('publicaciones').insert({...row,empresa:mstate.mktEmpresa})); }
   if(error){ showToast(error.message,'err'); return; }

@@ -520,6 +520,7 @@ ensureColumn('publicaciones', 'formato', 'TEXT');
 ensureColumn('publicaciones', 'responsable', 'TEXT');
 ensureColumn('publicaciones', 'reemplazo', 'TEXT');   // sustituida por (nombre/enlace)
 ensureColumn('publicaciones', 'motivo', 'TEXT');      // motivo de sustitución/reprogramación
+ensureColumn('publicaciones', 'color', 'TEXT');       // color elegido por el usuario (tipo de publicación)
 db.exec("UPDATE publicaciones SET estado='publicado' WHERE estado='publicada'");
 db.exec("UPDATE publicaciones SET estado='programado' WHERE estado IN ('planificada','planificado') OR estado IS NULL");
 ensureColumn('mercadeo_tareas', 'empresa', 'TEXT');
@@ -561,7 +562,7 @@ const SCHEMA = {
   mkt_push:     ['id', 'empresa', 'fecha', 'hora', 'titulo', 'mensaje', 'estado', 'responsable', 'observaciones', 'created_by', 'created_at', 'updated_at'],
   mkt_efemerides:['id', 'empresa', 'fecha', 'titulo', 'color', 'recurrente', 'created_by', 'created_at', 'updated_at'],
   mkt_biblioteca:['id', 'empresa', 'titulo', 'categoria', 'url', 'created_by', 'created_at', 'updated_at'],
-  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'hora', 'titulo', 'formato', 'responsable', 'reemplazo', 'motivo', 'created_by', 'created_at', 'updated_at'],
+  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'hora', 'titulo', 'formato', 'responsable', 'reemplazo', 'motivo', 'color', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'fecha_inicio', 'fecha_limite', 'fecha_publicacion', 'campana_id', 'enlace', 'created_by', 'created_at', 'updated_at'],
   mkt_piezas:   ['id', 'empresa', 'titulo', 'tipo', 'formato', 'red_social', 'copy', 'fecha', 'responsable', 'version', 'comentarios', 'estado', 'archivo_file', 'campana_id', 'publicacion_id', 'created_by', 'created_at', 'updated_at'],
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
