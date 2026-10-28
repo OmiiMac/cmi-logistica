@@ -4535,6 +4535,7 @@ async function renderPagosMensuales(){
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
       <div class="date-strip-wrap" style="gap:8px"><button class="nav-arrow" onclick="shiftPagosMes(-1)">‹</button><div style="font-weight:800;text-transform:capitalize;min-width:150px;text-align:center">${MESES_ES[M-1]} ${Y}</div><button class="nav-arrow" onclick="shiftPagosMes(1)">›</button></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-ghost" onclick="imprimirPagosMensuales()">🖨️ Imprimir / PDF</button>
         <button class="btn btn-sm btn-ghost" onclick="copiarMesAnterior()">⧉ Copiar del mes anterior</button>
         <button class="btn btn-sm btn-primary" onclick="showGastoMensualModal()">+ Agregar pago</button>
       </div>
@@ -4616,6 +4617,52 @@ async function deleteGastoMensual(id){
   if(d.error){ showToast('Error','err'); return; }
   showToast('Eliminado','ok'); renderPagosMensuales();
 }
+function imprimirPagosMensuales(){
+  const rows=mstate._pagosCache||[]; const mes=mstate.pagosMes||todayStr().slice(0,7);
+  const [Y,M]=mes.split('-').map(Number);
+  const total=rows.reduce((s,r)=>s+(+r.monto||0),0);
+  const pagado=rows.filter(r=>r.estado==='pagado').reduce((s,r)=>s+(+r.monto||0),0);
+  const pend=total-pagado;
+  const byEmp={}; EMPRESAS_CONTA.forEach(e=>byEmp[e]=[]); rows.forEach(r=>{ (byEmp[r.empresa]=byEmp[r.empresa]||[]).push(r); });
+  const fmt=n=>'$'+(Math.round((+n||0)*100)/100).toLocaleString('es-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const sc=t=>String(t||'').replace(/[<>&]/g,m=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[m]));
+  let html=`<!doctype html><html><head><meta charset="utf-8"><title>Pagos mensuales ${MESES_ES[M-1]} ${Y}</title><style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;padding:26px;max-width:820px;margin:0 auto}
+    h1{color:#9B1B30;font-size:21px;margin:0}
+    .sub{color:#555;font-size:12px;margin:3px 0 18px}
+    .kpis{display:flex;gap:14px;margin-bottom:18px}
+    .kpi{flex:1;border:1px solid #e0d2d6;border-radius:8px;padding:11px 13px}
+    .kpi .v{font-size:19px;font-weight:800}.kpi .l{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:.04em}
+    h2{font-size:14px;color:#8E1F2B;border-bottom:2px solid #eee;padding-bottom:4px;margin:18px 0 8px}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}
+    th{text-align:left;background:#f3e9eb;padding:6px 8px;font-size:10px;text-transform:uppercase;color:#555}
+    td{padding:6px 8px;border-bottom:1px solid #eee}.r{text-align:right}
+    .pagado{color:#166534;font-weight:700}.pend{color:#DC2626;font-weight:700}
+    .foot{margin-top:26px;font-size:10px;color:#888;border-top:1px solid #eee;padding-top:8px}
+    @media print{.noprint{display:none}}
+  </style></head><body>
+    <h1>Pagos mensuales — CMI Construction Corp</h1>
+    <div class="sub">${MESES_ES[M-1]} ${Y} &middot; generado ${new Date().toLocaleDateString('es-PA')}</div>
+    <div class="kpis">
+      <div class="kpi"><div class="v">${fmt(total)}</div><div class="l">Total del mes</div></div>
+      <div class="kpi"><div class="v pagado">${fmt(pagado)}</div><div class="l">Pagado</div></div>
+      <div class="kpi"><div class="v pend">${fmt(pend)}</div><div class="l">Pendiente</div></div>
+    </div>`;
+  EMPRESAS_CONTA.forEach(e=>{
+    const items=(byEmp[e]||[]).slice().sort((a,b)=>String(a.categoria).localeCompare(String(b.categoria)));
+    const t=items.reduce((s,r)=>s+(+r.monto||0),0);
+    html+=`<h2>${sc(e)} — ${fmt(t)}</h2>`;
+    if(!items.length){ html+='<div style="font-size:11px;color:#999;margin-bottom:8px">Sin pagos.</div>'; return; }
+    html+=`<table><thead><tr><th>Categoría</th><th>Concepto</th><th class="r">Monto</th><th>Estado</th></tr></thead><tbody>`;
+    items.forEach(r=>{ html+=`<tr><td>${sc(GASTO_CAT_LBL[r.categoria]||r.categoria)}</td><td>${sc(r.concepto)}</td><td class="r">${fmt(r.monto)}</td><td class="${r.estado==='pagado'?'pagado':'pend'}">${r.estado==='pagado'?'Pagado':'Pendiente'}</td></tr>`; });
+    html+=`</tbody></table>`;
+  });
+  html+=`<div class="foot">ObraControl CMI &middot; CMI Construction Corp</div>
+    <div class="noprint" style="margin-top:18px;text-align:center"><button onclick="window.print()" style="padding:9px 18px;background:#9B1B30;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">Imprimir / Guardar PDF</button></div>
+  </body></html>`;
+  const w=window.open('','_blank'); if(!w){ showToast('Permite las ventanas emergentes para imprimir','err'); return; }
+  w.document.write(html); w.document.close();
+}
 async function copiarMesAnterior(){
   const mes=mstate.pagosMes||todayStr().slice(0,7);
   const [Y,M]=mes.split('-').map(Number); const prev=new Date(Y,M-2,1); const mesPrev=prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0');
@@ -4629,11 +4676,12 @@ async function copiarMesAnterior(){
 async function renderContaInicio(){
   const body=document.getElementById('contaBody'); if(!body) return;
   body.innerHTML='<div class="nodata" style="padding:30px">Cargando tu centro de contabilidad…</div>';
-  const [rs,rc,rcomp,rcomb]=await Promise.all([
+  const [rs,rc,rcomp,rcomb,rpagos]=await Promise.all([
     apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
     api('/api/select',{table:'caja_chica',order:[{col:'created_at',asc:false}],limit:5000}),
     api('/api/select',{table:'compras',limit:5000}),
-    api('/api/select',{table:'combustible',limit:5000})
+    api('/api/select',{table:'combustible',limit:5000}),
+    api('/api/select',{table:'gastos_mensuales',filters:[{col:'mes',val:todayStr().slice(0,7)}],limit:5000})
   ]);
   const rcompr=await api('/api/select',{table:'compromisos',limit:5000});
   if(mstate.contaTab!=='inicio') return;
@@ -4652,6 +4700,11 @@ async function renderContaInicio(){
   // Combustible (Carga Express) del mes — Contabilidad debe estar al pendiente
   const _mesC=todayStr().slice(0,7);
   const combMes=(rcomb.data||[]).filter(c=>(c.fecha||'').slice(0,7)===_mesC).reduce((a,c)=>a+(+c.monto||0),0);
+  // Pagos mensuales de las 5 empresas (del mes actual)
+  const pagos=rpagos.data||[];
+  const pagosPend=pagos.filter(p=>p.estado!=='pagado');
+  const pagosPendM=pagosPend.reduce((a,p)=>a+(+p.monto||0),0);
+  const empPend={}; pagosPend.forEach(p=>{ const e=p.empresa||'Otros'; empPend[e]=(empPend[e]||0)+(+p.monto||0); });
   // Compromisos / pendientes
   const compromisos=rcompr.data||[];
   const hoy=todayStr(), en7=ymd(new Date(Date.now()+7*86400000));
@@ -4675,6 +4728,9 @@ async function renderContaInicio(){
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="width:9px;height:9px;border-radius:50%;background:#D97706;flex:none"></span><b style="font-size:13px;color:#D97706">Vencen esta semana (${porVencer.length})</b></div>
     <div style="border:1px solid rgba(217,119,6,.3);border-radius:10px;overflow:hidden">${porVencer.slice(0,5).map(c=>alertRow(c,'#D97706')).join('')}</div>
   </div>`);
+  if(pagosPend.length) atencion.push(`<div onclick="mstate.contaTab='pagos';renderContabilidad()" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid rgba(220,38,38,.3);border-radius:10px;margin-bottom:10px">
+    <span style="font-size:20px">🏢</span><div style="flex:1"><div style="font-size:13px;font-weight:700;color:var(--c-text)">Pagos mensuales pendientes (${pagosPend.length})</div><div style="font-size:11px;color:var(--c-muted)">${money(pagosPendM)} por pagar este mes · ${Object.entries(empPend).map(([e,m])=>esc(e.split(' ')[0])).join(', ')} · toca para gestionar</div></div><span style="color:var(--c-muted)">›</span>
+  </div>`);
   if(comprasPendN) atencion.push(`<div onclick="nav('comprasGlobal')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid rgba(234,88,12,.3);border-radius:10px;margin-bottom:10px">
     <span style="font-size:20px">🛒</span><div style="flex:1"><div style="font-size:13px;font-weight:700;color:var(--c-text)">${comprasPendN} compra(s) de proyectos en proceso</div><div style="font-size:11px;color:var(--c-muted)">${money(comprasPendM)} aún por entregar · toca para revisar</div></div><span style="color:var(--c-muted)">›</span>
   </div>`);
@@ -4693,6 +4749,7 @@ async function renderContaInicio(){
       ${kpiTile('Gastos del período',money(totGas),'#DC2626','#FEE2E2')}
       ${kpiTile('Utilidad',money(util),util>=0?'#166534':'#DC2626',util>=0?'#DCFCE7':'#FEE2E2')}
       ${kpiTile('Pendientes por pagar',money(totPend),'#D97706','#FEF3C7')}
+      ${kpiTile('Pagos del mes (pend.)',money(pagosPendM),pagosPendM>0?'#DC2626':'#166534',pagosPendM>0?'#FEE2E2':'#DCFCE7')}
       ${kpiTile('Compras en proceso',money(comprasPendM),'#EA580C','#FFEDD5')}
       ${kpiTile('Combustible del mes',money(combMes),'#B45309','#FEF3C7')}
     </div>
@@ -4704,11 +4761,11 @@ async function renderContaInicio(){
       <div class="section-card" style="padding:16px">
         <h3 style="font-size:13px;margin:0 0 12px;font-weight:700">Accesos rápidos</h3>
         <div style="display:flex;flex-direction:column;gap:8px">
-          ${qa('Nuevo asiento contable','<span style=\"font-size:18px\">📝</span>','openAsientoModal()')}
+          ${qa('Pagos mensuales (5 empresas)','<span style=\"font-size:18px\">🏢</span>',"mstate.contaTab='pagos';renderContabilidad()")}
           ${qa('Caja chica de proyectos','<span style=\"font-size:18px\">💵</span>',"mstate.contaTab='caja';renderContabilidad()")}
           ${qa('Pendientes y compromisos','<span style=\"font-size:18px\">📅</span>',"mstate.contaTab='compromisos';renderContabilidad()")}
           ${qa('Panel de gráficas','<span style=\"font-size:18px\">📊</span>',"mstate.contaTab='panel';renderContabilidad()")}
-          ${qa('Estado de resultados','<span style=\"font-size:18px\">📈</span>',"mstate.contaTab='resultados';renderContabilidad()")}
+          ${qa('Nuevo asiento contable','<span style=\"font-size:18px\">📝</span>','openAsientoModal()')}
         </div>
       </div>
     </div>
