@@ -1489,7 +1489,8 @@ function renderSidebarProjects(){
   const cont = document.getElementById('sbProjects'); if(!cont) return;
   if(soloModulo()){ cont.innerHTML=''; return; }   // estos usuarios no ven proyectos
   const u = state.chatUnread||{};
-  const projects = sortedProjects();
+  // El Depósito (bodega) NO es un proyecto: su inventario se ve en Inventario → Depósito.
+  const projects = sortedProjects().filter(p=>p.id!=='bodega');
   cont.innerHTML = projects.map(p=>{
     const n = u['proyecto:'+p.id]||0;
     return `<div class="sb-proj ${(state.view==='project'&&state.projectId===p.id)||(state.view==='roomchat'&&state.chatRoom==='proyecto:'+p.id)?'active':''}"
