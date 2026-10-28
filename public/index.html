@@ -3437,14 +3437,45 @@ function viewMov(id){
     <div class="modal-body" style="max-height:72vh;overflow:auto;background:#fff">${movFormHtml(m)}</div>
     <div class="modal-foot" style="justify-content:space-between">
       <div>${state.isAdmin?`<button class="btn btn-ghost" style="color:#DC2626" onclick="delMov('${m.id}')">Eliminar</button>`:''}</div>
-      <div><button class="btn btn-ghost" onclick="showMovModal('${m.tipo}','${m.id}')">Editar</button> <button class="btn btn-ghost" onclick="printMov('${m.id}')">🖨 Imprimir</button> <button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
+      <div><button class="btn btn-ghost" onclick="showMovModal('${m.tipo}','${m.id}')">Editar</button> <button class="btn btn-ghost" onclick="printMov('${m.id}')">🖨 Imprimir / Descargar PDF</button> <button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
     </div>`);
 }
 function printMov(id){
   const m=(mstate.movs||[]).find(x=>x.id===id); if(!m) return;
-  const w=window.open('','_blank'); if(!w){ showToast('Permití las ventanas emergentes para imprimir','err'); return; }
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(m.numero||'Vale')}</title></head><body style="margin:16px">${movFormHtml(m)}</body></html>`);
-  w.document.close(); setTimeout(()=>{ try{ w.print(); }catch(e){} }, 350);
+  printHtmlDoc('Vale '+(m.numero||''), movFormHtml(m));
+}
+// Imprime/descarga un documento HTML usando un iframe oculto.
+// Es confiable en móvil y escritorio: NO depende de ventanas emergentes (que el navegador bloquea).
+// El diálogo que abre permite "Guardar como PDF" o imprimir, y así también se puede capturar.
+function printHtmlDoc(title, innerHtml){
+  const prev=document.getElementById('printFrame'); if(prev) prev.remove();
+  const f=document.createElement('iframe');
+  f.id='printFrame'; f.setAttribute('aria-hidden','true');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+  document.body.appendChild(f);
+  const doc=f.contentWindow.document;
+  doc.open();
+  doc.write('<!doctype html><html><head><meta charset="utf-8">'
+    +'<meta name="viewport" content="width=device-width,initial-scale=1">'
+    +'<title>'+esc(title)+'</title>'
+    +'<style>@page{margin:12mm} *{-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+    +'body{margin:0;font-family:Arial,Helvetica,sans-serif}</style></head>'
+    +'<body>'+innerHtml+'</body></html>');
+  doc.close();
+  const go=()=>{ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} };
+  const cleanup=()=>{ setTimeout(()=>{ try{ f.remove(); }catch(e){} }, 400); };
+  try{ f.contentWindow.addEventListener('afterprint', cleanup, {once:true}); }catch(e){}
+  // Esperar a que carguen las imágenes (logo) antes de imprimir
+  const imgs = doc.images ? Array.prototype.slice.call(doc.images) : [];
+  let pending = imgs.filter(im=>!im.complete).length;
+  if(pending>0){
+    const dec=()=>{ pending--; if(pending<=0) setTimeout(go,120); };
+    imgs.forEach(im=>{ if(!im.complete){ im.addEventListener('load',dec,{once:true}); im.addEventListener('error',dec,{once:true}); } });
+    setTimeout(go, 1800);   // respaldo si alguna imagen no dispara eventos
+  } else {
+    setTimeout(go, 250);
+  }
+  setTimeout(()=>{ try{ f.remove(); }catch(e){} }, 60000);  // limpieza final de respaldo
 }
 async function delMov(id){
   if(!confirm('¿Eliminar este vale?')) return;
