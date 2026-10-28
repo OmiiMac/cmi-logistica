@@ -1148,6 +1148,9 @@ function canWrite(table, op, user, values, filters) {
     case 'salidas_material':
       return op === 'delete' ? user.role === 'admin' : true; // logística de material: cualquier activo; borrar: admin
     case 'caja_chica':
+      if (user.role === 'supervisor') return false; // confidencial para supervisores
+      // El ingeniero que lleva el proyecto administra su caja chica (incl. borrar para corregir)
+      return op === 'delete' ? (user.role === 'admin' || user.role === 'engineer') : true;
     case 'compras':
     case 'proyecto_costos':
       if (user.role === 'supervisor') return false; // financiero del proyecto: confidencial para supervisores

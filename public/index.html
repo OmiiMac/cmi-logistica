@@ -2193,6 +2193,8 @@ function renderProjArchivos(proj){
 
 // ── Caja Chica por proyecto ───────────────────────────────────
 function cajaMoney(n){ return '$'+(Math.round((+n||0)*100)/100).toLocaleString('es-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+// Puede administrar (borrar) la caja chica del proyecto: admin o el ingeniero que lleva el proyecto.
+function puedeCaja(){ return state.isAdmin || state.role==='engineer'; }
 async function renderProjCaja(proj){
   const b=document.getElementById('projBody'); if(!b) return;
   b.innerHTML = `<div class="nodata" style="padding:20px">Cargando caja chica…</div>`;
@@ -2214,7 +2216,7 @@ async function renderProjCaja(proj){
       <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="imprimirCajaChica('${proj.id}')">🖨 Imprimir / Enviar a Rosa</button>
     </div>
     <div class="item-table"><table>
-      <thead><tr><th>Fecha</th><th>Concepto</th><th>Tipo</th><th style="text-align:right">Monto</th><th>Comprob.</th><th>Estado</th>${state.isAdmin?'<th></th>':''}</tr></thead>
+      <thead><tr><th>Fecha</th><th>Concepto</th><th>Tipo</th><th style="text-align:right">Monto</th><th>Comprob.</th><th>Estado</th>${puedeCaja()?'<th></th>':''}</tr></thead>
       <tbody>${movs.length===0?`<tr><td colspan="7"><div class="empty-state">Sin movimientos de caja aún. Agrega un fondo o registra un gasto.</div></td></tr>`:movs.map(m=>`
         <tr>
           <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(m.fecha||'')}</td>
@@ -2223,7 +2225,7 @@ async function renderProjCaja(proj){
           <td style="text-align:right;font-weight:700;white-space:nowrap;color:${m.tipo==='ingreso'?'var(--c-ok)':'var(--c-err)'}">${m.tipo==='ingreso'?'+':'−'}${cajaMoney(m.monto)}</td>
           <td>${m.comprobante_file?`<a href="${fileUrl(m.comprobante_file)}" target="_blank" style="color:var(--c-primary);font-size:12px">ver</a>`:'<span style="color:var(--c-muted);font-size:11px">—</span>'}</td>
           <td><span style="font-size:11px">${esc(m.estado||'registrado')}</span></td>
-          ${state.isAdmin?`<td style="text-align:right"><button class="act-btn del" onclick="deleteCaja('${m.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button></td>`:''}
+          ${puedeCaja()?`<td style="text-align:right"><button class="act-btn del" onclick="deleteCaja('${m.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button></td>`:''}
         </tr>`).join('')}</tbody>
     </table></div>`;
 }
