@@ -980,7 +980,7 @@ function setupRealtime(){
             notifyDesktop('💬 '+chatTitle(msgRoom), quien+': '+(p.new.content||'(foto)'), msgRoom);
           }
         }
-      } else if(['asientos','cuentas','compromisos'].includes(table)){
+      } else if(['asientos','cuentas','compromisos','gastos_mensuales'].includes(table)){
         modRefresh('contabilidad');
       } else if(['caja_chica','salidas_material','compras','obra_resumen','proyecto_costos'].includes(table)){
         // Movimientos de proyecto: refrescar la vista si se está viendo
@@ -4440,7 +4440,7 @@ async function renderContabilidad(){
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('contabilidad','contabilidad')">💬 Chat</button><button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
   document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:900px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      ${[['inicio','🏠 Inicio'],['panel','📊 Panel'],['caja','💵 Caja chica'],['compromisos','📅 Pendientes y compromisos'],['comprobacion','Balance de comprobación'],['resultados','Estado de resultados'],['balance','Balance general'],['mayor','Libro mayor']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
+      ${[['inicio','🏠 Inicio'],['panel','📊 Panel'],['pagos','🏢 Pagos mensuales'],['caja','💵 Caja chica'],['compromisos','📅 Pendientes y compromisos'],['balance','Balance general']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
     </div>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
       <div><label style="font-size:11px;color:var(--c-muted);display:block">Desde</label><input type="date" value="${mstate.contaDesde}" onchange="mstate.contaDesde=this.value;renderContabilidad()"></div>
@@ -4451,15 +4451,13 @@ async function renderContabilidad(){
   if(!mstate.cuentas.length){ const {data}=await sb.from('cuentas').select('*').order('codigo'); mstate.cuentas=data||[]; }
   if(mstate.contaTab==='inicio'){ renderContaInicio(); return; }
   if(mstate.contaTab==='panel'){ renderContaPanel(); return; }
+  if(mstate.contaTab==='pagos'){ renderPagosMensuales(); return; }
   if(mstate.contaTab==='caja'){ renderContaCaja(); return; }
   if(mstate.contaTab==='compromisos'){ renderContaCompromisos(); return; }
-  if(mstate.contaTab==='mayor'){ renderContaMayor(); return; }
   const {data:saldos,error}=await apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta});
   const body=document.getElementById('contaBody'); if(!body) return;
   if(error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(error.message)}</div>`; return; }
-  if(mstate.contaTab==='comprobacion') body.innerHTML=contaComprobacion(saldos);
-  else if(mstate.contaTab==='resultados') body.innerHTML=contaResultados(saldos);
-  else if(mstate.contaTab==='balance') body.innerHTML=contaBalance(saldos);
+  body.innerHTML=contaBalance(saldos);   // Balance general
 }
 function kpiTile(label,val,color,bg){ return `<div style="background:${bg};border-radius:10px;padding:14px"><div style="font-size:20px;font-weight:800;color:${color}">${val}</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">${label}</div></div>`; }
 // Caja chica de todos los proyectos (vista de Contabilidad)
@@ -4513,6 +4511,121 @@ async function renderContaCaja(){
     </table></div>`;
 }
 // ── Centro de bienvenida de Contabilidad ──────────────────────
+// ── Contabilidad: Pagos mensuales por empresa (panel global) ──
+const EMPRESAS_CONTA=['Barbology','CMI Constructions Corp','Paint Pro','Agero','Carga Express'];
+const EMP_COLOR_CONTA={'Barbology':'#0EA5E9','CMI Constructions Corp':'#E8384A','Paint Pro':'#F97316','Agero':'#22C55E','Carga Express':'#8B5CF6'};
+const GASTO_CATS=[['planilla','Planilla admin','#9B1B30'],['gasolina','Gasolina','#EA580C'],['luz','Luz','#D97706'],['telefono','Teléfono','#2563EB'],['alquiler','Alquiler','#7C3AED'],['internet','Internet','#0F766E'],['agua','Agua','#0891B2'],['seguro','Seguro','#166534'],['otros','Otros','#6B7280']];
+const GASTO_CAT_LBL=Object.fromEntries(GASTO_CATS.map(c=>[c[0],c[1]]));
+const GASTO_CAT_COLOR=Object.fromEntries(GASTO_CATS.map(c=>[c[0],c[2]]));
+async function renderPagosMensuales(){
+  const body=document.getElementById('contaBody'); if(!body) return;
+  body.innerHTML='<div class="nodata" style="padding:30px">Cargando pagos mensuales…</div>';
+  const mes=mstate.pagosMes||todayStr().slice(0,7);
+  const d=await api('/api/select',{table:'gastos_mensuales',filters:[{col:'mes',val:mes}],limit:5000});
+  if(mstate.contaTab!=='pagos') return;
+  const rows=d.data||[]; mstate._pagosCache=rows;
+  const total=rows.reduce((s,r)=>s+(+r.monto||0),0);
+  const pagado=rows.filter(r=>r.estado==='pagado').reduce((s,r)=>s+(+r.monto||0),0);
+  const pendiente=total-pagado;
+  const porEmp={}; EMPRESAS_CONTA.forEach(e=>porEmp[e]={total:0,pagado:0,items:[]});
+  rows.forEach(r=>{ const e=r.empresa||'Otros'; if(!porEmp[e]) porEmp[e]={total:0,pagado:0,items:[]}; porEmp[e].total+=(+r.monto||0); if(r.estado==='pagado') porEmp[e].pagado+=(+r.monto||0); porEmp[e].items.push(r); });
+  const porCat={}; rows.forEach(r=>{ const c=r.categoria||'otros'; porCat[c]=(porCat[c]||0)+(+r.monto||0); });
+  const [Y,M]=mes.split('-').map(Number);
+  body.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+      <div class="date-strip-wrap" style="gap:8px"><button class="nav-arrow" onclick="shiftPagosMes(-1)">‹</button><div style="font-weight:800;text-transform:capitalize;min-width:150px;text-align:center">${MESES_ES[M-1]} ${Y}</div><button class="nav-arrow" onclick="shiftPagosMes(1)">›</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-ghost" onclick="copiarMesAnterior()">⧉ Copiar del mes anterior</button>
+        <button class="btn btn-sm btn-primary" onclick="showGastoMensualModal()">+ Agregar pago</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Total del mes',money(total),'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Pagado',money(pagado),'#166534','#DCFCE7')}
+      ${kpiTile('Pendiente',money(pendiente),pendiente>0?'#D97706':'#166534',pendiente>0?'#FEF3C7':'#DCFCE7')}
+    </div>
+    <div class="section-card" style="padding:16px;margin-bottom:16px">
+      <h3 style="font-size:13px;margin:0 0 10px">Gasto del mes por categoría (todas las empresas)</h3>
+      ${Object.keys(porCat).length?`<div style="display:flex;flex-direction:column;gap:8px">${GASTO_CATS.filter(c=>porCat[c[0]]).map(([k,lbl,col])=>{ const v=porCat[k]; const pct=total?Math.round(v/total*100):0; return `<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">${lbl}</span><span style="font-weight:700;color:${col}">${money(v)} <span style="color:var(--c-muted);font-weight:500">(${pct}%)</span></span></div><div style="height:8px;border-radius:5px;background:var(--c-bg);overflow:hidden"><div style="height:100%;width:${pct}%;background:${col}"></div></div></div>`; }).join('')}</div>`:'<div class="nodata" style="padding:14px;font-size:12px">Sin pagos registrados este mes.</div>'}
+    </div>
+    ${EMPRESAS_CONTA.map(e=>{ const info=porEmp[e]; const col=EMP_COLOR_CONTA[e]||'#6B7280'; const items=info.items.slice().sort((a,b)=>String(a.categoria).localeCompare(String(b.categoria)));
+      return `<div class="section-card" style="padding:0;overflow:hidden;margin-bottom:12px;border-top:4px solid ${col}">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;gap:10px;flex-wrap:wrap">
+          <div style="font-weight:800;font-size:15px">${esc(e)}</div>
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:12px;color:var(--c-muted)">Pagado <b style="color:#166534">${money(info.pagado)}</b></span>
+            <span style="font-size:12px;color:var(--c-muted)">Total <b style="color:var(--c-text)">${money(info.total)}</b></span>
+            <button class="btn btn-sm btn-ghost" onclick="showGastoMensualModal(null,'${e.replace(/'/g,"\\'")}')">+ Pago</button>
+          </div>
+        </div>
+        ${items.length?`<div class="item-table" style="border:none;border-radius:0;margin:0"><table>
+          <thead><tr><th>Categoría</th><th>Concepto</th><th style="text-align:right">Monto</th><th>Estado</th><th></th></tr></thead>
+          <tbody>${items.map(r=>`<tr>
+            <td><span style="font-size:10px;font-weight:700;color:#fff;background:${GASTO_CAT_COLOR[r.categoria]||'#6B7280'};padding:2px 8px;border-radius:20px">${(GASTO_CAT_LBL[r.categoria]||r.categoria).toUpperCase()}</span></td>
+            <td style="font-size:13px">${esc(r.concepto||'')}</td>
+            <td style="text-align:right;font-weight:700">${money(r.monto)}</td>
+            <td><button class="btn btn-sm btn-ghost" style="${r.estado==='pagado'?'background:rgba(34,197,94,.2);color:#166534;':''}font-size:11px;padding:3px 10px" onclick="toggleGastoPagado('${r.id}')">${r.estado==='pagado'?'✓ Pagado':'Pendiente'}</button></td>
+            <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showGastoMensualModal('${r.id}')" title="Editar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="deleteGastoMensual('${r.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+          </tr>`).join('')}</tbody>
+        </table></div>`:'<div style="padding:12px 16px;font-size:12px;color:var(--c-muted)">Sin pagos este mes.</div>'}
+      </div>`;
+    }).join('')}`;
+}
+function shiftPagosMes(dir){ const ym=mstate.pagosMes||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.pagosMes=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderPagosMensuales(); }
+function showGastoMensualModal(id, empresaPre){
+  const r=id?(mstate._pagosCache||[]).find(x=>x.id===id):null;
+  const emp=r?r.empresa:(empresaPre||EMPRESAS_CONTA[0]);
+  const mes=r?r.mes:(mstate.pagosMes||todayStr().slice(0,7));
+  openModal(`<div class="modal-head"><h2>${r?'Editar pago':'Nuevo pago mensual'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Empresa</label><select id="gmEmp">${EMPRESAS_CONTA.map(e=>`<option value="${esc(e)}" ${emp===e?'selected':''}>${esc(e)}</option>`).join('')}</select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Categoría</label><select id="gmCat">${GASTO_CATS.map(([k,l])=>`<option value="${k}" ${r&&r.categoria===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Monto</label><input id="gmMonto" type="number" min="0" step="0.01" value="${r&&r.monto?r.monto:''}"></div>
+    </div>
+    <div class="form-group"><label>Concepto</label><input id="gmConcepto" value="${esc(r?.concepto||'')}" placeholder="Ej: Planilla quincena, Recibo de luz, Alquiler oficina…"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Estado</label><select id="gmEstado"><option value="pendiente" ${(!r||r.estado!=='pagado')?'selected':''}>Pendiente</option><option value="pagado" ${r&&r.estado==='pagado'?'selected':''}>Pagado</option></select></div>
+      <div class="form-group"><label>Mes</label><input id="gmMes" type="month" value="${esc(mes)}"></div>
+    </div>
+    <div class="form-group"><label>Notas (opcional)</label><input id="gmNotas" value="${esc(r?.notas||'')}"></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGastoMensual(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+}
+async function saveGastoMensual(id){
+  const monto=parseFloat(document.getElementById('gmMonto').value)||0;
+  if(!monto){ showToast('Ingresa el monto','err'); return; }
+  const estado=document.getElementById('gmEstado').value;
+  const values={empresa:document.getElementById('gmEmp').value,categoria:document.getElementById('gmCat').value,concepto:document.getElementById('gmConcepto').value.trim(),monto,estado,mes:document.getElementById('gmMes').value||todayStr().slice(0,7),notas:document.getElementById('gmNotas').value.trim(),fecha_pago:estado==='pagado'?todayStr():null};
+  let d;
+  if(id){ d=await api('/api/update',{table:'gastos_mensuales',values,filters:[{col:'id',val:id}]}); }
+  else { d=await api('/api/insert',{table:'gastos_mensuales',values:{...values,created_at:new Date().toISOString()}}); }
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  closeModal(); showToast('Guardado','ok'); renderPagosMensuales();
+}
+async function toggleGastoPagado(id){
+  const r=(mstate._pagosCache||[]).find(x=>x.id===id); if(!r) return;
+  const nuevo=r.estado==='pagado'?'pendiente':'pagado';
+  const d=await api('/api/update',{table:'gastos_mensuales',values:{estado:nuevo,fecha_pago:nuevo==='pagado'?todayStr():null},filters:[{col:'id',val:id}]});
+  if(d.error){ showToast('Error','err'); return; }
+  showToast(nuevo==='pagado'?'Marcado pagado':'Marcado pendiente','ok'); renderPagosMensuales();
+}
+async function deleteGastoMensual(id){
+  if(!confirm('¿Eliminar este pago?')) return;
+  const d=await api('/api/delete',{table:'gastos_mensuales',filters:[{col:'id',val:id}]});
+  if(d.error){ showToast('Error','err'); return; }
+  showToast('Eliminado','ok'); renderPagosMensuales();
+}
+async function copiarMesAnterior(){
+  const mes=mstate.pagosMes||todayStr().slice(0,7);
+  const [Y,M]=mes.split('-').map(Number); const prev=new Date(Y,M-2,1); const mesPrev=prev.getFullYear()+'-'+String(prev.getMonth()+1).padStart(2,'0');
+  if(!confirm('¿Copiar los pagos de '+mesPrev+' a '+mes+' como pendientes?')) return;
+  const d=await api('/api/select',{table:'gastos_mensuales',filters:[{col:'mes',val:mesPrev}],limit:5000});
+  const prevRows=d.data||[];
+  if(!prevRows.length){ showToast('No hay pagos en '+mesPrev,'err'); return; }
+  for(const r of prevRows){ await api('/api/insert',{table:'gastos_mensuales',values:{empresa:r.empresa,categoria:r.categoria,concepto:r.concepto,monto:r.monto,estado:'pendiente',mes,notas:r.notas||'',created_at:new Date().toISOString()}}); }
+  showToast('Copiados '+prevRows.length+' pagos','ok'); renderPagosMensuales();
+}
 async function renderContaInicio(){
   const body=document.getElementById('contaBody'); if(!body) return;
   body.innerHTML='<div class="nodata" style="padding:30px">Cargando tu centro de contabilidad…</div>';

@@ -207,6 +207,21 @@ CREATE TABLE IF NOT EXISTS kilometraje (
   created_at  TEXT
 );
 
+-- ── Contabilidad: pagos/gastos mensuales recurrentes por empresa ──
+CREATE TABLE IF NOT EXISTS gastos_mensuales (
+  id         TEXT PRIMARY KEY,
+  empresa    TEXT,
+  mes        TEXT,       -- YYYY-MM
+  categoria  TEXT,       -- planilla|gasolina|luz|telefono|alquiler|internet|agua|seguro|otros
+  concepto   TEXT,
+  monto      REAL,
+  estado     TEXT DEFAULT 'pendiente',  -- pendiente|pagado
+  fecha_pago TEXT,
+  notas      TEXT,
+  created_by TEXT,
+  created_at TEXT
+);
+
 -- ── Competidores por licitación ──
 CREATE TABLE IF NOT EXISTS lic_competidores (
   id              TEXT PRIMARY KEY,
@@ -535,6 +550,7 @@ const SCHEMA = {
   vehiculos: ['id', 'placa', 'nombre', 'km_actual', 'activo', 'created_at'],
   combustible: ['id', 'placa', 'vehiculo_id', 'fecha', 'monto', 'galones', 'km', 'estacion', 'notas', 'created_by', 'created_at'],
   kilometraje: ['id', 'placa', 'vehiculo_id', 'fecha', 'km_salida', 'km_entrada', 'notas', 'created_by', 'created_at'],
+  gastos_mensuales: ['id', 'empresa', 'mes', 'categoria', 'concepto', 'monto', 'estado', 'fecha_pago', 'notas', 'created_by', 'created_at'],
   messages:  ['id', 'user_id', 'content', 'project_id', 'room', 'file_id', 'created_at'],
   files:        ['id', 'name', 'mime', 'size', 'path', 'scope', 'ref_id', 'uploaded_by', 'uploaded_at'],
   cuentas:      ['id', 'codigo', 'nombre', 'tipo', 'parent_id', 'activa', 'created_at'],
@@ -565,7 +581,7 @@ const MODULE_ROLES = {
   mkt:   ['admin', 'mercadeo']
 };
 const TABLE_MODULE = {
-  cuentas: 'conta', asientos: 'conta', movimientos: 'conta', compromisos: 'conta',
+  cuentas: 'conta', asientos: 'conta', movimientos: 'conta', compromisos: 'conta', gastos_mensuales: 'conta',
   licitaciones: 'licit',
   lic_competidores: 'licit',
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt'
@@ -1151,6 +1167,7 @@ function canWrite(table, op, user, values, filters) {
     // ── Contabilidad ──
     case 'cuentas':
     case 'compromisos':
+    case 'gastos_mensuales':
       return roleCan('conta', user);
     case 'asientos':
     case 'movimientos':
