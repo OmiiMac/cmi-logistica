@@ -3059,7 +3059,11 @@ function showDieselModal(){
   const vehs=(state.vehiculos||[]).filter(v=>v.activo);
   openModal(`<div class="modal-head"><h2>Registrar tanqueo de diésel</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
-    <div class="form-group"><label>Vehículo</label><select id="dsVeh">${vehs.length?vehs.map(v=>`<option value="${v.id}">${esc(v.placa||v.nombre)}</option>`).join(''):'<option value="">(agrega vehículos primero)</option>'}</select></div>
+    <div class="form-group"><label>Vehículo (de la flota)</label><select id="dsVeh">
+      ${vehs.map(v=>`<option value="${v.id}">${esc(v.placa||v.nombre)}</option>`).join('')}
+      <option value="__otro__">— Otro vehículo (personal / externo) —</option>
+    </select></div>
+    <div class="form-group"><label>Otro vehículo (si no es de la flota)</label><input id="dsOtro" placeholder="Escribe placa o nombre del carro (ej: carro personal de Juan)"></div>
     <div class="form-row">
       <div class="form-group"><label>Fecha</label><input id="dsFecha" type="date" value="${todayStr()}"></div>
       <div class="form-group"><label>Monto ($)</label><input id="dsMonto" type="number" min="0" step="0.01" placeholder="0.00"></div>
@@ -3075,11 +3079,15 @@ function showDieselModal(){
 }
 async function saveDiesel(){
   const vehId=document.getElementById('dsVeh').value;
-  const veh=(state.vehiculos||[]).find(v=>v.id===vehId);
+  const otro=document.getElementById('dsOtro').value.trim();
+  // Si escribió un vehículo externo/personal, ese tiene prioridad (no es de la flota).
+  const esOtro = otro!=='' || vehId==='__otro__';
+  const veh = esOtro ? null : (state.vehiculos||[]).find(v=>v.id===vehId);
   const monto=parseFloat(document.getElementById('dsMonto').value)||0;
   if(!monto){ showToast('Ingresa el monto','err'); return; }
+  if(esOtro && !otro){ showToast('Escribe el vehículo (personal / externo)','err'); return; }
   const km=document.getElementById('dsKm').value!==''?parseFloat(document.getElementById('dsKm').value):null;
-  const values={placa:veh?(veh.placa||veh.nombre):'',vehiculo_id:vehId||null,fecha:document.getElementById('dsFecha').value||todayStr(),monto,galones:parseFloat(document.getElementById('dsGal').value)||null,km,estacion:document.getElementById('dsEst').value.trim(),notas:document.getElementById('dsNotas').value.trim(),created_at:new Date().toISOString()};
+  const values={placa:esOtro?otro:(veh?(veh.placa||veh.nombre):''),vehiculo_id:esOtro?null:(vehId||null),fecha:document.getElementById('dsFecha').value||todayStr(),monto,galones:parseFloat(document.getElementById('dsGal').value)||null,km,estacion:document.getElementById('dsEst').value.trim(),notas:document.getElementById('dsNotas').value.trim(),created_at:new Date().toISOString()};
   const d=await api('/api/insert',{table:'combustible',values});
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
   if(veh && km!=null && km>veh.kmActual){ await api('/api/update',{table:'vehiculos',values:{km_actual:km},filters:[{col:'id',val:veh.id}]}); await reloadVehiculos(); }
