@@ -1737,7 +1737,7 @@ function renderDashboard(){
   requestAnimationFrame(()=>{
     const canvas = document.getElementById('projChart');
     if(!canvas) return;
-    const projs  = [...state.projects.values()].filter(p=>p.id!=='bodega');
+    const projs  = [...state.projects.values()].filter(p=>p.id!=='bodega'&&p.status!=='archived');
     const labels = projs.map(p=>p.name.length>12?p.name.slice(0,12)+'…':p.name);
     const data   = projs.map(p=>[...state.items.values()].filter(i=>i.projectId===p.id).length);
     const colors = projs.map(p=>p.color||'#9B1B30');
@@ -1799,7 +1799,12 @@ function renderInvLista(){
   const loc = state.invLoc || 'all';               // all | bodega | proyectos
   const estF = state.invEstado||null;
   const estMatch = i => !estF || (estF==='LOW' ? (i.minStock>0&&i.quantity<=i.minStock) : i.estado===estF);
-  const locMatch = i => loc==='all' || (loc==='bodega' ? i.projectId==='bodega' : i.projectId!=='bodega');
+  // Clasificación clara: un artículo está "en un proyecto" solo si apunta a una obra real existente
+  // (distinta del depósito). Todo lo demás —el depósito y los artículos sin obra asignada— es Depósito.
+  // Así, Depósito + Proyectos = total siempre cuadra.
+  const inProy   = i => i.projectId && i.projectId!=='bodega' && state.projects.has(i.projectId);
+  const inBodega = i => !inProy(i);
+  const locMatch = i => loc==='all' || (loc==='bodega' ? inBodega(i) : inProy(i));
   const items = all
     .filter(locMatch)
     .filter(i=>state.cat==='all'||i.category===state.cat)
@@ -1808,8 +1813,8 @@ function renderInvLista(){
     .sort((a,b)=>a.name.localeCompare(b.name));
   // Cantidades totales por ubicación (sobre todo el inventario)
   const sumQty = arr => arr.reduce((s,i)=>s+(+i.quantity||0),0);
-  const qtyBodega = sumQty(all.filter(i=>i.projectId==='bodega'));
-  const qtyProy   = sumQty(all.filter(i=>i.projectId!=='bodega'));
+  const qtyBodega = sumQty(all.filter(inBodega));
+  const qtyProy   = sumQty(all.filter(inProy));
   const low  = all.filter(i=>i.minStock>0&&i.quantity<=i.minStock).length;
   const noOp = all.filter(i=>i.estado==='NO_OPERATIVA').length;
   const tile = (typeof kpiTile==='function') ? kpiTile : (l,v)=>`<div class="section-card" style="text-align:center"><div style="font-size:20px;font-weight:800">${v}</div><div style="font-size:11px;color:var(--c-muted)">${l}</div></div>`;
@@ -1821,13 +1826,13 @@ function renderInvLista(){
     const k=(i.name||'').toLowerCase()+'|'+i.category;
     if(!groups.has(k)) groups.set(k,{name:i.name,category:i.category,photoId:i.photoId||null,bodega:0,proy:0,total:0,proj:{}});
     const g=groups.get(k), q=i.quantity||0;
-    if(i.projectId==='bodega'){ g.bodega+=q; } else { g.proy+=q; if(q) g.proj[i.projectId]=(g.proj[i.projectId]||0)+q; }
+    if(inProy(i)){ g.proy+=q; if(q) g.proj[i.projectId]=(g.proj[i.projectId]||0)+q; } else { g.bodega+=q; }
     g.total+=q; if(!g.photoId&&i.photoId) g.photoId=i.photoId;
   });
   const summary=[...groups.values()].sort((a,b)=>a.name.localeCompare(b.name));
   const projBreak=g=>Object.keys(g.proj).map(pid=>esc((projName(pid)||pid)+': '+g.proj[pid])).join(' · ');
   // El depósito (bodega) NO es un proyecto: es la Base Central de donde sale el material hacia los proyectos.
-  const locName = pid => pid==='bodega' ? 'Depósito (Base Central)' : projName(pid);
+  const locName = pid => (pid && pid!=='bodega' && state.projects.has(pid)) ? projName(pid) : 'Depósito (Base Central)';
   // Tabla comparativa (Depósito vs Proyectos) — se usa en la vista "Todo"
   const summaryHtml = `<div class="item-table"><table>
     <thead><tr><th>Artículo</th><th style="text-align:center">📦 Depósito</th><th style="text-align:center">🏗️ Proyectos</th><th style="text-align:center">Total</th><th>¿Dónde está en proyectos?</th></tr></thead>
