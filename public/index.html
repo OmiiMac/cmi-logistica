@@ -2744,7 +2744,7 @@ function renderRutas(){
 
   const mode = state.rutaMode || 'panel';
   const toggle = `<div class="filter-chips" style="margin-bottom:14px">
-    ${[['panel','📊 Panel'],['dia','Día'],['semana','Semana'],['mes','Mes'],['kilometraje','📏 Kilometraje'],['diesel','⛽ Diésel'],['vehiculos','🚛 Vehículos'],['graficas','📈 Gráficas'],['archivos','🗂️ Archivos']].map(([m,l])=>`<span class="chip ${mode===m?'active':''}" onclick="setRutaMode('${m}')">${l}</span>`).join('')}
+    ${[['panel','📊 Panel'],['dia','Día'],['semana','Semana'],['mes','Mes'],['kilometraje','📏 Kilometraje'],['diesel','⛽ Combustible'],['vehiculos','🚛 Vehículos'],['graficas','📈 Gráficas'],['archivos','🗂️ Archivos']].map(([m,l])=>`<span class="chip ${mode===m?'active':''}" onclick="setRutaMode('${m}')">${l}</span>`).join('')}
   </div>`;
 
   let body;
@@ -2795,7 +2795,7 @@ async function renderRutaGraficas(){
     <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por conductor</h3><canvas id="chRutaCond" height="190"></canvas></div>
     <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Destinos más frecuentes</h3><canvas id="chRutaDest" height="190"></canvas></div>
     <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">🚚 Km recorrido por vehículo</h3><canvas id="chRutaKmVeh" height="190"></canvas></div>
-    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">⛽ Gasto de diésel por vehículo</h3><canvas id="chRutaDieselVeh" height="190"></canvas></div>
+    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">⛽ Gasto de combustible por vehículo</h3><canvas id="chRutaDieselVeh" height="190"></canvas></div>
   </div>`;
   destroyRutaCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
   // por estado
@@ -2826,7 +2826,7 @@ async function renderRutaGraficas(){
   const dVeh={}; (cbR.data||[]).forEach(c=>{ const k=vehName(c); dVeh[k]=(dVeh[k]||0)+(+c.monto||0); });
   const dv=Object.entries(dVeh).sort((a,b)=>b[1]-a[1]);
   const ed=document.getElementById('chRutaDieselVeh');
-  if(ed){ if(dv.length) _rutaCharts.push(new Chart(ed,{type:'bar',data:{labels:dv.map(x=>x[0]),datasets:[{label:'Diésel ($)',data:dv.map(x=>x[1]),backgroundColor:'#EA580C'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})})); else ed.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin diésel registrado</div>'; }
+  if(ed){ if(dv.length) _rutaCharts.push(new Chart(ed,{type:'bar',data:{labels:dv.map(x=>x[0]),datasets:[{label:'Combustible ($)',data:dv.map(x=>x[1]),backgroundColor:'#EA580C'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})})); else ed.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin combustible registrado</div>'; }
 }
 async function renderRutaArchivos(){
   const b=document.getElementById('rutaBody'); if(!b) return;
@@ -2870,7 +2870,7 @@ async function renderRutaPanel(){
   b.innerHTML=`
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${infoCard('🚚','rgba(29,78,216,.12)','#1D4ED8',rutasHoy.length,'Rutas de hoy',null)}
-      ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),'Diésel del mes · '+(+galMes.toFixed(0))+' gal',"setRutaMode('diesel')")}
+      ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),'Combustible del mes · '+(+galMes.toFixed(0))+' gal',"setRutaMode('diesel')")}
     </div>
     <div class="ruta-day-card">
       <div class="ruta-day-head"><span>🚚 Ruta(s) de hoy · ${fmtDateLong(hoy)}</span><span style="font-size:11px">${rutasHoy.length} ruta(s)</span></div>
@@ -3031,7 +3031,7 @@ async function renderRutaDiesel(){
   const porVeh={}; delMes.forEach(c=>{ const k=vehName(c); porVeh[k]=(porVeh[k]||0)+(+c.monto||0); });
   b.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-      <h3 style="font-size:14px;margin:0">⛽ Registro de diésel</h3>
+      <h3 style="font-size:14px;margin:0">⛽ Registro de combustible</h3>
       <button class="btn btn-sm btn-primary" onclick="showDieselModal()">+ Registrar tanqueo</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
@@ -3057,7 +3057,7 @@ async function renderRutaDiesel(){
 }
 function showDieselModal(){
   const vehs=(state.vehiculos||[]).filter(v=>v.activo);
-  openModal(`<div class="modal-head"><h2>Registrar tanqueo de diésel</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  openModal(`<div class="modal-head"><h2>Registrar tanqueo de combustible</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-group"><label>Vehículo (de la flota)</label><select id="dsVeh">
       ${vehs.map(v=>`<option value="${v.id}">${esc(v.placa||v.nombre)}</option>`).join('')}
