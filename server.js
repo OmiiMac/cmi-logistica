@@ -498,6 +498,7 @@ ensureColumn('rutas', 'km_entrada', 'REAL');
 ensureColumn('rutas', 'observaciones', 'TEXT');
 ensureColumn('rutas', 'recibido_por', 'TEXT');
 ensureColumn('rutas', 'comprobante_file', 'TEXT');
+ensureColumn('vehiculos', 'condicion', 'TEXT');   // operativo | necesita_mant | en_mant
 // Siembra inicial de la flota (solo si no hay vehículos): HINO, JMC, L200 y Ford Figo.
 try {
   if (db.prepare('SELECT COUNT(*) AS c FROM vehiculos').get().c === 0) {
@@ -548,7 +549,7 @@ const SCHEMA = {
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
   equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'origen_id', 'destino_id', 'created_by', 'created_at', 'updated_at'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'placa', 'tipo_carga', 'cliente', 'costo_flete', 'km_salida', 'km_entrada', 'observaciones', 'recibido_por', 'comprobante_file', 'updated_by', 'updated_at', 'created_at'],
-  vehiculos: ['id', 'placa', 'nombre', 'km_actual', 'activo', 'created_at'],
+  vehiculos: ['id', 'placa', 'nombre', 'km_actual', 'activo', 'condicion', 'created_at'],
   combustible: ['id', 'placa', 'vehiculo_id', 'fecha', 'monto', 'galones', 'km', 'estacion', 'notas', 'created_by', 'created_at'],
   kilometraje: ['id', 'placa', 'vehiculo_id', 'fecha', 'km_salida', 'km_entrada', 'notas', 'created_by', 'created_at'],
   gastos_mensuales: ['id', 'empresa', 'mes', 'categoria', 'concepto', 'monto', 'estado', 'fecha_pago', 'notas', 'created_by', 'created_at'],
