@@ -2211,6 +2211,7 @@ async function renderProjCaja(proj){
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn btn-sm btn-primary" onclick="showCajaModal('${proj.id}','gasto')">− Registrar gasto</button>
       <button class="btn btn-sm btn-ghost" onclick="showCajaModal('${proj.id}','ingreso')">+ Agregar fondo</button>
+      <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="imprimirCajaChica('${proj.id}')">🖨 Imprimir / Enviar a Rosa</button>
     </div>
     <div class="item-table"><table>
       <thead><tr><th>Fecha</th><th>Concepto</th><th>Tipo</th><th style="text-align:right">Monto</th><th>Comprob.</th><th>Estado</th>${state.isAdmin?'<th></th>':''}</tr></thead>
@@ -2267,6 +2268,46 @@ async function deleteCaja(id){
   const d=await api('/api/delete',{table:'caja_chica',filters:[{col:'id',val:id}]});
   if(d.error){ showToast('Error al eliminar','err'); return; }
   showToast('Eliminado','ok'); renderProject();
+}
+// Reporte imprimible / PDF de la caja chica del proyecto (para enviar a Contabilidad / Rosa)
+async function imprimirCajaChica(projId){
+  const proj=state.projects.get(projId)||{};
+  const d=await api('/api/select',{table:'caja_chica',filters:[{col:'project_id',val:projId}],order:[{col:'fecha',asc:true}],limit:1000});
+  const movs=d.data||[];
+  const ing=movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+(+m.monto||0),0);
+  const gas=movs.filter(m=>m.tipo!=='ingreso').reduce((s,m)=>s+(+m.monto||0),0);
+  const saldo=ing-gas;
+  const rows=movs.map(m=>`<tr>
+      <td style="border:1px solid #ddd;padding:5px 7px;white-space:nowrap">${esc(m.fecha||'')}</td>
+      <td style="border:1px solid #ddd;padding:5px 7px">${esc(m.concepto||'')}${m.categoria?` <span style="color:#777">· ${esc(m.categoria)}</span>`:''}</td>
+      <td style="border:1px solid #ddd;padding:5px 7px">${m.tipo==='ingreso'?'Fondo':'Gasto'}</td>
+      <td style="border:1px solid #ddd;padding:5px 7px">${m.comprobante_file?'Sí':'—'}</td>
+      <td style="border:1px solid #ddd;padding:5px 7px;text-align:right;font-weight:700;color:${m.tipo==='ingreso'?'#166534':'#B91C1C'}">${m.tipo==='ingreso'?'+':'−'}${cajaMoney(m.monto)}</td>
+    </tr>`).join('');
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#1b1b20;max-width:860px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #9B1B30;padding-bottom:8px">
+        <img src="${location.origin}/cmi-logo-full.svg" style="height:38px">
+        <div><div style="color:#9B1B30;font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
+        <div style="font-size:11px;color:#555">Reporte de Caja Chica — ${esc(proj.name||'Proyecto')}</div></div>
+        <div style="margin-left:auto;text-align:right;font-size:11px;color:#555">Emitido: ${esc(todayStr())}</div>
+      </div>
+      <div style="display:flex;gap:10px;margin:12px 0">
+        <div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px;text-align:center"><div style="font-size:10px;color:#777">Fondos ingresados</div><div style="font-weight:800;color:#166534">${cajaMoney(ing)}</div></div>
+        <div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px;text-align:center"><div style="font-size:10px;color:#777">Gastos</div><div style="font-weight:800;color:#B91C1C">${cajaMoney(gas)}</div></div>
+        <div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px;text-align:center"><div style="font-size:10px;color:#777">Saldo disponible</div><div style="font-weight:800;color:${saldo<0?'#B91C1C':'#166534'}">${cajaMoney(saldo)}</div></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#9B1B30;color:#fff">
+          <th style="border:1px solid #ddd;padding:5px 7px;text-align:left">Fecha</th>
+          <th style="border:1px solid #ddd;padding:5px 7px;text-align:left">Concepto</th>
+          <th style="border:1px solid #ddd;padding:5px 7px;text-align:left">Tipo</th>
+          <th style="border:1px solid #ddd;padding:5px 7px;text-align:left">Comprob.</th>
+          <th style="border:1px solid #ddd;padding:5px 7px;text-align:right">Monto</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan="5" style="padding:10px;text-align:center;color:#777">Sin movimientos</td></tr>'}</tbody>
+      </table>
+      <div style="font-size:10px;color:#999;text-align:center;margin-top:10px">Reporte de caja chica · CMI Construction Corp. — Uso interno.</div>
+    </div>`;
+  printHtmlDoc('Caja Chica '+(proj.name||''), html);
 }
 
 // ── Salidas de material (trazabilidad + baja de stock) ────────
