@@ -4516,10 +4516,11 @@ async function renderContaCaja(){
 async function renderContaInicio(){
   const body=document.getElementById('contaBody'); if(!body) return;
   body.innerHTML='<div class="nodata" style="padding:30px">Cargando tu centro de contabilidad…</div>';
-  const [rs,rc,rcomp]=await Promise.all([
+  const [rs,rc,rcomp,rcomb]=await Promise.all([
     apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
     api('/api/select',{table:'caja_chica',order:[{col:'created_at',asc:false}],limit:5000}),
-    api('/api/select',{table:'compras',limit:5000})
+    api('/api/select',{table:'compras',limit:5000}),
+    api('/api/select',{table:'combustible',limit:5000})
   ]);
   const rcompr=await api('/api/select',{table:'compromisos',limit:5000});
   if(mstate.contaTab!=='inicio') return;
@@ -4535,6 +4536,9 @@ async function renderContaInicio(){
   const compras=rcomp.data||[];
   const comprasPendN=compras.filter(c=>c.estado!=='entregada').length;
   const comprasPendM=compras.filter(c=>c.estado!=='entregada').reduce((a,c)=>a+(+c.monto||0),0);
+  // Combustible (Carga Express) del mes — Contabilidad debe estar al pendiente
+  const _mesC=todayStr().slice(0,7);
+  const combMes=(rcomb.data||[]).filter(c=>(c.fecha||'').slice(0,7)===_mesC).reduce((a,c)=>a+(+c.monto||0),0);
   // Compromisos / pendientes
   const compromisos=rcompr.data||[];
   const hoy=todayStr(), en7=ymd(new Date(Date.now()+7*86400000));
@@ -4577,6 +4581,7 @@ async function renderContaInicio(){
       ${kpiTile('Utilidad',money(util),util>=0?'#166534':'#DC2626',util>=0?'#DCFCE7':'#FEE2E2')}
       ${kpiTile('Pendientes por pagar',money(totPend),'#D97706','#FEF3C7')}
       ${kpiTile('Compras en proceso',money(comprasPendM),'#EA580C','#FFEDD5')}
+      ${kpiTile('Combustible del mes',money(combMes),'#B45309','#FEF3C7')}
     </div>
     <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;align-items:start" class="conta-inicio-cols">
       <div class="section-card" style="padding:16px">
@@ -4615,11 +4620,12 @@ async function renderContaInicio(){
 }
 async function renderContaPanel(){
   const body=document.getElementById('contaBody'); if(!body) return;
-  const [rs,rm,rc,rcomp]=await Promise.all([
+  const [rs,rm,rc,rcomp,rcomb]=await Promise.all([
     apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
     apiPost('/api/conta/mensual',{desde:mstate.contaDesde,hasta:mstate.contaHasta}),
     api('/api/select',{table:'caja_chica',limit:5000}),
-    api('/api/select',{table:'compras',limit:5000})
+    api('/api/select',{table:'compras',limit:5000}),
+    api('/api/select',{table:'combustible',limit:5000})
   ]);
   if(rs.error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(rs.error.message)}</div>`; return; }
   const s=rs.data||[], mensual=rm.data||[];
@@ -4631,6 +4637,11 @@ async function renderContaPanel(){
   const compRows=Object.entries(compByProj).map(([pid,g])=>({name:projName(pid)||pid,gas:g})).filter(r=>r.gas>0).sort((a,b)=>b.gas-a.gas).slice(0,10);
   const totCompras=Object.values(compByProj).reduce((a,b)=>a+b,0);
   const comprasPend=compras.filter(c=>c.estado!=='entregada').reduce((a,c)=>a+(+c.monto||0),0);
+  // Combustible (Carga Express) dentro del período — gasto que Contabilidad debe vigilar
+  const comb=(rcomb.data||[]).filter(c=>(!mstate.contaDesde||(c.fecha||'')>=mstate.contaDesde)&&(!mstate.contaHasta||(c.fecha||'')<=mstate.contaHasta));
+  const combTot=comb.reduce((a,c)=>a+(+c.monto||0),0);
+  const combByVeh={}; comb.forEach(c=>{ const k=c.placa||'—'; combByVeh[k]=(combByVeh[k]||0)+(+c.monto||0); });
+  const combRows=Object.entries(combByVeh).map(([n,g])=>({name:n,gas:g})).filter(r=>r.gas>0).sort((a,b)=>b.gas-a.gas).slice(0,10);
   const sum=(tipo,signo)=>s.filter(c=>c.tipo===tipo).reduce((a,c)=>a+(signo==='d'?(c.debe-c.haber):(c.haber-c.debe)),0);
   const totIng=sum('ingreso','h'), totGas=sum('gasto','d'), util=totIng-totGas;
   const activo=sum('activo','d'), pasivo=sum('pasivo','h'), patr=sum('patrimonio','h')+util;
@@ -4641,6 +4652,7 @@ async function renderContaPanel(){
       ${kpiTile('Utilidad',money(util),util>=0?'#166534':'#DC2626',util>=0?'#DCFCE7':'#FEE2E2')}
       ${kpiTile('Compras entregadas',money(totCompras),'#EA580C','#FFEDD5')}
       ${kpiTile('Compras pendientes',money(comprasPend),'#D97706','#FEF3C7')}
+      ${kpiTile('Combustible (Carga Express)',money(combTot),'#B45309','#FEF3C7')}
       ${kpiTile('Activo',money(activo),'#1D4ED8','#DBEAFE')}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
@@ -4650,6 +4662,7 @@ async function renderContaPanel(){
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Activo · Pasivo · Patrimonio</h3><canvas id="chAPP" height="190"></canvas></div>
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Gastos de caja chica por proyecto</h3><canvas id="chCajaProj" height="190"></canvas></div>
       <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">Compras entregadas por proyecto</h3><canvas id="chComprasProj" height="190"></canvas></div>
+      <div class="section-card"><h3 style="font-size:13px;margin:0 0 10px">⛽ Combustible por vehículo (Carga Express)</h3><canvas id="chCombVeh" height="190"></canvas></div>
     </div>`;
   drawContaCharts(s,mensual,{activo,pasivo,patr});
   const elCaja=document.getElementById('chCajaProj');
@@ -4661,6 +4674,11 @@ async function renderContaPanel(){
   if(elComp && typeof Chart!=='undefined'){
     if(compRows.length) _contaCharts.push(new Chart(elComp,{type:'bar',data:{labels:compRows.map(r=>r.name),datasets:[{label:'Compras entregadas',data:compRows.map(r=>r.gas),backgroundColor:'#EA580C'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
     else elComp.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin compras entregadas aún</div>';
+  }
+  const elComb=document.getElementById('chCombVeh');
+  if(elComb && typeof Chart!=='undefined'){
+    if(combRows.length) _contaCharts.push(new Chart(elComb,{type:'bar',data:{labels:combRows.map(r=>r.name),datasets:[{label:'Combustible',data:combRows.map(r=>r.gas),backgroundColor:'#B45309'}]},options:chartOpts({indexAxis:'y',plugins:{legend:{display:false}}})}));
+    else elComb.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin combustible registrado aún</div>';
   }
 }
 // ── Pendientes y compromisos mensuales ───────────────────────
