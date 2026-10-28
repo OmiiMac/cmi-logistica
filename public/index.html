@@ -2899,7 +2899,7 @@ async function renderRutaPanel(){
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
       ${infoCard('🚚','rgba(29,78,216,.12)','#1D4ED8',rutasHoy.length,'Rutas de hoy',null)}
       ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),'Combustible del mes · '+(+galMes.toFixed(0))+' gal',"setRutaMode('diesel')")}
-    </div>`;
+    </div>
     <div class="ruta-day-card">
       <div class="ruta-day-head"><span>🚚 Ruta(s) de hoy · ${fmtDateLong(hoy)}</span><span style="font-size:11px">${rutasHoy.length} ruta(s)</span></div>
       ${rutasHoy.length?rutasHoy.map(rutaRowHtml).join(''):'<div class="no-rutas">Sin rutas para hoy.</div>'}
