@@ -2923,12 +2923,26 @@ async function renderRutaPanel(){
   const delMes=(cb.data||[]).filter(c=>(c.fecha||'').slice(0,7)===mes);
   const dieselMes=delMes.reduce((s,c)=>s+(+c.monto||0),0);
   const galMes=delMes.reduce((s,c)=>s+(+c.galones||0),0);
-  const infoCard=(ic,bg,col,val,label,onclick)=>`<div ${onclick?`onclick="${onclick}" style="cursor:pointer;`:'style="'}flex:1;min-width:170px;display:flex;align-items:center;gap:12px;background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:13px 15px">
+  const rend = galMes>0 ? (kmMes/galMes) : null;
+  // Rutas: hoy (por estado), semana y mes; ingresos por fletes del mes
+  const stH={pendiente:0,en_ruta:0,completada:0}; rutasHoy.forEach(r=>{ if(stH[r.status]!=null) stH[r.status]++; });
+  const rutasMes=(state.rutas||[]).filter(r=>(r.date||'').slice(0,7)===mes);
+  const fletesMes=rutasMes.reduce((s,r)=>s+(+r.costoFlete||0),0);
+  const ws=_weekStart(new Date()); const we=new Date(ws); we.setDate(ws.getDate()+7);
+  const rutasSemana=(state.rutas||[]).filter(r=>{ const d=_ymdToDate(r.date); return d>=ws && d<we; }).length;
+  // Flota
+  const vehs=state.vehiculos||[];
+  const vtot=vehs.length, voper=vehs.filter(v=>(v.condicion||'operativo')==='operativo').length;
+  const vmantN=vehs.filter(v=>v.condicion==='necesita_mant'||v.condicion==='en_mant').length;
+  // Combustible del mes por vehículo
+  const combVehMes={}; delMes.forEach(c=>{ const k=vehName(c)||c.placa||'—'; combVehMes[k]=(combVehMes[k]||0)+(+c.monto||0); });
+  const combVehRows=Object.entries(combVehMes).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const infoCard=(ic,bg,col,val,label,onclick)=>`<div ${onclick?`onclick="${onclick}" style="cursor:pointer;`:'style="'}flex:1;min-width:158px;display:flex;align-items:center;gap:12px;background:var(--c-card);border:1px solid var(--c-border);border-radius:14px;padding:13px 15px">
     <div style="width:42px;height:42px;border-radius:12px;background:${bg};color:${col};display:flex;align-items:center;justify-content:center;font-size:21px;flex:none">${ic}</div>
     <div style="min-width:0"><div style="font-size:21px;font-weight:800;line-height:1.1">${val}</div><div style="font-size:11px;color:var(--c-muted)">${label}</div></div>
   </div>`;
   // Alerta de mantenimiento: vehículos que necesitan o están en mantenimiento
-  const mant=(state.vehiculos||[]).filter(v=>v.condicion==='necesita_mant'||v.condicion==='en_mant');
+  const mant=vehs.filter(v=>v.condicion==='necesita_mant'||v.condicion==='en_mant');
   const mantHtml = mant.length ? `<div onclick="setRutaMode('vehiculos')" style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.35);border-radius:12px;padding:11px 14px;margin-bottom:14px">
       <span style="font-size:18px;line-height:1">🔧</span>
       <div style="flex:1;min-width:0">
@@ -2937,15 +2951,37 @@ async function renderRutaPanel(){
       </div>
       <span style="font-size:11px;color:#DC2626;white-space:nowrap">Ver ›</span>
     </div>` : '';
+  const dot=c=>c==='en_mant'?'🔴':c==='necesita_mant'?'🟠':'🟢';
+  const flotaHtml = vehs.length ? vehs.map(v=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--c-border)">
+      <span style="font-size:15px">${dot(v.condicion||'operativo')}</span>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13px">${esc(v.placa||v.nombre||'—')}</div>${v.placa&&v.nombre?`<div style="font-size:11px;color:var(--c-muted)">${esc(v.nombre)}</div>`:''}</div>
+      <div style="font-weight:700;font-size:13px;white-space:nowrap">${(v.kmActual||0).toLocaleString('es')} km</div>
+    </div>`).join('') : '<div class="no-rutas">Sin vehículos registrados.</div>';
+  const combHtml = combVehRows.length ? combVehRows.map(([n,g])=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--c-border);font-size:13px"><span>⛽ ${esc(n)}</span><b>${money(g)}</b></div>`).join('') : '<div class="no-rutas">Sin tanqueos este mes.</div>';
+  const cardHead=(t,sub,onclick)=>`<div ${onclick?`onclick="${onclick}" style="cursor:pointer;`:'style="'}display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--c-border);font-weight:700;font-size:13px">${t}<span style="font-size:11px;color:var(--c-muted);font-weight:600">${sub}</span></div>`;
   b.innerHTML=`
     ${mantHtml}
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
-      ${infoCard('🚚','rgba(29,78,216,.12)','#1D4ED8',rutasHoy.length,'Rutas de hoy',null)}
-      ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),'Combustible del mes · '+(+galMes.toFixed(0))+' gal',"setRutaMode('diesel')")}
+      ${infoCard('🚚','rgba(29,78,216,.12)','#1D4ED8',rutasHoy.length,`${stH.en_ruta} en ruta · ${stH.pendiente} pend · ${stH.completada} list.`,"setRutaMode('dia')")}
+      ${infoCard('📅','rgba(124,58,237,.12)','#7C3AED',rutasSemana,'Rutas de la semana',"setRutaMode('semana')")}
+      ${infoCard('📏','rgba(15,118,110,.12)','#0F766E',(+kmMes).toLocaleString('es'),'Km recorridos (mes)',"setRutaMode('kilometraje')")}
+      ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),`Combustible · ${+galMes.toFixed(0)} gal${rend?` · ${rend.toFixed(1)} km/gal`:''}`,"setRutaMode('diesel')")}
+      ${infoCard('💵','rgba(22,101,52,.12)','#166534',money(fletesMes),'Fletes del mes',null)}
+      ${infoCard('🚛','rgba(29,78,216,.12)','#1D4ED8',`${voper}/${vtot}`,`Flota operativa${vmantN?` · ${vmantN} en mant.`:''}`,"setRutaMode('vehiculos')")}
     </div>
-    <div class="ruta-day-card">
-      <div class="ruta-day-head"><span>🚚 Ruta(s) de hoy · ${fmtDateLong(hoy)}</span><span style="font-size:11px">${rutasHoy.length} ruta(s)</span></div>
-      ${rutasHoy.length?rutasHoy.map(rutaRowHtml).join(''):'<div class="no-rutas">Sin rutas para hoy.</div>'}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
+      <div class="ruta-day-card">
+        <div class="ruta-day-head"><span>🚚 Ruta(s) de hoy · ${fmtDateLong(hoy)}</span><span style="font-size:11px">${rutasHoy.length} ruta(s)</span></div>
+        ${rutasHoy.length?rutasHoy.map(rutaRowHtml).join(''):'<div class="no-rutas">Sin rutas para hoy.</div>'}
+      </div>
+      <div class="section-card" style="padding:0;overflow:hidden">
+        ${cardHead('🚛 Flota','Ver ›',"setRutaMode('vehiculos')")}
+        <div style="padding:4px 14px 10px">${flotaHtml}</div>
+      </div>
+    </div>
+    <div class="section-card" style="padding:0;overflow:hidden;margin-top:14px">
+      ${cardHead('⛽ Combustible del mes por vehículo','Total '+money(dieselMes),"setRutaMode('diesel')")}
+      <div style="padding:4px 14px 10px">${combHtml}</div>
     </div>`;
 }
 // ── Carga Express: Kilometraje (salida / entrada por vehículo) ──
