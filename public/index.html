@@ -981,17 +981,18 @@ function setupRealtime(){
           }
         }
       } else if(['asientos','cuentas','compromisos','gastos_mensuales'].includes(table)){
-        modRefresh('contabilidad');
+        if(state.view==='dashboard') renderDashboard(); else modRefresh('contabilidad');
       } else if(['caja_chica','salidas_material','compras','obra_resumen','proyecto_costos'].includes(table)){
         // Movimientos de proyecto: refrescar la vista si se está viendo
         if(state.view==='project') renderProject();
+        else if(state.view==='dashboard') renderDashboard();   // la tarjeta de Compras del tablero
         else if(state.view==='contabilidad' && typeof mstate!=='undefined' && (mstate.contaTab==='caja'||mstate.contaTab==='panel'||mstate.contaTab==='inicio')) renderContabilidad();
       } else if(table==='equipo_movs'){
         if(state.view==='transfers') renderTransfers();   // vales de salida/entrada
       } else if(table==='licitaciones'||table==='lic_competidores'){
-        modRefresh('licitaciones');
+        if(state.view==='dashboard') renderDashboard(); else modRefresh('licitaciones');
       } else if(['campanas','publicaciones','mercadeo_tareas','mkt_piezas','mkt_push','mkt_efemerides','mkt_biblioteca'].includes(table)){
-        modRefresh('mercadeo');
+        if(state.view==='dashboard') renderDashboard(); else modRefresh('mercadeo');
       }
     } catch(ex){}
   };
