@@ -2126,6 +2126,22 @@ async function renderProjAsistencia(proj){
     <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Toca un estado para marcar. Volver a tocar el mismo estado quita la marca. La hora y el estado se guardan por día. La planilla de la quincena se calcula en Contabilidad → Planilla.</div>`;
 }
 function shiftAsistResMes(dir){ const ym=state.asistResMes||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); state.asistResMes=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderProject(); }
+function setAsistResQ(q){ state.asistResQ=q; renderProject(); }
+// Rango de fechas del resumen: 0 = mes completo, 1 = 1ª quincena, 2 = 2ª quincena
+function asistResRango(mes){
+  const q=state.asistResQ||0; const [Y,M]=mes.split('-').map(Number); const fin=new Date(Y,M,0).getDate();
+  if(q===1) return {desde:`${mes}-01`,hasta:`${mes}-15`,q,etq:'1ª quincena'};
+  if(q===2) return {desde:`${mes}-16`,hasta:`${mes}-${String(fin).padStart(2,'0')}`,q,etq:'2ª quincena'};
+  return {desde:`${mes}-01`,hasta:`${mes}-${String(fin).padStart(2,'0')}`,q:0,etq:'Mes completo'};
+}
+function asistResQChips(){
+  const q=state.asistResQ||0;
+  return `<div class="filter-chips">
+    <span class="chip ${q===0?'active':''}" onclick="setAsistResQ(0)">Mes completo</span>
+    <span class="chip ${q===1?'active':''}" onclick="setAsistResQ(1)">1ª quincena</span>
+    <span class="chip ${q===2?'active':''}" onclick="setAsistResQ(2)">2ª quincena</span>
+  </div>`;
+}
 async function renderAsistResumen(proj){
   const b=document.getElementById('projBody'); if(!b) return;
   b.innerHTML=asistVistaChips()+'<div class="nodata" style="padding:20px">Cargando resumen…</div>';
@@ -2136,7 +2152,7 @@ async function renderAsistResumen(proj){
   ]);
   if(state.view!=='project'||state.projectId!==proj.id||(state.projTab||'')!=='asistencia'||(state.asistVista||'dia')!=='resumen') return;
   const crew=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
-  const asist=(ra.data||[]).filter(a=>(a.fecha||'').slice(0,7)===mes);
+  const rango=asistResRango(mes); const asist=(ra.data||[]).filter(a=>a.fecha>=rango.desde && a.fecha<=rango.hasta);
   const stat={}; asist.forEach(a=>{ const s=stat[a.trabajador_id]=stat[a.trabajador_id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; if(s[a.estado]!=null) s[a.estado]++; s.he+=(+a.horas_extra||0); });
   const [Y,M]=mes.split('-').map(Number); const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')||'';
   let granPago=0, granDias=0, granHE=0;
@@ -2155,19 +2171,20 @@ async function renderAsistResumen(proj){
       <button class="nav-arrow" onclick="shiftAsistResMes(-1)">‹</button>
       <div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${mesNom} ${Y}</div>
       <button class="nav-arrow" onclick="shiftAsistResMes(1)">›</button>
+      ${asistResQChips()}
       <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="imprimirAsistenciaMes('${proj.id}')">🖨 Imprimir / PDF</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
       ${kpiTile('En la cuadrilla',crew.length,'#1D4ED8','rgba(29,78,216,.14)')}
       ${kpiTile('Días trabajados',granDias,'#166534','rgba(22,101,52,.14)')}
       ${kpiTile('Horas extra',granHE+' h','#B45309','rgba(180,83,9,.14)')}
-      ${kpiTile('Total del mes',cajaMoney(granPago),'#7C3AED','rgba(124,58,237,.14)')}
+      ${kpiTile('Total · '+rango.etq,cajaMoney(granPago),'#7C3AED','rgba(124,58,237,.14)')}
     </div>
     <div class="item-table"><table>
       <thead><tr><th>Trabajador</th><th style="text-align:center" title="Presente">Pres.</th><th style="text-align:center" title="Tarde">Tarde</th><th style="text-align:center" title="Justificado">Just.</th><th style="text-align:center" title="Ausente">Aus.</th><th style="text-align:center">Días pag.</th><th style="text-align:center">H. extra</th><th style="text-align:right">A pagar</th></tr></thead>
       <tbody>${crew.length===0?`<tr><td colspan="8"><div class="empty-state">Sin trabajadores en la cuadrilla.</div></td></tr>`:rows}</tbody>
     </table></div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Resumen del mes completo. Días pagables = Presente + Tarde. A pagar = días × salario diario + horas extra × valor hora extra.</div>`;
+    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Resumen · ${rango.etq} (${rango.desde} al ${rango.hasta}). Días pagables = Presente + Tarde. A pagar = días × salario diario + horas extra × valor hora extra.</div>`;
 }
 async function imprimirAsistenciaMes(projId){
   const proj=state.projects.get(projId)||{};
@@ -2177,7 +2194,7 @@ async function imprimirAsistenciaMes(projId){
     api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:projId}],limit:20000})
   ]);
   const crew=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
-  const asist=(ra.data||[]).filter(a=>(a.fecha||'').slice(0,7)===mes);
+  const rango=asistResRango(mes); const asist=(ra.data||[]).filter(a=>a.fecha>=rango.desde && a.fecha<=rango.hasta);
   const stat={}; asist.forEach(a=>{ const s=stat[a.trabajador_id]=stat[a.trabajador_id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; if(s[a.estado]!=null) s[a.estado]++; s.he+=(+a.horas_extra||0); });
   const [Y,M]=mes.split('-').map(Number); const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')||'';
   let gran=0;
@@ -2191,7 +2208,7 @@ async function imprimirAsistenciaMes(projId){
     <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #9B1B30;padding-bottom:8px">
       <img src="${location.origin}/cmi-logo-full.svg" style="height:38px">
       <div><div style="color:#9B1B30;font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
-      <div style="font-size:11px;color:#555">Resumen de asistencia — ${esc(proj.name||'Proyecto')} · ${mesNom} ${Y}</div></div>
+      <div style="font-size:11px;color:#555">Resumen de asistencia — ${esc(proj.name||'Proyecto')} · ${mesNom} ${Y} · ${rango.etq}</div></div>
       <div style="margin-left:auto;text-align:right"><div style="font-size:10px;color:#777">Total del mes</div><div style="font-size:15px;font-weight:800;color:#166534">${cajaMoney(gran)}</div></div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px">
