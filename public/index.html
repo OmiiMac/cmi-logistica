@@ -1716,23 +1716,28 @@ function renderDashboard(){
       </div>`).join('') : '<div class="nodata" style="padding:20px">Sin licitaciones</div>';
   });
 
-  // Panel dinámico: gráficas resumen (según acceso del usuario)
-  (function(){
+  // Panel dinámico: gráficas resumen (según acceso del usuario).
+  // Se dibuja dentro de requestAnimationFrame para que los <canvas> ya tengan
+  // tamaño calculado (si no, Chart.js los crea con ancho 0 y salen en blanco).
+  requestAnimationFrame(function(){
+    if(state.view!=='dashboard') return;
     if(typeof Chart==='undefined') return; if(typeof tuneChartsDark==='function') tuneChartsDark();
     window._dashCharts=(window._dashCharts||[]); window._dashCharts.forEach(c=>{try{c.destroy()}catch(e){}}); window._dashCharts=[];
     const push=c=>window._dashCharts.push(c);
     const est={pendiente:0,en_ruta:0,completada:0}; (state.rutas||[]).forEach(r=>{ if(est[r.status]!=null) est[r.status]++; });
     const er=document.getElementById('chDashRuta');
-    if(er) push(new Chart(er,{type:'doughnut',data:{labels:['Pendiente','En ruta','Completada'],datasets:[{data:[est.pendiente,est.en_ruta,est.completada],backgroundColor:['#F59E0B','#60A5FA','#22C55E']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}}));
+    if(er){ if(est.pendiente+est.en_ruta+est.completada>0) push(new Chart(er,{type:'doughnut',data:{labels:['Pendiente','En ruta','Completada'],datasets:[{data:[est.pendiente,est.en_ruta,est.completada],backgroundColor:['#F59E0B','#60A5FA','#22C55E']}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else er.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin rutas registradas</div>'; }
     if(canModule('licit')) sb.from('licitaciones').select('*').then(({data})=>{
+      if(state.view!=='dashboard') return;
       const ls=data||[]; const by={}; ls.forEach(l=>{ const s=l.estado||'en_preparacion'; by[s]=(by[s]||0)+1; }); const ks=Object.keys(by);
-      const e=document.getElementById('chDashLicit'); if(e&&ks.length) push(new Chart(e,{type:'doughnut',data:{labels:ks.map(s=>(LIC_ESTADOS[s]||s)),datasets:[{data:ks.map(s=>by[s]),backgroundColor:ks.map(s=>(LIC_COLOR[s]||['','#9B1B30'])[1])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else if(e) e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin licitaciones</div>';
+      const e=document.getElementById('chDashLicit'); if(!e) return; if(ks.length) push(new Chart(e,{type:'doughnut',data:{labels:ks.map(s=>(typeof LIC_ESTADOS!=='undefined'&&LIC_ESTADOS[s])||s),datasets:[{data:ks.map(s=>by[s]),backgroundColor:ks.map(s=>(typeof LIC_COLOR!=='undefined'&&LIC_COLOR[s]&&LIC_COLOR[s][1])||'#9B1B30')}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin licitaciones</div>';
     });
     if(canModule('mkt')) sb.from('publicaciones').select('*').then(({data})=>{
+      if(state.view!=='dashboard') return;
       const ps=data||[]; const by={}; ps.forEach(p=>{ const m=(p.fecha||'').slice(0,7)||'s/f'; by[m]=(by[m]||0)+1; }); const ms=Object.keys(by).sort();
-      const e=document.getElementById('chDashMkt'); if(e&&ms.length) push(new Chart(e,{type:'bar',data:{labels:ms,datasets:[{label:'Publicaciones',data:ms.map(m=>by[m]),backgroundColor:'#C62040'}]},options:(typeof chartOpts==='function'?chartOpts({plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else if(e) e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>';
+      const e=document.getElementById('chDashMkt'); if(!e) return; if(ms.length) push(new Chart(e,{type:'bar',data:{labels:ms,datasets:[{label:'Publicaciones',data:ms.map(m=>by[m]),backgroundColor:'#C62040'}]},options:(typeof chartOpts==='function'?chartOpts({plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else e.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>';
     });
-  })();
+  });
 
   // Gráfica de barras — items por proyecto
   requestAnimationFrame(()=>{
