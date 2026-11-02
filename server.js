@@ -529,8 +529,10 @@ ensureColumn('rutas', 'comprobante_file', 'TEXT');
 ensureColumn('vehiculos', 'condicion', 'TEXT');   // operativo | necesita_mant | en_mant
 ensureColumn('cuadrilla', 'salario_dia', 'REAL'); // planilla: pago por día
 ensureColumn('cuadrilla', 'foto_file', 'TEXT');   // foto del rostro
+ensureColumn('cuadrilla', 'valor_hora_extra', 'REAL'); // pago por cada hora extra
 ensureColumn('asistencia', 'hora_entrada', 'TEXT');
 ensureColumn('asistencia', 'hora_salida', 'TEXT');
+ensureColumn('asistencia', 'horas_extra', 'REAL');   // horas extra del día
 // Siembra inicial de la flota (solo si no hay vehículos): HINO, JMC, L200 y Ford Figo.
 try {
   if (db.prepare('SELECT COUNT(*) AS c FROM vehiculos').get().c === 0) {
@@ -605,8 +607,8 @@ const SCHEMA = {
   obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at'],
   lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at'],
   proyecto_costos: ['id', 'project_id', 'rubro', 'concepto', 'monto', 'fecha', 'proveedor', 'comprobante_file', 'notas', 'created_by', 'created_at', 'updated_at'],
-  cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'salario_dia', 'foto_file', 'activo', 'created_by', 'created_at', 'updated_at'],
-  asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'notas', 'created_by', 'created_at', 'updated_at']
+  cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'salario_dia', 'valor_hora_extra', 'foto_file', 'activo', 'created_by', 'created_at', 'updated_at'],
+  asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'horas_extra', 'notas', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──

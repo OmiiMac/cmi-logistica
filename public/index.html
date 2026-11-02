@@ -2101,14 +2101,15 @@ async function renderProjAsistencia(proj){
       </div>
     </div>
     <div class="item-table"><table>
-      <thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th>Entrada</th><th>Salida</th><th>Asistencia</th>${puedeCaja()?'<th></th>':''}</tr></thead>
-      <tbody>${crew.length===0?`<tr><td colspan="7"><div class="empty-state">Aún no hay trabajadores en la cuadrilla. Agrégalos con "+ Trabajador".</div></td></tr>`:crew.map(c=>{ const a=byTrab[c.id]||{}; return `
+      <thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th>Entrada</th><th>Salida</th><th title="Horas extra del día">H. extra</th><th>Asistencia</th>${puedeCaja()?'<th></th>':''}</tr></thead>
+      <tbody>${crew.length===0?`<tr><td colspan="8"><div class="empty-state">Aún no hay trabajadores en la cuadrilla. Agrégalos con "+ Trabajador".</div></td></tr>`:crew.map(c=>{ const a=byTrab[c.id]||{}; return `
         <tr>
           <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b></div></td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cargo||'')}</td>
           <td style="text-align:right;font-size:12px">${c.salario_dia?cajaMoney(c.salario_dia):'<span style="color:var(--c-muted)">—</span>'}</td>
           <td><input type="time" value="${esc(a.hora_entrada||'')}" onchange="setAsistenciaHora('${c.id}','hora_entrada',this.value)" style="width:104px;font-size:12px;padding:3px 5px"></td>
           <td><input type="time" value="${esc(a.hora_salida||'')}" onchange="setAsistenciaHora('${c.id}','hora_salida',this.value)" style="width:104px;font-size:12px;padding:3px 5px"></td>
+          <td><input type="number" min="0" step="0.5" value="${a.horas_extra!=null&&a.horas_extra!==''?a.horas_extra:''}" onchange="setAsistenciaHora('${c.id}','horas_extra',this.value)" placeholder="0" title="Horas extra" style="width:62px;text-align:center;font-size:12px;padding:3px 5px"></td>
           <td><div style="display:flex;gap:6px;flex-wrap:wrap">${estBtn(c)}</div></td>
           ${puedeCaja()?`<td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showCrewModal('${c.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="deleteCrew('${c.id}')" title="Quitar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>`:''}
         </tr>`;}).join('')}</tbody>
@@ -2153,9 +2154,10 @@ function showCrewModal(id){
   openModal(`<div class="modal-head"><h2>${c?'Editar trabajador':'Nuevo trabajador'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-group"><label>Nombre</label><input id="cwNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre y apellido"></div>
+    <div class="form-group"><label>Cargo (opcional)</label><input id="cwCargo" value="${esc(c?.cargo||'')}" placeholder="Ej: Albañil, Ayudante, Operador"></div>
     <div class="form-row">
-      <div class="form-group"><label>Cargo (opcional)</label><input id="cwCargo" value="${esc(c?.cargo||'')}" placeholder="Ej: Albañil, Ayudante"></div>
       <div class="form-group"><label>Salario por día ($)</label><input id="cwSalario" type="number" min="0" step="0.01" value="${c&&c.salario_dia?c.salario_dia:''}" placeholder="Ej: 20.00"></div>
+      <div class="form-group"><label>Valor hora extra ($)</label><input id="cwHoraExtra" type="number" min="0" step="0.01" value="${c&&c.valor_hora_extra?c.valor_hora_extra:''}" placeholder="Ej: 3.50"></div>
     </div>
     <div class="form-group"><label>Foto del rostro</label>
       <div style="display:flex;align-items:center;gap:12px">
@@ -2172,7 +2174,7 @@ function showCrewModal(id){
 async function saveCrew(id){
   const nombre=document.getElementById('cwNombre').value.trim();
   if(!nombre){ showToast('Escribe el nombre','err'); return; }
-  const values={project_id:state.projectId,nombre,cargo:document.getElementById('cwCargo').value.trim(),salario_dia:parseFloat(document.getElementById('cwSalario').value)||0};
+  const values={project_id:state.projectId,nombre,cargo:document.getElementById('cwCargo').value.trim(),salario_dia:parseFloat(document.getElementById('cwSalario').value)||0,valor_hora_extra:parseFloat(document.getElementById('cwHoraExtra').value)||0};
   const ac=document.getElementById('cwActivo'); if(ac) values.activo=parseInt(ac.value);
   let d, rid=id;
   if(id){ d=await api('/api/update',{table:'cuadrilla',values,filters:[{col:'id',val:id}]}); }
@@ -4811,29 +4813,31 @@ async function planillaData(){
   const p=planPeriodo();
   const crew=rc.data||[];
   const asist=(ra.data||[]).filter(a=>a.fecha>=p.desde && a.fecha<=p.hasta);
-  const dias={}, detalle={};
-  asist.forEach(a=>{ if(a.estado==='presente'||a.estado==='tarde'){ dias[a.trabajador_id]=(dias[a.trabajador_id]||0)+1; } (detalle[a.trabajador_id]=detalle[a.trabajador_id]||[]).push(a); });
-  // Agrupar por proyecto: trabajadores activos o con asistencia en el periodo
+  const dias={}, extras={};
+  asist.forEach(a=>{ if(a.estado==='presente'||a.estado==='tarde'){ dias[a.trabajador_id]=(dias[a.trabajador_id]||0)+1; } const he=+a.horas_extra||0; if(he>0) extras[a.trabajador_id]=(extras[a.trabajador_id]||0)+he; });
+  // Agrupar por proyecto: trabajadores activos o con asistencia/horas en el periodo
   const byProj={};
-  crew.filter(c=>c.activo!==0 || dias[c.id]).forEach(c=>{ const pid=c.project_id||'—'; (byProj[pid]=byProj[pid]||[]).push(c); });
-  return {p,byProj,dias};
+  crew.filter(c=>c.activo!==0 || dias[c.id] || extras[c.id]).forEach(c=>{ const pid=c.project_id||'—'; (byProj[pid]=byProj[pid]||[]).push(c); });
+  return {p,byProj,dias,extras};
 }
 async function renderPlanilla(){
   const body=document.getElementById('contaBody'); if(!body) return;
   body.innerHTML='<div class="nodata" style="padding:20px">Cargando planilla…</div>';
-  const {p,byProj,dias}=await planillaData();
+  const {p,byProj,dias,extras}=await planillaData();
   if(mstate.contaTab!=='planilla') return;
   const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[p.M-1]:'')||'';
-  let granTotal=0, granDias=0, nTrab=0;
+  let granTotal=0, granDias=0, granHE=0, nTrab=0;
   const projIds=Object.keys(byProj).sort((a,b)=>(projName(a)||a).localeCompare(projName(b)||b));
   const blocks=projIds.map(pid=>{
     const list=byProj[pid].sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
     let sub=0;
-    const rows=list.map(c=>{ const d=dias[c.id]||0; const pago=d*(+c.salario_dia||0); sub+=pago; granDias+=d; nTrab++; return `<tr>
+    const rows=list.map(c=>{ const d=dias[c.id]||0; const he=extras[c.id]||0; const pagoD=d*(+c.salario_dia||0); const pagoHE=he*(+c.valor_hora_extra||0); const pago=pagoD+pagoHE; sub+=pago; granDias+=d; granHE+=he; nTrab++; return `<tr>
         <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b>${c.activo===0?' <span style="font-size:10px;color:var(--c-muted)">(baja)</span>':''}</div></td>
         <td style="font-size:12px;color:var(--c-muted)">${esc(c.cargo||'')}</td>
         <td style="text-align:right">${cajaMoney(c.salario_dia||0)}</td>
         <td style="text-align:center;font-weight:700">${d}</td>
+        <td style="text-align:center">${he?he+' h':'<span style="color:var(--c-muted)">—</span>'}</td>
+        <td style="text-align:right;font-size:12px;color:var(--c-muted)">${pagoHE?'+'+cajaMoney(pagoHE):''}</td>
         <td style="text-align:right;font-weight:800;color:${pago>0?'#166534':'var(--c-muted)'}">${cajaMoney(pago)}</td>
       </tr>`; }).join('');
     granTotal+=sub;
@@ -4843,7 +4847,7 @@ async function renderPlanilla(){
         <span style="font-size:13px;font-weight:800;color:#166534">${cajaMoney(sub)}</span>
       </div>
       <div class="item-table" style="border:none;border-radius:0;margin:0"><table>
-        <thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th style="text-align:center">Días</th><th style="text-align:right">A pagar</th></tr></thead>
+        <thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th style="text-align:center">Días</th><th style="text-align:center">H. extra</th><th style="text-align:right">Pago extra</th><th style="text-align:right">A pagar</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
@@ -4859,35 +4863,37 @@ async function renderPlanilla(){
       </div>
       <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="imprimirPlanilla()">🖨 Imprimir / PDF</button>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px">
       ${kpiTile('Total a pagar',cajaMoney(granTotal),'#166534','#DCFCE7')}
       ${kpiTile('Trabajadores',nTrab,'#1D4ED8','#DBEAFE')}
       ${kpiTile('Días pagados',granDias,'#7C3AED','#EDE9FE')}
-      ${kpiTile('Periodo',p.desde.slice(5)+' → '+p.hasta.slice(5),'#B45309','#FEF3C7')}
+      ${kpiTile('Horas extra',granHE+' h','#B45309','#FEF3C7')}
+      ${kpiTile('Periodo',p.desde.slice(5)+' → '+p.hasta.slice(5),'#0F766E','#D1FAE5')}
     </div>
     ${projIds.length?blocks:'<div class="nodata" style="padding:30px">Sin trabajadores con asistencia en esta quincena. Registra la cuadrilla y su asistencia en cada proyecto.</div>'}
-    <div style="font-size:11px;color:var(--c-muted);margin-top:4px">Se paga por día asistido (Presente o Tarde) × salario diario. Los días Ausente o Justificado no suman al pago.</div>`;
+    <div style="font-size:11px;color:var(--c-muted);margin-top:4px">A pagar = (días asistidos × salario diario) + (horas extra × valor hora extra). Los días Ausente o Justificado no suman al pago.</div>`;
 }
 async function imprimirPlanilla(){
-  const {p,byProj,dias}=await planillaData();
+  const {p,byProj,dias,extras}=await planillaData();
   const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[p.M-1]:'')||'';
   const projIds=Object.keys(byProj).sort((a,b)=>(projName(a)||a).localeCompare(projName(b)||b));
   let granTotal=0;
   const blocks=projIds.map(pid=>{
     const list=byProj[pid].sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
     let sub=0;
-    const rows=list.map((c,i)=>{ const d=dias[c.id]||0; const pago=d*(+c.salario_dia||0); sub+=pago; return `<tr>
+    const rows=list.map((c,i)=>{ const d=dias[c.id]||0; const he=extras[c.id]||0; const pago=d*(+c.salario_dia||0)+he*(+c.valor_hora_extra||0); sub+=pago; return `<tr>
        <td style="border:1px solid #ddd;padding:4px 7px">${i+1}</td>
        <td style="border:1px solid #ddd;padding:4px 7px">${esc(c.nombre)}</td>
        <td style="border:1px solid #ddd;padding:4px 7px">${esc(c.cargo||'')}</td>
        <td style="border:1px solid #ddd;padding:4px 7px;text-align:right">${cajaMoney(c.salario_dia||0)}</td>
        <td style="border:1px solid #ddd;padding:4px 7px;text-align:center">${d}</td>
+       <td style="border:1px solid #ddd;padding:4px 7px;text-align:center">${he||'—'}</td>
        <td style="border:1px solid #ddd;padding:4px 7px;text-align:right;font-weight:700">${cajaMoney(pago)}</td>
        <td style="border:1px solid #ddd;padding:4px 7px">&nbsp;</td></tr>`; }).join('');
     granTotal+=sub;
-    return `<tr><td colspan="7" style="background:#9B1B30;color:#fff;padding:5px 7px;font-weight:700">${esc(projName(pid)||pid)} — Subtotal ${cajaMoney(sub)}</td></tr>${rows}`;
+    return `<tr><td colspan="8" style="background:#9B1B30;color:#fff;padding:5px 7px;font-weight:700">${esc(projName(pid)||pid)} — Subtotal ${cajaMoney(sub)}</td></tr>${rows}`;
   }).join('');
-  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#1b1b20;max-width:900px;margin:0 auto">
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#1b1b20;max-width:920px;margin:0 auto">
     <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #9B1B30;padding-bottom:8px">
       <img src="${location.origin}/cmi-logo-full.svg" style="height:38px">
       <div><div style="color:#9B1B30;font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
@@ -4895,10 +4901,10 @@ async function imprimirPlanilla(){
       <div style="margin-left:auto;text-align:right"><div style="font-size:10px;color:#777">Total a pagar</div><div style="font-size:16px;font-weight:800;color:#166534">${cajaMoney(granTotal)}</div></div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px">
-      <thead><tr style="background:#333;color:#fff"><th style="border:1px solid #ddd;padding:4px 7px">#</th><th style="border:1px solid #ddd;padding:4px 7px;text-align:left">Trabajador</th><th style="border:1px solid #ddd;padding:4px 7px;text-align:left">Cargo</th><th style="border:1px solid #ddd;padding:4px 7px">Salario/día</th><th style="border:1px solid #ddd;padding:4px 7px">Días</th><th style="border:1px solid #ddd;padding:4px 7px">A pagar</th><th style="border:1px solid #ddd;padding:4px 7px">Firma</th></tr></thead>
-      <tbody>${blocks||'<tr><td colspan="7" style="padding:10px;text-align:center;color:#777">Sin datos</td></tr>'}</tbody>
+      <thead><tr style="background:#333;color:#fff"><th style="border:1px solid #ddd;padding:4px 7px">#</th><th style="border:1px solid #ddd;padding:4px 7px;text-align:left">Trabajador</th><th style="border:1px solid #ddd;padding:4px 7px;text-align:left">Cargo</th><th style="border:1px solid #ddd;padding:4px 7px">Salario/día</th><th style="border:1px solid #ddd;padding:4px 7px">Días</th><th style="border:1px solid #ddd;padding:4px 7px">H. extra</th><th style="border:1px solid #ddd;padding:4px 7px">A pagar</th><th style="border:1px solid #ddd;padding:4px 7px">Firma</th></tr></thead>
+      <tbody>${blocks||'<tr><td colspan="8" style="padding:10px;text-align:center;color:#777">Sin datos</td></tr>'}</tbody>
     </table>
-    <div style="font-size:10px;color:#999;margin-top:10px">Se paga por día asistido (Presente o Tarde) × salario diario. · CMI Construction Corp. — Uso interno.</div>
+    <div style="font-size:10px;color:#999;margin-top:10px">A pagar = (días asistidos × salario diario) + (horas extra × valor hora extra). · CMI Construction Corp. — Uso interno.</div>
   </div>`;
   printHtmlDoc('Planilla '+mesNom+' '+p.Y, html);
 }
