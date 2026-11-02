@@ -1691,9 +1691,9 @@ function renderDashboard(){
   </div>
   <div class="section-head" style="margin:22px 0 10px;border:none;padding:0;background:none"><h3><span class="section-head-bar"></span>Panel dinámico</h3></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px">
-    <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Rutas por estado</h3><canvas id="chDashRuta" height="180"></canvas></div>
-    ${canModule('licit')?`<div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Licitaciones por estado</h3><canvas id="chDashLicit" height="180"></canvas></div>`:''}
-    ${canModule('mkt')?`<div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por mes</h3><canvas id="chDashMkt" height="180"></canvas></div>`:''}
+    <div class="section-card" style="padding:14px;cursor:pointer" onclick="nav('rutas')" title="Ver Carga Express"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Rutas por estado <span style="font-size:11px;color:var(--c-muted);font-weight:600">Ver ›</span></h3><canvas id="chDashRuta" height="180"></canvas></div>
+    ${canModule('licit')?`<div class="section-card" style="padding:14px;cursor:pointer" onclick="nav('licitaciones')" title="Ver Licitaciones"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Licitaciones por estado <span style="font-size:11px;color:var(--c-muted);font-weight:600">Ver ›</span></h3><canvas id="chDashLicit" height="180"></canvas></div>`:''}
+    ${canModule('mkt')?`<div class="section-card" style="padding:14px;cursor:pointer" onclick="nav('mercadeo')" title="Ver Mercadeo"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Publicaciones por mes <span style="font-size:11px;color:var(--c-muted);font-weight:600">Ver ›</span></h3><canvas id="chDashMkt" height="180"></canvas></div>`:''}
   </div>`;
 
   // Conteos de modulos (async, solo para quien tiene acceso)
