@@ -2930,6 +2930,13 @@ async function renderRutaPanel(){
   const dieselMes=delMes.reduce((s,c)=>s+(+c.monto||0),0);
   const galMes=delMes.reduce((s,c)=>s+(+c.galones||0),0);
   const rend = galMes>0 ? (kmMes/galMes) : null;
+  // Mes pasado (el total no se pierde al iniciar un mes nuevo)
+  const dPrev=new Date(); dPrev.setDate(1); dPrev.setMonth(dPrev.getMonth()-1);
+  const mesPrev=dPrev.getFullYear()+'-'+String(dPrev.getMonth()+1).padStart(2,'0');
+  const nomMesPrev=(typeof MESES_ES!=='undefined'?MESES_ES[dPrev.getMonth()]:'')||'';
+  const delPrev=(cb.data||[]).filter(c=>(c.fecha||'').slice(0,7)===mesPrev);
+  const dieselPrev=delPrev.reduce((s,c)=>s+(+c.monto||0),0);
+  const galPrev=delPrev.reduce((s,c)=>s+(+c.galones||0),0);
   // Rutas: hoy (por estado), semana y mes; ingresos por fletes del mes
   const stH={pendiente:0,en_ruta:0,completada:0}; rutasHoy.forEach(r=>{ if(stH[r.status]!=null) stH[r.status]++; });
   const rutasMes=(state.rutas||[]).filter(r=>(r.date||'').slice(0,7)===mes);
@@ -2971,7 +2978,8 @@ async function renderRutaPanel(){
       ${infoCard('🚚','rgba(29,78,216,.12)','#1D4ED8',rutasHoy.length,`${stH.en_ruta} en ruta · ${stH.pendiente} pend · ${stH.completada} list.`,"setRutaMode('dia')")}
       ${infoCard('📅','rgba(124,58,237,.12)','#7C3AED',rutasSemana,'Rutas de la semana',"setRutaMode('semana')")}
       ${infoCard('📏','rgba(15,118,110,.12)','#0F766E',(+kmMes).toLocaleString('es'),'Km recorridos (mes)',"setRutaMode('kilometraje')")}
-      ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),`Combustible · ${+galMes.toFixed(0)} gal${rend?` · ${rend.toFixed(1)} km/gal`:''}`,"setRutaMode('diesel')")}
+      ${infoCard('⛽','rgba(234,88,12,.12)','#EA580C',money(dieselMes),`Combustible este mes · ${+galMes.toFixed(0)} gal${rend?` · ${rend.toFixed(1)} km/gal`:''}`,"setRutaMode('diesel')")}
+      ${infoCard('🗓️','rgba(107,114,128,.14)','#4B5563',money(dieselPrev),`Combustible mes pasado${nomMesPrev?` (${nomMesPrev})`:''} · ${+galPrev.toFixed(0)} gal`,"setRutaMode('diesel')")}
       ${infoCard('💵','rgba(22,101,52,.12)','#166534',money(fletesMes),'Fletes del mes',null)}
       ${infoCard('🚛','rgba(29,78,216,.12)','#1D4ED8',`${voper}/${vtot}`,`Flota operativa${vmantN?` · ${vmantN} en mant.`:''}`,"setRutaMode('vehiculos')")}
     </div>
