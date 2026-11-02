@@ -2064,7 +2064,15 @@ function renderProject(){
 // ── Proyecto: Asistencia de la cuadrilla (planilla) ───────────
 const ASIST_EST=[['presente','Presente','#16A34A'],['tarde','Tarde','#D97706'],['justificado','Justif.','#2563EB'],['ausente','Ausente','#DC2626']];
 function shiftAsistFecha(d){ const base=state.asistFecha||todayStr(); const dt=_ymdToDate(base); dt.setDate(dt.getDate()+d); state.asistFecha=ymd(dt); renderProject(); }
+function asistVistaChips(){
+  const v=state.asistVista||'dia';
+  return `<div class="filter-chips" style="margin-bottom:12px">
+    <span class="chip ${v==='dia'?'active':''}" onclick="state.asistVista='dia';renderProject()">📅 Día</span>
+    <span class="chip ${v==='resumen'?'active':''}" onclick="state.asistVista='resumen';renderProject()">📊 Resumen</span>
+  </div>`;
+}
 async function renderProjAsistencia(proj){
+  if((state.asistVista||'dia')==='resumen') return renderAsistResumen(proj);
   const b=document.getElementById('projBody'); if(!b) return;
   b.innerHTML='<div class="nodata" style="padding:20px">Cargando asistencia…</div>';
   const fecha=state.asistFecha||todayStr();
@@ -2083,6 +2091,7 @@ async function renderProjAsistencia(proj){
   const isHoy=fecha===todayStr();
   const estBtn=(c)=>{ const cur=(byTrab[c.id]||{}).estado||''; return ASIST_EST.map(([k,l,col])=>`<button onclick="setAsistencia('${c.id}','${k}')" title="${l}" style="padding:4px 9px;border-radius:7px;border:1.5px solid ${cur===k?col:'var(--c-border)'};background:${cur===k?col:'var(--c-card)'};color:${cur===k?'#fff':'var(--c-muted)'};font-size:11px;font-weight:700;cursor:pointer">${l}</button>`).join(''); };
   b.innerHTML=`
+    ${asistVistaChips()}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
       ${kpiTile('En la cuadrilla',crew.length,'#1D4ED8','rgba(29,78,216,.14)')}
       ${kpiTile('Presentes',pres+tard,'#166534','rgba(22,101,52,.14)')}
@@ -2115,6 +2124,83 @@ async function renderProjAsistencia(proj){
         </tr>`;}).join('')}</tbody>
     </table></div>
     <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Toca un estado para marcar. Volver a tocar el mismo estado quita la marca. La hora y el estado se guardan por día. La planilla de la quincena se calcula en Contabilidad → Planilla.</div>`;
+}
+function shiftAsistResMes(dir){ const ym=state.asistResMes||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); state.asistResMes=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderProject(); }
+async function renderAsistResumen(proj){
+  const b=document.getElementById('projBody'); if(!b) return;
+  b.innerHTML=asistVistaChips()+'<div class="nodata" style="padding:20px">Cargando resumen…</div>';
+  const mes=state.asistResMes||todayStr().slice(0,7);
+  const [rc,ra]=await Promise.all([
+    api('/api/select',{table:'cuadrilla',filters:[{col:'project_id',val:proj.id}],limit:2000}),
+    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:proj.id}],limit:20000})
+  ]);
+  if(state.view!=='project'||state.projectId!==proj.id||(state.projTab||'')!=='asistencia'||(state.asistVista||'dia')!=='resumen') return;
+  const crew=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const asist=(ra.data||[]).filter(a=>(a.fecha||'').slice(0,7)===mes);
+  const stat={}; asist.forEach(a=>{ const s=stat[a.trabajador_id]=stat[a.trabajador_id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; if(s[a.estado]!=null) s[a.estado]++; s.he+=(+a.horas_extra||0); });
+  const [Y,M]=mes.split('-').map(Number); const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')||'';
+  let granPago=0, granDias=0, granHE=0;
+  const rows=crew.map(c=>{ const s=stat[c.id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; const diasPag=s.presente+s.tarde; const pago=diasPag*(+c.salario_dia||0)+s.he*(+c.valor_hora_extra||0); granPago+=pago; granDias+=diasPag; granHE+=s.he; return `<tr>
+      <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b>${c.activo===0?' <span style="font-size:10px;color:var(--c-muted)">(baja)</span>':''}</div></td>
+      <td style="text-align:center;color:#166534;font-weight:700">${s.presente||'—'}</td>
+      <td style="text-align:center;color:#D97706">${s.tarde||'—'}</td>
+      <td style="text-align:center;color:#2563EB">${s.justificado||'—'}</td>
+      <td style="text-align:center;color:#DC2626">${s.ausente||'—'}</td>
+      <td style="text-align:center;font-weight:800">${diasPag}</td>
+      <td style="text-align:center">${s.he?s.he+' h':'—'}</td>
+      <td style="text-align:right;font-weight:800;color:${pago>0?'#166534':'var(--c-muted)'}">${cajaMoney(pago)}</td>
+    </tr>`; }).join('');
+  b.innerHTML=asistVistaChips()+`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <button class="nav-arrow" onclick="shiftAsistResMes(-1)">‹</button>
+      <div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${mesNom} ${Y}</div>
+      <button class="nav-arrow" onclick="shiftAsistResMes(1)">›</button>
+      <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="imprimirAsistenciaMes('${proj.id}')">🖨 Imprimir / PDF</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
+      ${kpiTile('En la cuadrilla',crew.length,'#1D4ED8','rgba(29,78,216,.14)')}
+      ${kpiTile('Días trabajados',granDias,'#166534','rgba(22,101,52,.14)')}
+      ${kpiTile('Horas extra',granHE+' h','#B45309','rgba(180,83,9,.14)')}
+      ${kpiTile('Total del mes',cajaMoney(granPago),'#7C3AED','rgba(124,58,237,.14)')}
+    </div>
+    <div class="item-table"><table>
+      <thead><tr><th>Trabajador</th><th style="text-align:center" title="Presente">Pres.</th><th style="text-align:center" title="Tarde">Tarde</th><th style="text-align:center" title="Justificado">Just.</th><th style="text-align:center" title="Ausente">Aus.</th><th style="text-align:center">Días pag.</th><th style="text-align:center">H. extra</th><th style="text-align:right">A pagar</th></tr></thead>
+      <tbody>${crew.length===0?`<tr><td colspan="8"><div class="empty-state">Sin trabajadores en la cuadrilla.</div></td></tr>`:rows}</tbody>
+    </table></div>
+    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Resumen del mes completo. Días pagables = Presente + Tarde. A pagar = días × salario diario + horas extra × valor hora extra.</div>`;
+}
+async function imprimirAsistenciaMes(projId){
+  const proj=state.projects.get(projId)||{};
+  const mes=state.asistResMes||todayStr().slice(0,7);
+  const [rc,ra]=await Promise.all([
+    api('/api/select',{table:'cuadrilla',filters:[{col:'project_id',val:projId}],limit:2000}),
+    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:projId}],limit:20000})
+  ]);
+  const crew=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const asist=(ra.data||[]).filter(a=>(a.fecha||'').slice(0,7)===mes);
+  const stat={}; asist.forEach(a=>{ const s=stat[a.trabajador_id]=stat[a.trabajador_id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; if(s[a.estado]!=null) s[a.estado]++; s.he+=(+a.horas_extra||0); });
+  const [Y,M]=mes.split('-').map(Number); const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')||'';
+  let gran=0;
+  const rows=crew.map((c,i)=>{ const s=stat[c.id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; const diasPag=s.presente+s.tarde; const pago=diasPag*(+c.salario_dia||0)+s.he*(+c.valor_hora_extra||0); gran+=pago; return `<tr>
+    <td style="border:1px solid #ddd;padding:4px 6px">${i+1}</td><td style="border:1px solid #ddd;padding:4px 6px">${esc(c.nombre)}</td>
+    <td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.presente}</td><td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.tarde}</td>
+    <td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.justificado}</td><td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.ausente}</td>
+    <td style="border:1px solid #ddd;padding:4px 6px;text-align:center;font-weight:700">${diasPag}</td><td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.he||'—'}</td>
+    <td style="border:1px solid #ddd;padding:4px 6px;text-align:right;font-weight:700">${cajaMoney(pago)}</td></tr>`; }).join('');
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#1b1b20;max-width:900px;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #9B1B30;padding-bottom:8px">
+      <img src="${location.origin}/cmi-logo-full.svg" style="height:38px">
+      <div><div style="color:#9B1B30;font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
+      <div style="font-size:11px;color:#555">Resumen de asistencia — ${esc(proj.name||'Proyecto')} · ${mesNom} ${Y}</div></div>
+      <div style="margin-left:auto;text-align:right"><div style="font-size:10px;color:#777">Total del mes</div><div style="font-size:15px;font-weight:800;color:#166534">${cajaMoney(gran)}</div></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px">
+      <thead><tr style="background:#333;color:#fff"><th style="border:1px solid #ddd;padding:4px 6px">#</th><th style="border:1px solid #ddd;padding:4px 6px;text-align:left">Trabajador</th><th style="border:1px solid #ddd;padding:4px 6px">Pres.</th><th style="border:1px solid #ddd;padding:4px 6px">Tarde</th><th style="border:1px solid #ddd;padding:4px 6px">Just.</th><th style="border:1px solid #ddd;padding:4px 6px">Aus.</th><th style="border:1px solid #ddd;padding:4px 6px">Días pag.</th><th style="border:1px solid #ddd;padding:4px 6px">H.extra</th><th style="border:1px solid #ddd;padding:4px 6px">A pagar</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="9" style="padding:10px;text-align:center;color:#777">Sin datos</td></tr>'}</tbody>
+    </table>
+    <div style="font-size:10px;color:#999;margin-top:10px">Días pagables = Presente + Tarde. · CMI Construction Corp. — Uso interno.</div>
+  </div>`;
+  printHtmlDoc('Resumen asistencia '+mesNom+' '+Y, html);
 }
 function crewAvatar(c){
   if(c.foto_file) return `<img src="${fileUrl(c.foto_file)}" onclick="event.stopPropagation();openPhoto('${fileUrl(c.foto_file)}','${(c.nombre||'').replace(/'/g,"\\'")}')" title="Ver foto" style="width:34px;height:34px;object-fit:cover;border-radius:50%;border:1px solid var(--c-border);cursor:zoom-in;flex:none">`;
