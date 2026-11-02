@@ -986,7 +986,7 @@ function setupRealtime(){
         // Movimientos de proyecto: refrescar la vista si se está viendo
         if(state.view==='project') renderProject();
         else if(state.view==='dashboard') renderDashboard();   // la tarjeta de Compras del tablero
-        else if(state.view==='contabilidad' && typeof mstate!=='undefined' && (mstate.contaTab==='caja'||mstate.contaTab==='panel'||mstate.contaTab==='inicio')) renderContabilidad();
+        else if(state.view==='contabilidad' && typeof mstate!=='undefined' && (mstate.contaTab==='caja'||mstate.contaTab==='panel'||mstate.contaTab==='inicio'||mstate.contaTab==='planilla')) renderContabilidad();
       } else if(table==='equipo_movs'){
         if(state.view==='transfers') renderTransfers();   // vales de salida/entrada
       } else if(table==='licitaciones'||table==='lic_competidores'){
@@ -2101,16 +2101,33 @@ async function renderProjAsistencia(proj){
       </div>
     </div>
     <div class="item-table"><table>
-      <thead><tr><th>Trabajador</th><th>Cargo</th><th>Asistencia (${esc(fecha)})</th>${puedeCaja()?'<th></th>':''}</tr></thead>
-      <tbody>${crew.length===0?`<tr><td colspan="4"><div class="empty-state">Aún no hay trabajadores en la cuadrilla. Agrégalos con "+ Trabajador".</div></td></tr>`:crew.map(c=>`
+      <thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th>Entrada</th><th>Salida</th><th>Asistencia</th>${puedeCaja()?'<th></th>':''}</tr></thead>
+      <tbody>${crew.length===0?`<tr><td colspan="7"><div class="empty-state">Aún no hay trabajadores en la cuadrilla. Agrégalos con "+ Trabajador".</div></td></tr>`:crew.map(c=>{ const a=byTrab[c.id]||{}; return `
         <tr>
-          <td><b style="font-size:13px">${esc(c.nombre)}</b></td>
+          <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b></div></td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cargo||'')}</td>
+          <td style="text-align:right;font-size:12px">${c.salario_dia?cajaMoney(c.salario_dia):'<span style="color:var(--c-muted)">—</span>'}</td>
+          <td><input type="time" value="${esc(a.hora_entrada||'')}" onchange="setAsistenciaHora('${c.id}','hora_entrada',this.value)" style="width:104px;font-size:12px;padding:3px 5px"></td>
+          <td><input type="time" value="${esc(a.hora_salida||'')}" onchange="setAsistenciaHora('${c.id}','hora_salida',this.value)" style="width:104px;font-size:12px;padding:3px 5px"></td>
           <td><div style="display:flex;gap:6px;flex-wrap:wrap">${estBtn(c)}</div></td>
           ${puedeCaja()?`<td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showCrewModal('${c.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="deleteCrew('${c.id}')" title="Quitar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>`:''}
-        </tr>`).join('')}</tbody>
+        </tr>`;}).join('')}</tbody>
     </table></div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Toca un estado para marcar. Volver a tocar el mismo estado quita la marca. Cambia la fecha para ver o registrar otro día.</div>`;
+    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Toca un estado para marcar. Volver a tocar el mismo estado quita la marca. La hora y el estado se guardan por día. La planilla de la quincena se calcula en Contabilidad → Planilla.</div>`;
+}
+function crewAvatar(c){
+  if(c.foto_file) return `<img src="${fileUrl(c.foto_file)}" onclick="event.stopPropagation();openPhoto('${fileUrl(c.foto_file)}','${(c.nombre||'').replace(/'/g,"\\'")}')" title="Ver foto" style="width:34px;height:34px;object-fit:cover;border-radius:50%;border:1px solid var(--c-border);cursor:zoom-in;flex:none">`;
+  const ini=(c.nombre||'?').trim().charAt(0).toUpperCase();
+  return `<div style="width:34px;height:34px;border-radius:50%;background:var(--c-primary-lt);color:var(--c-primary);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex:none">${esc(ini)}</div>`;
+}
+async function setAsistenciaHora(trabId, campo, value){
+  const cache=state._asistCache||{}; const fecha=cache.fecha||state.asistFecha||todayStr();
+  const existing=(cache.rows||[]).find(r=>r.trabajador_id===trabId);
+  let d;
+  if(existing){ const v={}; v[campo]=value; d=await api('/api/update',{table:'asistencia',values:v,filters:[{col:'id',val:existing.id}]}); }
+  else { const v={project_id:state.projectId,trabajador_id:trabId,fecha,estado:'presente',created_at:new Date().toISOString()}; v[campo]=value; d=await api('/api/insert',{table:'asistencia',values:v}); }
+  if(d.error){ showToast('Error al guardar','err'); return; }
+  renderProject();
 }
 async function setAsistencia(trabId, estado){
   const cache=state._asistCache||{}; const fecha=cache.fecha||state.asistFecha||todayStr();
@@ -2136,7 +2153,18 @@ function showCrewModal(id){
   openModal(`<div class="modal-head"><h2>${c?'Editar trabajador':'Nuevo trabajador'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-group"><label>Nombre</label><input id="cwNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre y apellido"></div>
-    <div class="form-group"><label>Cargo (opcional)</label><input id="cwCargo" value="${esc(c?.cargo||'')}" placeholder="Ej: Albañil, Ayudante, Operador"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Cargo (opcional)</label><input id="cwCargo" value="${esc(c?.cargo||'')}" placeholder="Ej: Albañil, Ayudante"></div>
+      <div class="form-group"><label>Salario por día ($)</label><input id="cwSalario" type="number" min="0" step="0.01" value="${c&&c.salario_dia?c.salario_dia:''}" placeholder="Ej: 20.00"></div>
+    </div>
+    <div class="form-group"><label>Foto del rostro</label>
+      <div style="display:flex;align-items:center;gap:12px">
+        ${c&&c.foto_file
+          ? `<img src="${fileUrl(c.foto_file)}" onclick="openPhoto('${fileUrl(c.foto_file)}','${(c.nombre||'').replace(/'/g,"\\'")}')" style="width:56px;height:56px;object-fit:cover;border-radius:50%;border:1px solid var(--c-border);cursor:zoom-in">`
+          : `<div style="width:56px;height:56px;border-radius:50%;border:1px dashed var(--c-border);display:flex;align-items:center;justify-content:center;color:var(--c-muted);font-size:10px;text-align:center">sin<br>foto</div>`}
+        <input type="file" id="cwFoto" accept="image/*" style="flex:1">
+      </div>
+    </div>
     ${c?`<div class="form-group"><label>Estado</label><select id="cwActivo"><option value="1" ${c.activo!==0?'selected':''}>Activo en la cuadrilla</option><option value="0" ${c.activo===0?'selected':''}>Dado de baja</option></select></div>`:''}
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCrew(${id?`'${id}'`:'null'})">Guardar</button></div>`);
@@ -2144,19 +2172,26 @@ function showCrewModal(id){
 async function saveCrew(id){
   const nombre=document.getElementById('cwNombre').value.trim();
   if(!nombre){ showToast('Escribe el nombre','err'); return; }
-  const values={project_id:state.projectId,nombre,cargo:document.getElementById('cwCargo').value.trim()};
+  const values={project_id:state.projectId,nombre,cargo:document.getElementById('cwCargo').value.trim(),salario_dia:parseFloat(document.getElementById('cwSalario').value)||0};
   const ac=document.getElementById('cwActivo'); if(ac) values.activo=parseInt(ac.value);
-  let d;
+  let d, rid=id;
   if(id){ d=await api('/api/update',{table:'cuadrilla',values,filters:[{col:'id',val:id}]}); }
-  else { d=await api('/api/insert',{table:'cuadrilla',values:{...values,activo:1,created_at:new Date().toISOString()}}); }
+  else { d=await api('/api/insert',{table:'cuadrilla',values:{...values,activo:1,created_at:new Date().toISOString()}}); rid=(d.data&&d.data[0]&&d.data[0].id)||null; }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  const fin=document.getElementById('cwFoto');
+  if(fin && fin.files && fin.files[0] && rid){
+    showToast('Subiendo foto…','ok');
+    const up=await apiUpload('cuadrilla', rid, fin.files[0]);
+    if(!up.error && up.data) await api('/api/update',{table:'cuadrilla',values:{foto_file:up.data.id},filters:[{col:'id',val:rid}]});
+  }
   closeModal(); showToast('Guardado','ok'); renderProject();
 }
 async function deleteCrew(id){
-  if(!confirm('¿Quitar este trabajador de la cuadrilla?')) return;
+  if(!confirm('¿Eliminar este trabajador y TODA su asistencia? No se puede deshacer.\n\n(Si solo dejó de trabajar pero quieres conservar su historial, usa Editar → Estado → "Dado de baja").')) return;
+  await api('/api/delete',{table:'asistencia',filters:[{col:'trabajador_id',val:id}]});   // borra también su asistencia
   const d=await api('/api/delete',{table:'cuadrilla',filters:[{col:'id',val:id}]});
   if(d.error){ showToast('Error','err'); return; }
-  showToast('Quitado','ok'); renderProject();
+  showToast('Trabajador eliminado','ok'); renderProject();
 }
 async function imprimirAsistencia(projId){
   const proj=state.projects.get(projId)||{};
@@ -4736,7 +4771,7 @@ async function renderContabilidad(){
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('contabilidad','contabilidad')">💬 Chat</button><button class="btn btn-sm btn-primary" onclick="openAsientoModal()">+ Nuevo asiento</button>`;
   document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:900px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      ${[['inicio','🏠 Inicio'],['panel','📊 Panel'],['pagos','🏢 Pagos mensuales'],['caja','💵 Caja chica'],['compromisos','📅 Pendientes y compromisos'],['balance','Balance general']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
+      ${[['inicio','🏠 Inicio'],['panel','📊 Panel'],['pagos','🏢 Pagos mensuales'],['planilla','👷 Planilla'],['caja','💵 Caja chica'],['compromisos','📅 Pendientes y compromisos'],['balance','Balance general']].map(([k,l])=>`<button class="btn btn-sm ${mstate.contaTab===k?'btn-primary':'btn-ghost'}" onclick="mstate.contaTab='${k}';renderContabilidad()">${l}</button>`).join('')}
     </div>
     <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
       <div><label style="font-size:11px;color:var(--c-muted);display:block">Desde</label><input type="date" value="${mstate.contaDesde}" onchange="mstate.contaDesde=this.value;renderContabilidad()"></div>
@@ -4748,12 +4783,124 @@ async function renderContabilidad(){
   if(mstate.contaTab==='inicio'){ renderContaInicio(); return; }
   if(mstate.contaTab==='panel'){ renderContaPanel(); return; }
   if(mstate.contaTab==='pagos'){ renderPagosMensuales(); return; }
+  if(mstate.contaTab==='planilla'){ renderPlanilla(); return; }
   if(mstate.contaTab==='caja'){ renderContaCaja(); return; }
   if(mstate.contaTab==='compromisos'){ renderContaCompromisos(); return; }
   const {data:saldos,error}=await apiPost('/api/conta/saldos',{desde:mstate.contaDesde,hasta:mstate.contaHasta});
   const body=document.getElementById('contaBody'); if(!body) return;
   if(error){ body.innerHTML=`<div class="nodata" style="padding:20px">${esc(error.message)}</div>`; return; }
   body.innerHTML=contaBalance(saldos);   // Balance general
+}
+// ── Contabilidad: Planilla por quincena (cuadrillas de los proyectos) ──
+function planPeriodo(){
+  const mes=mstate.planMes||todayStr().slice(0,7);
+  const q=mstate.planQ||((+todayStr().slice(8,10)<=15)?1:2);
+  const [Y,M]=mes.split('-').map(Number);
+  const finMes=new Date(Y,M,0).getDate();
+  const desde=q===1?`${mes}-01`:`${mes}-16`;
+  const hasta=q===1?`${mes}-15`:`${mes}-${String(finMes).padStart(2,'0')}`;
+  return {mes,q,desde,hasta,Y,M};
+}
+function shiftPlanMes(dir){ const ym=mstate.planMes||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.planMes=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderContabilidad(); }
+function setPlanQ(q){ mstate.planQ=q; renderContabilidad(); }
+async function planillaData(){
+  const [rc,ra]=await Promise.all([
+    api('/api/select',{table:'cuadrilla',limit:5000}),
+    api('/api/select',{table:'asistencia',limit:20000})
+  ]);
+  const p=planPeriodo();
+  const crew=rc.data||[];
+  const asist=(ra.data||[]).filter(a=>a.fecha>=p.desde && a.fecha<=p.hasta);
+  const dias={}, detalle={};
+  asist.forEach(a=>{ if(a.estado==='presente'||a.estado==='tarde'){ dias[a.trabajador_id]=(dias[a.trabajador_id]||0)+1; } (detalle[a.trabajador_id]=detalle[a.trabajador_id]||[]).push(a); });
+  // Agrupar por proyecto: trabajadores activos o con asistencia en el periodo
+  const byProj={};
+  crew.filter(c=>c.activo!==0 || dias[c.id]).forEach(c=>{ const pid=c.project_id||'—'; (byProj[pid]=byProj[pid]||[]).push(c); });
+  return {p,byProj,dias};
+}
+async function renderPlanilla(){
+  const body=document.getElementById('contaBody'); if(!body) return;
+  body.innerHTML='<div class="nodata" style="padding:20px">Cargando planilla…</div>';
+  const {p,byProj,dias}=await planillaData();
+  if(mstate.contaTab!=='planilla') return;
+  const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[p.M-1]:'')||'';
+  let granTotal=0, granDias=0, nTrab=0;
+  const projIds=Object.keys(byProj).sort((a,b)=>(projName(a)||a).localeCompare(projName(b)||b));
+  const blocks=projIds.map(pid=>{
+    const list=byProj[pid].sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+    let sub=0;
+    const rows=list.map(c=>{ const d=dias[c.id]||0; const pago=d*(+c.salario_dia||0); sub+=pago; granDias+=d; nTrab++; return `<tr>
+        <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b>${c.activo===0?' <span style="font-size:10px;color:var(--c-muted)">(baja)</span>':''}</div></td>
+        <td style="font-size:12px;color:var(--c-muted)">${esc(c.cargo||'')}</td>
+        <td style="text-align:right">${cajaMoney(c.salario_dia||0)}</td>
+        <td style="text-align:center;font-weight:700">${d}</td>
+        <td style="text-align:right;font-weight:800;color:${pago>0?'#166534':'var(--c-muted)'}">${cajaMoney(pago)}</td>
+      </tr>`; }).join('');
+    granTotal+=sub;
+    return `<div class="section-card" style="padding:0;overflow:hidden;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 14px;border-bottom:1px solid var(--c-border);background:var(--c-bg)">
+        <b style="font-size:13px">🏗️ ${esc(projName(pid)||pid)}</b>
+        <span style="font-size:13px;font-weight:800;color:#166534">${cajaMoney(sub)}</span>
+      </div>
+      <div class="item-table" style="border:none;border-radius:0;margin:0"><table>
+        <thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th style="text-align:center">Días</th><th style="text-align:right">A pagar</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  }).join('');
+  body.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <button class="nav-arrow" onclick="shiftPlanMes(-1)">‹</button>
+      <div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${mesNom} ${p.Y}</div>
+      <button class="nav-arrow" onclick="shiftPlanMes(1)">›</button>
+      <div class="filter-chips" style="margin-left:6px">
+        <span class="chip ${p.q===1?'active':''}" onclick="setPlanQ(1)">1ª quincena (1–15)</span>
+        <span class="chip ${p.q===2?'active':''}" onclick="setPlanQ(2)">2ª quincena (16–fin)</span>
+      </div>
+      <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="imprimirPlanilla()">🖨 Imprimir / PDF</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Total a pagar',cajaMoney(granTotal),'#166534','#DCFCE7')}
+      ${kpiTile('Trabajadores',nTrab,'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Días pagados',granDias,'#7C3AED','#EDE9FE')}
+      ${kpiTile('Periodo',p.desde.slice(5)+' → '+p.hasta.slice(5),'#B45309','#FEF3C7')}
+    </div>
+    ${projIds.length?blocks:'<div class="nodata" style="padding:30px">Sin trabajadores con asistencia en esta quincena. Registra la cuadrilla y su asistencia en cada proyecto.</div>'}
+    <div style="font-size:11px;color:var(--c-muted);margin-top:4px">Se paga por día asistido (Presente o Tarde) × salario diario. Los días Ausente o Justificado no suman al pago.</div>`;
+}
+async function imprimirPlanilla(){
+  const {p,byProj,dias}=await planillaData();
+  const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[p.M-1]:'')||'';
+  const projIds=Object.keys(byProj).sort((a,b)=>(projName(a)||a).localeCompare(projName(b)||b));
+  let granTotal=0;
+  const blocks=projIds.map(pid=>{
+    const list=byProj[pid].sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+    let sub=0;
+    const rows=list.map((c,i)=>{ const d=dias[c.id]||0; const pago=d*(+c.salario_dia||0); sub+=pago; return `<tr>
+       <td style="border:1px solid #ddd;padding:4px 7px">${i+1}</td>
+       <td style="border:1px solid #ddd;padding:4px 7px">${esc(c.nombre)}</td>
+       <td style="border:1px solid #ddd;padding:4px 7px">${esc(c.cargo||'')}</td>
+       <td style="border:1px solid #ddd;padding:4px 7px;text-align:right">${cajaMoney(c.salario_dia||0)}</td>
+       <td style="border:1px solid #ddd;padding:4px 7px;text-align:center">${d}</td>
+       <td style="border:1px solid #ddd;padding:4px 7px;text-align:right;font-weight:700">${cajaMoney(pago)}</td>
+       <td style="border:1px solid #ddd;padding:4px 7px">&nbsp;</td></tr>`; }).join('');
+    granTotal+=sub;
+    return `<tr><td colspan="7" style="background:#9B1B30;color:#fff;padding:5px 7px;font-weight:700">${esc(projName(pid)||pid)} — Subtotal ${cajaMoney(sub)}</td></tr>${rows}`;
+  }).join('');
+  const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#1b1b20;max-width:900px;margin:0 auto">
+    <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #9B1B30;padding-bottom:8px">
+      <img src="${location.origin}/cmi-logo-full.svg" style="height:38px">
+      <div><div style="color:#9B1B30;font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
+      <div style="font-size:11px;color:#555">Planilla de cuadrilla — ${mesNom} ${p.Y} · ${p.q===1?'1ª quincena':'2ª quincena'} (${p.desde} al ${p.hasta})</div></div>
+      <div style="margin-left:auto;text-align:right"><div style="font-size:10px;color:#777">Total a pagar</div><div style="font-size:16px;font-weight:800;color:#166534">${cajaMoney(granTotal)}</div></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px">
+      <thead><tr style="background:#333;color:#fff"><th style="border:1px solid #ddd;padding:4px 7px">#</th><th style="border:1px solid #ddd;padding:4px 7px;text-align:left">Trabajador</th><th style="border:1px solid #ddd;padding:4px 7px;text-align:left">Cargo</th><th style="border:1px solid #ddd;padding:4px 7px">Salario/día</th><th style="border:1px solid #ddd;padding:4px 7px">Días</th><th style="border:1px solid #ddd;padding:4px 7px">A pagar</th><th style="border:1px solid #ddd;padding:4px 7px">Firma</th></tr></thead>
+      <tbody>${blocks||'<tr><td colspan="7" style="padding:10px;text-align:center;color:#777">Sin datos</td></tr>'}</tbody>
+    </table>
+    <div style="font-size:10px;color:#999;margin-top:10px">Se paga por día asistido (Presente o Tarde) × salario diario. · CMI Construction Corp. — Uso interno.</div>
+  </div>`;
+  printHtmlDoc('Planilla '+mesNom+' '+p.Y, html);
 }
 function kpiTile(label,val,color,bg){ return `<div style="background:${bg};border-radius:10px;padding:14px"><div style="font-size:20px;font-weight:800;color:${color}">${val}</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">${label}</div></div>`; }
 // Caja chica de todos los proyectos (vista de Contabilidad)

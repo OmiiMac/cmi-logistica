@@ -336,6 +336,8 @@ CREATE TABLE IF NOT EXISTS cuadrilla (
   project_id TEXT NOT NULL,
   nombre     TEXT NOT NULL,
   cargo      TEXT,
+  salario_dia REAL DEFAULT 0,              -- cuánto gana por día
+  foto_file  TEXT,                         -- id de foto del rostro
   activo     INTEGER DEFAULT 1,
   created_by TEXT,
   created_at TEXT,
@@ -348,6 +350,8 @@ CREATE TABLE IF NOT EXISTS asistencia (
   trabajador_id TEXT NOT NULL,
   fecha        TEXT,                       -- YYYY-MM-DD
   estado       TEXT DEFAULT 'presente',    -- presente | tarde | justificado | ausente
+  hora_entrada TEXT,                       -- HH:MM
+  hora_salida  TEXT,                        -- HH:MM
   notas        TEXT,
   created_by   TEXT,
   created_at   TEXT,
@@ -523,6 +527,10 @@ ensureColumn('rutas', 'observaciones', 'TEXT');
 ensureColumn('rutas', 'recibido_por', 'TEXT');
 ensureColumn('rutas', 'comprobante_file', 'TEXT');
 ensureColumn('vehiculos', 'condicion', 'TEXT');   // operativo | necesita_mant | en_mant
+ensureColumn('cuadrilla', 'salario_dia', 'REAL'); // planilla: pago por día
+ensureColumn('cuadrilla', 'foto_file', 'TEXT');   // foto del rostro
+ensureColumn('asistencia', 'hora_entrada', 'TEXT');
+ensureColumn('asistencia', 'hora_salida', 'TEXT');
 // Siembra inicial de la flota (solo si no hay vehículos): HINO, JMC, L200 y Ford Figo.
 try {
   if (db.prepare('SELECT COUNT(*) AS c FROM vehiculos').get().c === 0) {
@@ -597,8 +605,8 @@ const SCHEMA = {
   obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at'],
   lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at'],
   proyecto_costos: ['id', 'project_id', 'rubro', 'concepto', 'monto', 'fecha', 'proveedor', 'comprobante_file', 'notas', 'created_by', 'created_at', 'updated_at'],
-  cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'activo', 'created_by', 'created_at', 'updated_at'],
-  asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'notas', 'created_by', 'created_at', 'updated_at']
+  cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'salario_dia', 'foto_file', 'activo', 'created_by', 'created_at', 'updated_at'],
+  asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'notas', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
