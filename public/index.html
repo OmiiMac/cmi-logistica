@@ -1708,12 +1708,7 @@ function renderDashboard(){
     <div class="section-card" style="padding:14px;cursor:pointer" onclick="nav('rutas')" title="Ver Carga Express"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Rutas por estado <span style="font-size:11px;color:var(--c-muted);font-weight:600">Ver ›</span></h3><canvas id="chDashRuta" height="180"></canvas></div>
     ${canModule('licit')?`<div class="section-card" style="padding:14px;cursor:pointer" onclick="nav('licitaciones')" title="Ver Licitaciones"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Licitaciones por estado <span style="font-size:11px;color:var(--c-muted);font-weight:600">Ver ›</span></h3><canvas id="chDashLicit" height="180"></canvas></div>`:''}
     ${canModule('mkt')?`<div class="section-card" style="padding:14px;cursor:pointer" onclick="nav('mercadeo')" title="Ver Mercadeo"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Publicaciones por mes <span style="font-size:11px;color:var(--c-muted);font-weight:600">Ver ›</span></h3><canvas id="chDashMkt" height="180"></canvas></div>`:''}
-  </div>
-  ${canModule('paintpro')?`
-  <div class="section-head" style="margin:22px 0 10px;border:none;padding:0;background:none"><h3 style="cursor:pointer" onclick="nav('paintpro')"><span class="section-head-bar" style="background:#0891B2"></span>Paint Pro <span style="font-size:11px;color:var(--c-muted);font-weight:600">Ver módulo ›</span></h3></div>
-  <div id="dashPaintBody"><div class="nodata" style="padding:20px">Cargando Paint Pro…</div></div>`:''}`;
-
-  if(canModule('paintpro')) renderDashPaintPro();
+  </div>`;
 
   // Conteos de modulos (async, solo para quien tiene acceso)
   if(canModule('licit')) sb.from('licitaciones').select('id').then(({data})=>{ const el=document.getElementById('dashLicit'); if(el) el.textContent=(data||[]).length; });
@@ -4601,6 +4596,28 @@ function ppEstChip(list,v){ const e=ppEst(list,v); return `<span style="font-siz
 function ppEstSelect(list,v,onchange){ return `<select onchange="${onchange}" style="font-size:11px;padding:3px 6px;border-radius:7px">${list.map(([k,l])=>`<option value="${k}" ${v===k?'selected':''}>${l}</option>`).join('')}</select>`; }
 let _ppCharts=[]; function destroyPpCharts(){ _ppCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _ppCharts=[]; }
 function shiftPpMonth(d){ const ym=state.ppMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const dt=new Date(Y,M-1+d,1); state.ppMonth=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0'); renderPaintPro(); }
+function goPp(tab){ state.ppTab=tab; renderPaintPro(); }
+// Rejilla de calendario Paint Pro (entregas, órdenes, devoluciones y eventos del mes ym)
+function ppCalendarHtml(ym, ent, ord, dev, evt, opts){
+  opts=opts||{}; const [Y,M]=ym.split('-').map(Number);
+  const byDay={}; const add=(fecha,txt,color,onclick)=>{ if((fecha||'').slice(0,7)!==ym) return; const d=+fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push({txt,color,onclick}); };
+  (ent||[]).forEach(e=>add(e.fecha,'🚚 '+(e.cliente||'Entrega'),'#16A34A',"goPp('entregas')"));
+  (ord||[]).forEach(o=>add(o.fecha,'🧾 '+(o.proveedor||'Orden'),'#2563EB',"goPp('ordenes')"));
+  (dev||[]).forEach(v=>add(v.fecha,'↩️ '+(v.cliente||'Devolución'),'#DC2626',"goPp('devoluciones')"));
+  (evt||[]).forEach(v=>add(v.fecha,'📌 '+(v.titulo||'Evento'),v.color||'#7C3AED',`showPpEvtModal('${v.id}')`));
+  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7; const days=new Date(Y,M,0).getDate(); const hoy=todayStr();
+  const maxShow=opts.max||4; const minH=opts.minH||88;
+  let cells=''; for(let i=0;i<startDow;i++) cells+='<div></div>';
+  for(let d=1;d<=days;d++){ const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
+    cells+=`<div style="min-height:${minH}px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="showPpEvtModal(null,'${ds}')">
+      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
+      ${l.slice(0,maxShow).map(x=>`<div onclick="event.stopPropagation();${x.onclick}" title="${esc(x.txt)}" style="font-size:9px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${x.color};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.txt)}</div>`).join('')}
+      ${l.length>maxShow?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${l.length-maxShow} más</div>`:''}
+    </div>`; }
+  const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  return `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>`;
+}
 
 function renderPaintPro(){
   setTopbar('Paint Pro','Venta de pintura');
@@ -4897,20 +4914,21 @@ async function delPp(table,id){
 
 // ── Paint Pro: Panel (resumen + gráficas clickeables) ─────────
 async function ppLoadAll(){
-  const [inv,ent,ord,dev]=await Promise.all([
-    api('/api/select',{table:'pp_inventario',limit:5000}),
+  const [ent,ord,dev,evt]=await Promise.all([
     api('/api/select',{table:'pp_entregas',limit:5000}),
     api('/api/select',{table:'pp_ordenes',limit:5000}),
-    api('/api/select',{table:'pp_devoluciones',limit:5000})
+    api('/api/select',{table:'pp_devoluciones',limit:5000}),
+    api('/api/select',{table:'pp_eventos',limit:5000})
   ]);
-  return {inv:inv.data||[],ent:ent.data||[],ord:ord.data||[],dev:dev.data||[]};
+  return {ent:ent.data||[],ord:ord.data||[],dev:dev.data||[],evt:evt.data||[]};
 }
 async function renderPpPanel(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const {ent,ord,dev}=await ppLoadAll();
+  const {ent,ord,dev,evt}=await ppLoadAll();
   if((state.ppTab||'panel')!=='panel') return;
   const inv=ppPaintItems();   // inventario ligado a Depósito · Pinturas
   const mes=todayStr().slice(0,7);
+  const ym=state.ppMonth||todayStr().slice(0,7); const [pY,pM]=ym.split('-').map(Number);
   const valInv=inv.reduce((s,i)=>s+(+i.quantity||0)*(+i.costo||0),0);
   const low=inv.filter(i=>(+i.minStock||0)>0&&(+i.quantity||0)<=(+i.minStock||0)).length;
   const entAbiertas=ent.filter(e=>e.estado==='pendiente'||e.estado==='en_ruta').length;
@@ -4928,6 +4946,21 @@ async function renderPpPanel(){
       <div ${go('devoluciones')}">${kpiTile('Devoluciones pend.',devPend,devPend?'#DC2626':'#166534',devPend?'#FEE2E2':'#DCFCE7')}</div>
     </div>
     ${low?`<div onclick="state.ppTab='inventario';renderPaintPro()" style="cursor:pointer;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);border-radius:10px;padding:10px 13px;margin-bottom:14px;font-size:13px;font-weight:700;color:#DC2626">⚠ ${low} producto(s) con stock bajo — revisar inventario ›</div>`:''}
+    <div class="section-card" style="padding:14px;margin-bottom:16px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <b style="font-size:14px">📅 Calendario</b>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:8px">
+          <button class="nav-arrow" onclick="shiftPpMonth(-1)">‹</button>
+          <span style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${(typeof MESES_ES!=='undefined'?MESES_ES[pM-1]:'')} ${pY}</span>
+          <button class="nav-arrow" onclick="shiftPpMonth(1)">›</button>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:10px;align-items:center;font-size:11px;color:var(--c-muted);flex-wrap:wrap">
+          <span>🚚 Entregas</span><span>🧾 Órdenes</span><span>↩️ Devoluciones</span><span>📌 Eventos</span>
+          <button class="btn btn-sm btn-primary" onclick="showPpEvtModal(null,'${ym}-15')">+ Evento</button>
+        </div>
+      </div>
+      ${ppCalendarHtml(ym, ent, ord, dev, evt)}
+    </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
       <div class="section-card" onclick="state.ppTab='entregas';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Ventas por mes <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChVentas" height="190"></canvas></div>
       <div class="section-card" onclick="state.ppTab='entregas';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Entregas por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChEnt" height="190"></canvas></div>
@@ -5013,61 +5046,6 @@ async function savePpEvt(id){
   let d; if(id){ d=await api('/api/update',{table:'pp_eventos',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_eventos',values:{...values,created_at:new Date().toISOString()}}); }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
   closeModal(); showToast('Guardado','ok'); renderPaintPro();
-}
-
-// ── Paint Pro en el DASHBOARD principal (calendario + gráficas clickeables) ──
-let _dashPpCharts=[]; function destroyDashPpCharts(){ _dashPpCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _dashPpCharts=[]; }
-function shiftDashPpMonth(d){ const ym=state.dashPpMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const dt=new Date(Y,M-1+d,1); state.dashPpMonth=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0'); renderDashPaintPro(); }
-function goPp(tab){ state.ppTab=tab; nav('paintpro'); }
-async function renderDashPaintPro(){
-  const b=document.getElementById('dashPaintBody'); if(!b) return;
-  const [inv,ent,ord,dev,evt]=await Promise.all([
-    api('/api/select',{table:'pp_inventario',limit:5000}),
-    api('/api/select',{table:'pp_entregas',limit:5000}),
-    api('/api/select',{table:'pp_ordenes',limit:5000}),
-    api('/api/select',{table:'pp_devoluciones',limit:5000}),
-    api('/api/select',{table:'pp_eventos',limit:5000})
-  ]);
-  if(state.view!=='dashboard') return;
-  const E=ent.data||[],O=ord.data||[],V=dev.data||[],EV=evt.data||[],I=inv.data||[];
-  const ym=state.dashPpMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number);
-  const byDay={}; const add=(fecha,txt,color,onclick)=>{ if((fecha||'').slice(0,7)!==ym) return; const d=+fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push({txt,color,onclick}); };
-  E.forEach(e=>add(e.fecha,'🚚 '+(e.cliente||'Entrega'),'#16A34A',"goPp('entregas')"));
-  O.forEach(o=>add(o.fecha,'🧾 '+(o.proveedor||'Orden'),'#2563EB',"goPp('ordenes')"));
-  V.forEach(v=>add(v.fecha,'↩️ '+(v.cliente||'Devolución'),'#DC2626',"goPp('devoluciones')"));
-  EV.forEach(v=>add(v.fecha,'📌 '+(v.titulo||'Evento'),v.color||'#7C3AED',"goPp('calendario')"));
-  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7; const days=new Date(Y,M,0).getDate(); const hoy=todayStr();
-  let cells=''; for(let i=0;i<startDow;i++) cells+='<div></div>';
-  for(let d=1;d<=days;d++){ const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
-    cells+=`<div style="min-height:70px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:7px;padding:4px;overflow:hidden">
-      <div style="font-size:10px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
-      ${l.slice(0,3).map(x=>`<div onclick="${x.onclick}" title="${esc(x.txt)}" style="cursor:pointer;font-size:9px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${x.color};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.txt)}</div>`).join('')}
-      ${l.length>3?`<div style="font-size:9px;color:var(--c-muted)">+${l.length-3}</div>`:''}
-    </div>`; }
-  const dow=['L','M','M','J','V','S','D'];
-  b.innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px" class="dash-pp-grid">
-    <div class="section-card" style="padding:14px">
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <button class="nav-arrow" onclick="shiftDashPpMonth(-1)">‹</button>
-        <b style="font-size:13px;text-transform:capitalize;flex:1;text-align:center">${(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')} ${Y}</b>
-        <button class="nav-arrow" onclick="shiftDashPpMonth(1)">›</button>
-        <button class="btn btn-sm btn-ghost" onclick="goPp('calendario')">Abrir ›</button>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px">${dow.map(d=>`<div style="text-align:center;font-size:9px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${cells}</div>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:16px">
-      <div class="section-card" onclick="goPp('entregas')" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Ventas por mes <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="chDashPpVentas" height="150"></canvas></div>
-      <div class="section-card" onclick="goPp('entregas')" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Entregas por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="chDashPpEnt" height="150"></canvas></div>
-    </div>
-  </div>`;
-  requestAnimationFrame(()=>{
-    if(state.view!=='dashboard'||typeof Chart==='undefined') return; if(typeof tuneChartsDark==='function') tuneChartsDark(); destroyDashPpCharts();
-    const vm={}; E.filter(e=>e.estado==='entregada').forEach(e=>{ const m=(e.fecha||'').slice(0,7)||'s/f'; vm[m]=(vm[m]||0)+(+e.monto||0); }); const vmk=Object.keys(vm).sort();
-    const e1=document.getElementById('chDashPpVentas'); if(e1){ if(vmk.length) _dashPpCharts.push(new Chart(e1,{type:'bar',data:{labels:vmk,datasets:[{label:'Ventas',data:vmk.map(k=>vm[k]),backgroundColor:'#0891B2'}]},options:(typeof chartOpts==='function'?chartOpts({plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:16px">Sin ventas aún</div>'; }
-    const ec={}; E.forEach(e=>{ const s=e.estado||'pendiente'; ec[s]=(ec[s]||0)+1; }); const eck=Object.keys(ec);
-    const e2=document.getElementById('chDashPpEnt'); if(e2){ if(eck.length) _dashPpCharts.push(new Chart(e2,{type:'doughnut',data:{labels:eck.map(s=>ppEst(PP_ENTREGA_EST,s)[1]),datasets:[{data:eck.map(s=>ec[s]),backgroundColor:eck.map(s=>ppEst(PP_ENTREGA_EST,s)[2])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e2.outerHTML='<div class="nodata" style="font-size:12px;padding:16px">Sin entregas</div>'; }
-  });
 }
 
 // ── Chat ──────────────────────────────────────────────────────
