@@ -997,7 +997,7 @@ function setupRealtime(){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('licitaciones');
       } else if(['campanas','publicaciones','mercadeo_tareas','mkt_piezas','mkt_push','mkt_efemerides','mkt_biblioteca'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('mercadeo');
-      } else if(['pp_inventario','pp_entregas','pp_ordenes','pp_devoluciones','pp_eventos'].includes(table)){
+      } else if(['pp_inventario','pp_entregas','pp_ordenes','pp_devoluciones','pp_eventos','pp_clientes'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else if(state.view==='paintpro') renderPaintPro();
       }
     } catch(ex){}
@@ -4623,11 +4623,12 @@ function renderPaintPro(){
   setTopbar('Paint Pro','Venta de pintura');
   const ta=document.getElementById('topbarActions'); if(ta) ta.innerHTML='';
   const tab=state.ppTab||'panel';
-  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['entregas','🚚 Entregas'],['ordenes','🧾 Órdenes de compra'],['devoluciones','↩️ Devoluciones'],['calendario','📅 Calendario']];
+  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['clientes','👥 Clientes'],['entregas','🚚 Entregas'],['ordenes','🧾 Órdenes de compra'],['devoluciones','↩️ Devoluciones'],['calendario','📅 Calendario']];
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px">
     <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="white-space:nowrap" onclick="state.ppTab='${k}';renderPaintPro()">${l}</span>`).join('')}</div>
     <div id="ppBody"><div class="nodata" style="padding:24px">Cargando…</div></div></div>`;
   if(tab==='inventario') renderPpInventario();
+  else if(tab==='clientes') renderPpClientes();
   else if(tab==='entregas') renderPpEntregas();
   else if(tab==='ordenes') renderPpOrdenes();
   else if(tab==='devoluciones') renderPpDevoluciones();
@@ -4696,11 +4697,70 @@ async function savePpInv(id){
   closeModal(); showToast('Guardado','ok'); renderPaintPro();
 }
 
+// ── Paint Pro: Clientes (base de clientes con su info) ────────
+const PP_CLI_TIPO=['Frecuente','Ocasional','Mayorista','Empresa','Otro'];
+async function renderPpClientes(){
+  const b=document.getElementById('ppBody'); if(!b) return;
+  const [rc,re]=await Promise.all([
+    api('/api/select',{table:'pp_clientes',order:[{col:'nombre',asc:true}],limit:5000}),
+    api('/api/select',{table:'pp_entregas',limit:5000})
+  ]);
+  if((state.ppTab||'panel')!=='clientes') return;
+  const cli=rc.data||[]; state._ppCli=cli; const ent=re.data||[];
+  const statOf=nombre=>{ const n=(nombre||'').trim().toLowerCase(); const es=ent.filter(e=>(e.cliente||'').trim().toLowerCase()===n); return {num:es.length,total:es.filter(e=>e.estado==='entregada').reduce((s,e)=>s+(+e.monto||0),0)}; };
+  const conCompras=cli.filter(c=>statOf(c.nombre).num>0).length;
+  const vendido=cli.reduce((s,c)=>s+statOf(c.nombre).total,0);
+  b.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
+      ${kpiTile('Clientes',cli.length,'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Con compras',conCompras,'#166534','#DCFCE7')}
+      ${kpiTile('Vendido a clientes',cajaMoney(vendido),'#7C3AED','#EDE9FE')}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="showPpCliModal()">+ Cliente</button></div>
+    <div class="item-table"><table>
+      <thead><tr><th>Cliente</th><th>Teléfono</th><th>Correo / Dirección</th><th style="text-align:center">Compras</th><th style="text-align:right">Total</th><th></th></tr></thead>
+      <tbody>${cli.length===0?`<tr><td colspan="6"><div class="empty-state">Sin clientes. Agrega el primero con "+ Cliente".</div></td></tr>`:cli.map(c=>{ const st=statOf(c.nombre); return `
+        <tr>
+          <td><b style="font-size:13px">${esc(c.nombre||'')}</b>${c.empresa?`<div style="font-size:11px;color:var(--c-muted)">${esc(c.empresa)}</div>`:''}${c.tipo?`<div style="font-size:10px;color:var(--c-muted)">${esc(c.tipo)}</div>`:''}</td>
+          <td style="font-size:12px">${c.telefono?`<a href="tel:${esc(c.telefono)}" style="color:var(--c-primary)">${esc(c.telefono)}</a>`:'—'}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(c.email||'')}${c.email&&c.direccion?'<br>':''}${esc(c.direccion||'')}</td>
+          <td style="text-align:center;font-weight:700">${st.num||'—'}</td>
+          <td style="text-align:right;font-weight:700">${cajaMoney(st.total)}</td>
+          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpCliModal('${c.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_clientes','${c.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+        </tr>`;}).join('')}</tbody>
+    </table></div>`;
+}
+function showPpCliModal(id){
+  const c=id?(state._ppCli||[]).find(x=>x.id===id):null;
+  openModal(`<div class="modal-head"><h2>${c?'Editar cliente':'Nuevo cliente'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Nombre</label><input id="pcNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre y apellido"></div>
+    <div class="form-row"><div class="form-group"><label>Empresa (opcional)</label><input id="pcEmpresa" value="${esc(c?.empresa||'')}"></div><div class="form-group"><label>Tipo</label><select id="pcTipo"><option value="">—</option>${PP_CLI_TIPO.map(t=>`<option ${c?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div></div>
+    <div class="form-row"><div class="form-group"><label>Teléfono</label><input id="pcTel" value="${esc(c?.telefono||'')}"></div><div class="form-group"><label>Correo</label><input id="pcEmail" value="${esc(c?.email||'')}"></div></div>
+    <div class="form-group"><label>Dirección</label><input id="pcDir" value="${esc(c?.direccion||'')}"></div>
+    <div class="form-group"><label>RUC / Cédula (opcional)</label><input id="pcRuc" value="${esc(c?.ruc||'')}"></div>
+    <div class="form-group"><label>Notas</label><textarea id="pcNotas" rows="2">${esc(c?.notas||'')}</textarea></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpCli(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+}
+async function savePpCli(id){
+  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
+  const n=g('pcNombre').trim(); if(!n){ showToast('Escribe el nombre','err'); return; }
+  const values={nombre:n,empresa:g('pcEmpresa').trim(),tipo:g('pcTipo'),telefono:g('pcTel').trim(),email:g('pcEmail').trim(),direccion:g('pcDir').trim(),ruc:g('pcRuc').trim(),notas:g('pcNotas').trim()};
+  let d; if(id){ d=await api('/api/update',{table:'pp_clientes',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_clientes',values:{...values,created_at:new Date().toISOString()}}); }
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  closeModal(); showToast('Guardado','ok'); renderPaintPro();
+}
+
 // ── Paint Pro: Entregas ───────────────────────────────────────
 async function renderPpEntregas(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const d=await api('/api/select',{table:'pp_entregas',order:[{col:'fecha',asc:false}],limit:5000});
+  const [d,rc]=await Promise.all([
+    api('/api/select',{table:'pp_entregas',order:[{col:'fecha',asc:false}],limit:5000}),
+    api('/api/select',{table:'pp_clientes',order:[{col:'nombre',asc:true}],limit:5000})
+  ]);
   if((state.ppTab||'panel')!=='entregas') return;
+  state._ppCli=rc.data||[];
   const rows=d.data||[]; state._ppEnt=rows; const mes=todayStr().slice(0,7);
   const cnt=k=>rows.filter(r=>r.estado===k).length;
   const entregadasMes=rows.filter(r=>r.estado==='entregada'&&(r.fecha||'').slice(0,7)===mes);
@@ -4731,7 +4791,8 @@ function showPpEntModal(id){
   openModal(`<div class="modal-head"><h2>${r?'Editar entrega':'Nueva entrega'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-row"><div class="form-group"><label>Fecha</label><input id="peFecha" type="date" value="${esc(r?.fecha||todayStr())}"></div><div class="form-group"><label>Hora</label><input id="peHora" value="${esc(r?.hora||'')}" placeholder="10:00 AM"></div></div>
-    <div class="form-group"><label>Cliente</label><input id="peCliente" value="${esc(r?.cliente||'')}"></div>
+    <div class="form-group"><label>Cliente</label><input id="peCliente" list="ppCliDL" value="${esc(r?.cliente||'')}" placeholder="Escribe o elige un cliente">
+      <datalist id="ppCliDL">${(state._ppCli||[]).map(c=>`<option value="${esc(c.nombre||'')}">${esc(c.empresa||'')}</option>`).join('')}</datalist></div>
     <div class="form-row"><div class="form-group"><label>Teléfono</label><input id="peTel" value="${esc(r?.telefono||'')}"></div><div class="form-group"><label>Dirección</label><input id="peDir" value="${esc(r?.direccion||'')}"></div></div>
     <div class="form-group"><label>Detalle / notas del producto</label><textarea id="peDet" rows="2">${esc(r?.detalle||'')}</textarea></div>
     <div class="form-group"><label>Pintura del inventario (para mover stock)</label>
