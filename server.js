@@ -558,6 +558,11 @@ ensureColumn('cuadrilla', 'valor_hora_extra', 'REAL'); // pago por cada hora ext
 ensureColumn('asistencia', 'hora_entrada', 'TEXT');
 ensureColumn('asistencia', 'hora_salida', 'TEXT');
 ensureColumn('asistencia', 'horas_extra', 'REAL');   // horas extra del día
+// Paint Pro: vínculo al inventario (item) y control de movimiento de stock ya aplicado
+ensureColumn('pp_entregas', 'item_id', 'TEXT');
+ensureColumn('pp_entregas', 'stock_aplicado', 'REAL');
+ensureColumn('pp_ordenes', 'item_id', 'TEXT');
+ensureColumn('pp_ordenes', 'stock_aplicado', 'REAL');
 // Siembra inicial de la flota (solo si no hay vehículos): HINO, JMC, L200 y Ford Figo.
 try {
   if (db.prepare('SELECT COUNT(*) AS c FROM vehiculos').get().c === 0) {
@@ -635,8 +640,8 @@ const SCHEMA = {
   cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'salario_dia', 'valor_hora_extra', 'foto_file', 'activo', 'created_by', 'created_at', 'updated_at'],
   asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'horas_extra', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_inventario:   ['id', 'producto', 'marca', 'color', 'codigo', 'categoria', 'cantidad', 'unidad', 'costo', 'precio', 'min_stock', 'foto_file', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_entregas:     ['id', 'fecha', 'hora', 'cliente', 'telefono', 'direccion', 'detalle', 'cantidad', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_ordenes:      ['id', 'fecha', 'numero', 'proveedor', 'producto', 'cantidad', 'costo_unitario', 'total', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_entregas:     ['id', 'fecha', 'hora', 'cliente', 'telefono', 'direccion', 'detalle', 'cantidad', 'monto', 'estado', 'item_id', 'stock_aplicado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_ordenes:      ['id', 'fecha', 'numero', 'proveedor', 'producto', 'cantidad', 'costo_unitario', 'total', 'estado', 'item_id', 'stock_aplicado', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_devoluciones: ['id', 'fecha', 'cliente', 'producto', 'cantidad', 'motivo', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_eventos:      ['id', 'fecha', 'hora', 'titulo', 'tipo', 'color', 'notas', 'created_by', 'created_at', 'updated_at']
 };
