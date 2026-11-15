@@ -4618,33 +4618,36 @@ function renderPaintPro(){
   else renderPpPanel();
 }
 
-// ── Paint Pro: Inventario ─────────────────────────────────────
+// ── Paint Pro: Inventario (LIGADO al inventario de Depósito, categoría Pinturas) ──
+function ppPaintItems(){ return [...state.items.values()].filter(i=>i.category==='pinturas' && i.projectId==='bodega'); }
+function showPaintItemModal(){ showItemModal(); const c=document.getElementById('iCat'); if(c) c.value='pinturas'; const p=document.getElementById('iProj'); if(p) p.value='bodega'; }
 async function renderPpInventario(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const d=await api('/api/select',{table:'pp_inventario',order:[{col:'producto',asc:true}],limit:5000});
-  if((state.ppTab||'panel')!=='inventario') return;
-  const inv=d.data||[]; state._ppInv=inv;
-  const valCosto=inv.reduce((s,i)=>s+(+i.cantidad||0)*(+i.costo||0),0);
-  const valVenta=inv.reduce((s,i)=>s+(+i.cantidad||0)*(+i.precio||0),0);
-  const low=inv.filter(i=>(+i.min_stock||0)>0 && (+i.cantidad||0)<=(+i.min_stock||0)).length;
+  const inv=ppPaintItems().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const unidades=inv.reduce((s,i)=>s+(+i.quantity||0),0);
+  const valCosto=inv.reduce((s,i)=>s+(+i.quantity||0)*(+i.costo||0),0);
+  const low=inv.filter(i=>(+i.minStock||0)>0 && (+i.quantity||0)<=(+i.minStock||0)).length;
   b.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
       ${kpiTile('Productos',inv.length,'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Unidades en stock',unidades,'#0891B2','#CFFAFE')}
       ${kpiTile('Valor (costo)',cajaMoney(valCosto),'#166534','#DCFCE7')}
-      ${kpiTile('Valor (venta)',cajaMoney(valVenta),'#7C3AED','#EDE9FE')}
       ${kpiTile('Stock bajo',low,low?'#DC2626':'#166534',low?'#FEE2E2':'#DCFCE7')}
     </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="showPpInvModal()">+ Producto</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
+      <div style="font-size:12px;color:var(--c-muted)">📦 Ligado al inventario de <b>Depósito (Base Central)</b> · categoría <b>Pinturas</b>. Lo que cambies aquí se refleja en Inventario.</div>
+      <button class="btn btn-sm btn-primary" onclick="showPaintItemModal()">+ Pintura</button>
+    </div>
     <div class="item-table"><table>
-      <thead><tr><th>Producto</th><th>Categoría</th><th style="text-align:right">Cantidad</th><th style="text-align:right">Costo</th><th style="text-align:right">Precio</th><th></th></tr></thead>
-      <tbody>${inv.length===0?`<tr><td colspan="6"><div class="empty-state">Sin productos. Agrega el primero con "+ Producto".</div></td></tr>`:inv.map(i=>{ const bajo=(+i.min_stock||0)>0&&(+i.cantidad||0)<=(+i.min_stock||0); return `
+      <thead><tr><th>Producto</th><th style="text-align:right">Cantidad</th><th style="text-align:right">Costo</th><th style="text-align:right">Valor</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${inv.length===0?`<tr><td colspan="6"><div class="empty-state">Sin pinturas en el Depósito. Agrega con "+ Pintura" (se guarda en el inventario de Depósito).</div></td></tr>`:inv.map(i=>{ const bajo=(+i.minStock||0)>0&&(+i.quantity||0)<=(+i.minStock||0); return `
         <tr>
-          <td><div style="display:flex;align-items:center;gap:9px">${i.foto_file?`<img src="${fileUrl(i.foto_file)}" onclick="openPhoto('${fileUrl(i.foto_file)}','${esc(i.producto||'').replace(/'/g,"\\'")}')" style="width:34px;height:34px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border);cursor:zoom-in">`:''}<div><b style="font-size:13px">${esc(i.producto||'')}</b><div style="font-size:11px;color:var(--c-muted)">${[i.marca,i.color,i.codigo].filter(Boolean).map(esc).join(' · ')}</div></div></div></td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(i.categoria||'')}</td>
-          <td style="text-align:right;font-weight:700">${(+i.cantidad||0)}${i.unidad?' '+esc(i.unidad):''}${bajo?' <span style="color:#D97706">⚠</span>':''}</td>
+          <td><div style="display:flex;align-items:center;gap:9px">${i.photoId?`<img src="${fileUrl(i.photoId)}" onclick="openPhoto('${fileUrl(i.photoId)}','${esc(i.name||'').replace(/'/g,"\\'")}')" style="width:34px;height:34px;object-fit:cover;border-radius:8px;border:1px solid var(--c-border);cursor:zoom-in">`:''}<b style="font-size:13px">${esc(i.name||'')}</b></div></td>
+          <td style="text-align:right;font-weight:700">${(+i.quantity||0)}${i.unit?' '+esc(i.unit):''}${bajo?' <span style="color:#D97706">⚠</span>':''}</td>
           <td style="text-align:right">${cajaMoney(i.costo||0)}</td>
-          <td style="text-align:right">${cajaMoney(i.precio||0)}</td>
-          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpInvModal('${i.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_inventario','${i.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+          <td style="text-align:right;font-weight:700">${cajaMoney((+i.quantity||0)*(+i.costo||0))}</td>
+          <td><span style="font-size:11px;font-weight:700;color:${i.estado==='NO_OPERATIVA'?'var(--c-err)':i.estado==='MANTENIMIENTO'?'var(--c-warn)':'var(--c-ok)'}">${(i.estado||'OPERATIVA').replace('_',' ')}</span></td>
+          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showItemModal('${i.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>${state.isAdmin?`<button class="act-btn del" onclick="showDeleteItem('${i.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>`:''}</td>
         </tr>`;}).join('')}</tbody>
     </table></div>`;
 }
@@ -4853,11 +4856,12 @@ async function ppLoadAll(){
 }
 async function renderPpPanel(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const {inv,ent,ord,dev}=await ppLoadAll();
+  const {ent,ord,dev}=await ppLoadAll();
   if((state.ppTab||'panel')!=='panel') return;
+  const inv=ppPaintItems();   // inventario ligado a Depósito · Pinturas
   const mes=todayStr().slice(0,7);
-  const valInv=inv.reduce((s,i)=>s+(+i.cantidad||0)*(+i.costo||0),0);
-  const low=inv.filter(i=>(+i.min_stock||0)>0&&(+i.cantidad||0)<=(+i.min_stock||0)).length;
+  const valInv=inv.reduce((s,i)=>s+(+i.quantity||0)*(+i.costo||0),0);
+  const low=inv.filter(i=>(+i.minStock||0)>0&&(+i.quantity||0)<=(+i.minStock||0)).length;
   const entAbiertas=ent.filter(e=>e.estado==='pendiente'||e.estado==='en_ruta').length;
   const ventaMes=ent.filter(e=>e.estado==='entregada'&&(e.fecha||'').slice(0,7)===mes).reduce((s,e)=>s+(+e.monto||0),0);
   const ordAbiertas=ord.filter(o=>o.estado==='solicitada'||o.estado==='aprobada').length;
@@ -4876,7 +4880,7 @@ async function renderPpPanel(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
       <div class="section-card" onclick="state.ppTab='entregas';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Ventas por mes <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChVentas" height="190"></canvas></div>
       <div class="section-card" onclick="state.ppTab='entregas';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Entregas por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChEnt" height="190"></canvas></div>
-      <div class="section-card" onclick="state.ppTab='inventario';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Inventario por categoría <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChInv" height="190"></canvas></div>
+      <div class="section-card" onclick="state.ppTab='inventario';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Stock de pinturas <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChInv" height="190"></canvas></div>
       <div class="section-card" onclick="state.ppTab='ordenes';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Órdenes por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChOrd" height="190"></canvas></div>
     </div>`;
   requestAnimationFrame(()=>{
@@ -4888,9 +4892,9 @@ async function renderPpPanel(){
     // Entregas por estado
     const ec={}; ent.forEach(e=>{ const s=e.estado||'pendiente'; ec[s]=(ec[s]||0)+1; }); const eck=Object.keys(ec);
     const e2=document.getElementById('ppChEnt'); if(e2){ if(eck.length) _ppCharts.push(new Chart(e2,{type:'doughnut',data:{labels:eck.map(s=>ppEst(PP_ENTREGA_EST,s)[1]),datasets:[{data:eck.map(s=>ec[s]),backgroundColor:eck.map(s=>ppEst(PP_ENTREGA_EST,s)[2])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e2.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin entregas</div>'; }
-    // Inventario por categoría (valor)
-    const ic={}; inv.forEach(i=>{ const c=i.categoria||'Otros'; ic[c]=(ic[c]||0)+(+i.cantidad||0)*(+i.costo||0); }); const ick=Object.keys(ic);
-    const e3=document.getElementById('ppChInv'); if(e3){ if(ick.length) _ppCharts.push(new Chart(e3,{type:'doughnut',data:{labels:ick,datasets:[{data:ick.map(k=>ic[k]),backgroundColor:(typeof CHART_PALETTE!=='undefined'?CHART_PALETTE:['#9B1B30','#1D4ED8','#D97706','#166534','#7C3AED'])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin inventario</div>'; }
+    // Stock de pinturas (top productos por cantidad)
+    const ip=inv.slice().sort((a,b)=>(+b.quantity||0)-(+a.quantity||0)).slice(0,8);
+    const e3=document.getElementById('ppChInv'); if(e3){ if(ip.length) _ppCharts.push(new Chart(e3,{type:'bar',data:{labels:ip.map(i=>i.name),datasets:[{label:'Stock',data:ip.map(i=>+i.quantity||0),backgroundColor:'#0891B2'}]},options:(typeof chartOpts==='function'?chartOpts({indexAxis:'y',plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin pinturas en Depósito</div>'; }
     // Órdenes por estado
     const oc={}; ord.forEach(o=>{ const s=o.estado||'solicitada'; oc[s]=(oc[s]||0)+1; }); const ock=Object.keys(oc);
     const e4=document.getElementById('ppChOrd'); if(e4){ if(ock.length) _ppCharts.push(new Chart(e4,{type:'doughnut',data:{labels:ock.map(s=>ppEst(PP_ORDEN_EST,s)[1]),datasets:[{data:ock.map(s=>oc[s]),backgroundColor:ock.map(s=>ppEst(PP_ORDEN_EST,s)[2])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e4.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin órdenes</div>'; }
