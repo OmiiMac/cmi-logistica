@@ -358,6 +358,31 @@ CREATE TABLE IF NOT EXISTS asistencia (
   updated_at   TEXT
 );
 
+-- ── Paint Pro (venta de pintura): inventario, entregas, órdenes, devoluciones, calendario ──
+CREATE TABLE IF NOT EXISTS pp_inventario (
+  id TEXT PRIMARY KEY, producto TEXT, marca TEXT, color TEXT, codigo TEXT, categoria TEXT,
+  cantidad REAL DEFAULT 0, unidad TEXT, costo REAL DEFAULT 0, precio REAL DEFAULT 0,
+  min_stock REAL DEFAULT 0, foto_file TEXT, notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS pp_entregas (
+  id TEXT PRIMARY KEY, fecha TEXT, hora TEXT, cliente TEXT, telefono TEXT, direccion TEXT,
+  detalle TEXT, cantidad REAL, monto REAL DEFAULT 0, estado TEXT DEFAULT 'pendiente',
+  notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS pp_ordenes (
+  id TEXT PRIMARY KEY, fecha TEXT, numero TEXT, proveedor TEXT, producto TEXT, cantidad REAL,
+  costo_unitario REAL DEFAULT 0, total REAL DEFAULT 0, estado TEXT DEFAULT 'solicitada',
+  notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS pp_devoluciones (
+  id TEXT PRIMARY KEY, fecha TEXT, cliente TEXT, producto TEXT, cantidad REAL, motivo TEXT,
+  monto REAL DEFAULT 0, estado TEXT DEFAULT 'pendiente', notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
+);
+CREATE TABLE IF NOT EXISTS pp_eventos (
+  id TEXT PRIMARY KEY, fecha TEXT, hora TEXT, titulo TEXT, tipo TEXT, color TEXT, notas TEXT,
+  created_by TEXT, created_at TEXT, updated_at TEXT
+);
+
 -- Mercadeo: calendario de mensajes push (planificación, por empresa)
 CREATE TABLE IF NOT EXISTS mkt_push (
   id           TEXT PRIMARY KEY,
@@ -608,7 +633,12 @@ const SCHEMA = {
   lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at'],
   proyecto_costos: ['id', 'project_id', 'rubro', 'concepto', 'monto', 'fecha', 'proveedor', 'comprobante_file', 'notas', 'created_by', 'created_at', 'updated_at'],
   cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'salario_dia', 'valor_hora_extra', 'foto_file', 'activo', 'created_by', 'created_at', 'updated_at'],
-  asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'horas_extra', 'notas', 'created_by', 'created_at', 'updated_at']
+  asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'horas_extra', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_inventario:   ['id', 'producto', 'marca', 'color', 'codigo', 'categoria', 'cantidad', 'unidad', 'costo', 'precio', 'min_stock', 'foto_file', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_entregas:     ['id', 'fecha', 'hora', 'cliente', 'telefono', 'direccion', 'detalle', 'cantidad', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_ordenes:      ['id', 'fecha', 'numero', 'proveedor', 'producto', 'cantidad', 'costo_unitario', 'total', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_devoluciones: ['id', 'fecha', 'cliente', 'producto', 'cantidad', 'motivo', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_eventos:      ['id', 'fecha', 'hora', 'titulo', 'tipo', 'color', 'notas', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
@@ -616,15 +646,17 @@ const SCHEMA = {
 const MODULE_ROLES = {
   conta: ['admin', 'contador'],
   licit: ['admin', 'licitaciones'],  // rol propio; el supervisor solo opera logística
-  mkt:   ['admin', 'mercadeo']
+  mkt:   ['admin', 'mercadeo'],
+  paintpro: ['admin', 'paintpro']
 };
 const TABLE_MODULE = {
   cuentas: 'conta', asientos: 'conta', movimientos: 'conta', compromisos: 'conta', gastos_mensuales: 'conta',
   licitaciones: 'licit',
   lic_competidores: 'licit',
-  campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt'
+  campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt',
+  pp_inventario: 'paintpro', pp_entregas: 'paintpro', pp_ordenes: 'paintpro', pp_devoluciones: 'paintpro', pp_eventos: 'paintpro'
 };
-const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt' };
+const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt', paintpro: 'paintpro' };
 // Salas de chat restringidas (heredan el permiso del módulo). Las demás
 // (general, inventario, rutas, proyecto:*) son abiertas a todo usuario activo.
 const CHAT_ROOM_MODULE = { contabilidad: 'conta', licitaciones: 'licit', mercadeo: 'mkt' };
@@ -1240,6 +1272,13 @@ function canWrite(table, op, user, values, filters) {
     case 'mkt_efemerides':
     case 'mkt_biblioteca':
       return roleCan('mkt', user);
+    // ── Paint Pro ──
+    case 'pp_inventario':
+    case 'pp_entregas':
+    case 'pp_ordenes':
+    case 'pp_devoluciones':
+    case 'pp_eventos':
+      return roleCan('paintpro', user);
     default:
       return false;
   }
