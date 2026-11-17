@@ -997,7 +997,7 @@ function setupRealtime(){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('licitaciones');
       } else if(['campanas','publicaciones','mercadeo_tareas','mkt_piezas','mkt_push','mkt_efemerides','mkt_biblioteca'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('mercadeo');
-      } else if(['pp_inventario','pp_entregas','pp_ordenes','pp_devoluciones','pp_eventos','pp_clientes'].includes(table)){
+      } else if(['pp_inventario','pp_entregas','pp_ordenes','pp_devoluciones','pp_eventos','pp_clientes','pp_visitas'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else if(state.view==='paintpro') renderPaintPro();
       }
     } catch(ex){}
@@ -4623,12 +4623,13 @@ function renderPaintPro(){
   setTopbar('Paint Pro','Venta de pintura');
   const ta=document.getElementById('topbarActions'); if(ta) ta.innerHTML='';
   const tab=state.ppTab||'panel';
-  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['clientes','👥 Clientes'],['entregas','🚚 Entregas'],['ordenes','🧾 Órdenes de compra'],['devoluciones','↩️ Devoluciones'],['calendario','📅 Calendario']];
+  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['clientes','👥 Clientes'],['visitas','🗒️ Visitas'],['entregas','🚚 Entregas'],['ordenes','🧾 Órdenes de compra'],['devoluciones','↩️ Devoluciones'],['calendario','📅 Calendario']];
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px">
     <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="white-space:nowrap" onclick="state.ppTab='${k}';renderPaintPro()">${l}</span>`).join('')}</div>
     <div id="ppBody"><div class="nodata" style="padding:24px">Cargando…</div></div></div>`;
   if(tab==='inventario') renderPpInventario();
   else if(tab==='clientes') renderPpClientes();
+  else if(tab==='visitas') renderPpVisitas();
   else if(tab==='entregas') renderPpEntregas();
   else if(tab==='ordenes') renderPpOrdenes();
   else if(tab==='devoluciones') renderPpDevoluciones();
@@ -4750,6 +4751,96 @@ async function savePpCli(id){
   let d; if(id){ d=await api('/api/update',{table:'pp_clientes',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_clientes',values:{...values,created_at:new Date().toISOString()}}); }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
   closeModal(); showToast('Guardado','ok'); renderPaintPro();
+}
+
+// ── Paint Pro: Visitas y seguimiento ──────────────────────────
+const PP_VISITA_EST=[['programada','Programada','#D97706'],['revision_planos','Revisión de planos','#6B7280'],['completada','Completada','#16A34A'],['cancelada','Cancelada','#DC2626']];
+async function renderPpVisitas(){
+  const b=document.getElementById('ppBody'); if(!b) return;
+  const [rv,rc]=await Promise.all([
+    api('/api/select',{table:'pp_visitas',order:[{col:'fecha',asc:false}],limit:5000}),
+    api('/api/select',{table:'pp_clientes',order:[{col:'nombre',asc:true}],limit:5000})
+  ]);
+  if((state.ppTab||'panel')!=='visitas') return;
+  const vis=rv.data||[]; state._ppVis=vis; state._ppCli=rc.data||[];
+  const cnt=k=>vis.filter(v=>v.estado===k).length;
+  // Agrupar por mes (YYYY-MM) descendente
+  const byMonth={}; vis.forEach(v=>{ const m=(v.fecha||'').slice(0,7)||'s/f'; (byMonth[m]=byMonth[m]||[]).push(v); });
+  const months=Object.keys(byMonth).sort().reverse();
+  const mesLabel=m=>{ if(m==='s/f') return 'Sin fecha'; const [Y,M]=m.split('-').map(Number); return ((typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')+' '+Y).toUpperCase(); };
+  const rowHtml=v=>`<tr>
+      <td><b style="font-size:13px">${esc(v.titulo||'')}</b>${v.motivo?`<div style="font-size:11px;color:var(--c-muted)">${esc(v.motivo)}</div>`:''}</td>
+      <td style="font-size:12px">${esc(v.cliente||'')}</td>
+      <td style="font-size:12px;color:var(--c-muted)">${esc(v.responsable||'')}</td>
+      <td style="white-space:nowrap;font-size:12px">${esc(v.fecha||'')}${v.hora?`<div style="font-size:11px;color:var(--c-muted)">${esc(v.hora)}</div>`:''}</td>
+      <td>${ppEstSelect(PP_VISITA_EST,v.estado||'programada',`setPpEstado('pp_visitas','${v.id}',this.value)`)}</td>
+      <td style="font-size:12px;color:var(--c-muted)">${esc(v.lugar||'')}</td>
+      <td style="white-space:nowrap">${v.reporte_file?`<a href="${fileUrl(v.reporte_file)}" target="_blank" style="color:var(--c-primary);font-size:12px">📄 ver</a>`:`<label style="font-size:11px;color:var(--c-muted);cursor:pointer">📎 adjuntar<input type="file" style="display:none" onchange="uploadPpVisReporte('${v.id}',this)"></label>`}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpVisModal('${v.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_visitas','${v.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+    </tr>`;
+  const head=`<thead><tr><th>Visita</th><th>Cliente</th><th>Responsable</th><th>Fecha / Hora</th><th>Estado</th><th>Lugar</th><th>Reporte</th><th></th></tr></thead>`;
+  const groups = months.length ? months.map(m=>{
+    const list=byMonth[m].slice().sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'')||(a.hora||'').localeCompare(b.hora||''));
+    return `<div style="margin-bottom:16px">
+      <div style="font-weight:800;font-size:12px;color:#EA580C;letter-spacing:.04em;margin:0 0 6px">▸ ${mesLabel(m)} <span style="color:var(--c-muted);font-weight:600">· ${list.length} visita(s)</span></div>
+      <div class="item-table"><table>${head}<tbody>${list.map(rowHtml).join('')}</tbody></table></div>
+    </div>`;
+  }).join('') : '<div class="nodata" style="padding:30px">Sin visitas registradas. Agrega la primera con "+ Visita".</div>';
+  b.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
+      ${kpiTile('Visitas',vis.length,'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Completadas',cnt('completada'),'#166534','#DCFCE7')}
+      ${kpiTile('Programadas',cnt('programada'),'#D97706','#FEF3C7')}
+      ${kpiTile('Revisión de planos',cnt('revision_planos'),'#6B7280','#F3F4F6')}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-sm btn-primary" onclick="showPpVisModal()">+ Visita</button></div>
+    ${groups}`;
+}
+function showPpVisModal(id){
+  const v=id?(state._ppVis||[]).find(x=>x.id===id):null;
+  openModal(`<div class="modal-head"><h2>${v?'Editar visita':'Nueva visita'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Visita (título)</label><input id="pvTitulo" value="${esc(v?.titulo||'')}" placeholder="Ej: Visita a Sherwin Williams"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Cliente</label><input id="pvCliente" list="ppVisCliDL" value="${esc(v?.cliente||'')}" placeholder="Escribe o elige">
+        <datalist id="ppVisCliDL">${(state._ppCli||[]).map(c=>`<option value="${esc(c.nombre||'')}">${esc(c.empresa||'')}</option>`).join('')}</datalist></div>
+      <div class="form-group"><label>Persona responsable</label><input id="pvResp" value="${esc(v?.responsable||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Fecha</label><input id="pvFecha" type="date" value="${esc(v?.fecha||todayStr())}"></div>
+      <div class="form-group"><label>Hora</label><input id="pvHora" value="${esc(v?.hora||'')}" placeholder="8:00 AM"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Estado</label>${ppEstSelect(PP_VISITA_EST,v?.estado||'programada','').replace('<select','<select id="pvEstado"')}</div>
+      <div class="form-group"><label>Lugar</label><input id="pvLugar" value="${esc(v?.lugar||'')}" placeholder="Ej: Santa María"></div>
+    </div>
+    <div class="form-group"><label>Motivo / detalle</label><textarea id="pvMotivo" rows="2" placeholder="Motivo de la visita, acuerdos, pendientes…">${esc(v?.motivo||'')}</textarea></div>
+    <div class="form-group"><label>Reporte de la visita (archivo o foto)</label>
+      <div style="display:flex;align-items:center;gap:12px">${v&&v.reporte_file?`<a href="${fileUrl(v.reporte_file)}" target="_blank" style="color:var(--c-primary);font-size:12px">📄 ver actual</a>`:''}<input type="file" id="pvReporte" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="flex:1"></div>
+    </div>
+    <div class="form-group"><label>Notas</label><textarea id="pvNotas" rows="2">${esc(v?.notas||'')}</textarea></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpVis(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+}
+async function savePpVis(id){
+  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
+  const t=g('pvTitulo').trim(); if(!t){ showToast('Escribe el título de la visita','err'); return; }
+  const values={titulo:t,cliente:g('pvCliente').trim(),responsable:g('pvResp').trim(),fecha:g('pvFecha')||todayStr(),hora:g('pvHora').trim(),estado:g('pvEstado'),lugar:g('pvLugar').trim(),motivo:g('pvMotivo').trim(),notas:g('pvNotas').trim()};
+  let d,rid=id;
+  if(id){ d=await api('/api/update',{table:'pp_visitas',values,filters:[{col:'id',val:id}]}); }
+  else { d=await api('/api/insert',{table:'pp_visitas',values:{...values,created_at:new Date().toISOString()}}); rid=(d.data&&d.data[0]&&d.data[0].id)||null; }
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  const fin=document.getElementById('pvReporte');
+  if(fin&&fin.files&&fin.files[0]&&rid){ showToast('Subiendo reporte…','ok'); const up=await apiUpload('paintpro',rid,fin.files[0]); if(!up.error&&up.data) await api('/api/update',{table:'pp_visitas',values:{reporte_file:up.data.id},filters:[{col:'id',val:rid}]}); }
+  closeModal(); showToast('Guardado','ok'); renderPaintPro();
+}
+async function uploadPpVisReporte(id, inputEl){
+  if(!inputEl||!inputEl.files||!inputEl.files[0]) return;
+  showToast('Subiendo reporte…','ok');
+  const up=await apiUpload('paintpro',id,inputEl.files[0]);
+  if(up.error||!up.data){ showToast('Error al subir','err'); return; }
+  await api('/api/update',{table:'pp_visitas',values:{reporte_file:up.data.id},filters:[{col:'id',val:id}]});
+  showToast('Reporte adjuntado','ok'); renderPaintPro();
 }
 
 // ── Paint Pro: Entregas ───────────────────────────────────────
