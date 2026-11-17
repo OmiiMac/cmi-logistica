@@ -542,9 +542,7 @@ ensureColumn('messages', 'file_id', 'TEXT');
 ensureColumn('items', 'photo_id', 'TEXT');
 ensureColumn('equipo_movs', 'origen_id', 'TEXT');
 ensureColumn('equipo_movs', 'destino_id', 'TEXT');
-ensureColumn('equipo_movs', 'stock_aplicado', 'INTEGER');   // 1 = el movimiento de stock ya se aplicó
-// Los vales existentes (de antes de este control) se consideran ya liquidados para no re-mover stock al editarlos.
-try { db.exec("UPDATE equipo_movs SET stock_aplicado = 1 WHERE stock_aplicado IS NULL"); } catch (e) {}
+ensureColumn('equipo_movs', 'stock_aplicado', 'INTEGER');   // 1 = alguna línea del vale movió stock (el detalle va en items[].ap)
 ensureColumn('profiles', 'restrict_mods', 'TEXT'); // módulos ocultos para este usuario (ej: 'conta,licit')
 ensureColumn('profiles', 'phone', 'TEXT');          // teléfono para avisos por WhatsApp (formato +503...)
 ensureColumn('profiles', 'wa_optin', 'INTEGER DEFAULT 0'); // 1 = acepta recibir avisos por WhatsApp
@@ -1598,6 +1596,65 @@ app.post('/api/asiento', (req, res) => {
 // ============================================================
 const MOV_FIELDS = ['tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'origen_id', 'destino_id'];
 
+// ── Vales de equipo: movimiento de stock POR LÍNEA ──────────────────────
+// Cada línea del vale guarda en `ap` lo que YA movió en el inventario:
+//   { s: id del artículo en el origen, o: origen, d: destino, c: cantidad, asumido?: 1 }
+// Al crear o editar, el inventario se ajusta sólo por la DIFERENCIA entre lo ya
+// movido y lo que pide el vale: nunca se duplica y, si se quita una línea, se devuelve.
+function movParse(txt) { try { const a = JSON.parse(txt || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+function movLocName(id) {
+  if (id === 'bodega') return 'el Depósito';
+  const p = id ? db.prepare('SELECT name FROM projects WHERE id = ?').get(id) : null;
+  return p ? p.name : (id || '—');
+}
+function movItemAt(loc, name, category) {
+  return db.prepare('SELECT * FROM items WHERE project_id = ? AND lower(trim(name)) = lower(trim(?)) AND category = ? LIMIT 1').get(loc, name, category);
+}
+// Artículo de ORIGEN de una línea: por su item_id (si sigue en el origen) o por el nombre escrito.
+function movResolveSrc(line, origen) {
+  if (!origen || !line) return null;
+  const byName = n => db.prepare('SELECT * FROM items WHERE project_id = ? AND lower(trim(name)) = lower(trim(?)) LIMIT 1').get(origen, n) || null;
+  let it = line.item_id ? db.prepare('SELECT * FROM items WHERE id = ?').get(line.item_id) : null;
+  if (it && it.project_id !== origen) it = byName(it.name);
+  const desc = String(line.desc || '').trim();
+  if (!it && desc) it = byName(desc);
+  return it || null;
+}
+// Mueve `qty` del artículo srcId a la ubicación dest (qty < 0 = devolver del destino al origen).
+function movTransfer(srcId, dest, qty, userId, now, touched) {
+  const src = db.prepare('SELECT * FROM items WHERE id = ?').get(srcId);
+  if (!src || !qty) return 0;
+  const upd = db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?');
+  const dst = movItemAt(dest, src.name, src.category);
+  if (qty < 0) {
+    if (!dst) return 0;
+    const take = Math.min(-qty, dst.quantity || 0);
+    if (take <= 0) return 0;
+    upd.run((dst.quantity || 0) - take, userId, now, dst.id);
+    upd.run((src.quantity || 0) + take, userId, now, src.id);
+    touched.add(dst.id); touched.add(src.id);
+    return -take;
+  }
+  upd.run((src.quantity || 0) - qty, userId, now, src.id);
+  touched.add(src.id);
+  if (dst) { upd.run((dst.quantity || 0) + qty, userId, now, dst.id); touched.add(dst.id); }
+  else {
+    const nid = crypto.randomUUID();
+    db.prepare('INSERT INTO items (id,name,category,unit,quantity,min_stock,estado,notes,costo,photo_id,project_id,updated_by,updated_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(nid, src.name, src.category, src.unit || '', qty, 0, src.estado || 'OPERATIVA', '', src.costo || 0, src.photo_id || null, dest, userId, now, now);
+    touched.add(nid);
+  }
+  return qty;
+}
+function broadcastItems(touched) {
+  const out = [];
+  for (const iid of touched) {
+    const r = db.prepare('SELECT * FROM items WHERE id = ?').get(iid);
+    if (r) { broadcast({ table: 'items', eventType: 'UPDATE', new: r, old: null }); out.push(r); }
+  }
+  return out;
+}
+
 app.post('/api/mov', (req, res) => {
   const u = getUser(req);
   if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
@@ -1605,56 +1662,59 @@ app.post('/api/mov', (req, res) => {
 
   const b = req.body || {};
   const tipo = b.tipo === 'entrada' ? 'entrada' : 'salida';
-  const lines = Array.isArray(b.items) ? b.items : [];
   const origen = b.origen_id || (tipo === 'salida' ? 'bodega' : '');
   const destino = b.destino_id || (tipo === 'entrada' ? 'bodega' : '');
-
-  // Campos del documento (el autor y el stock los pone el servidor).
-  const fields = { tipo, origen_id: origen || null, destino_id: destino || null, items: JSON.stringify(lines) };
-  for (const k of MOV_FIELDS) if (k !== 'tipo' && k !== 'origen_id' && k !== 'destino_id') fields[k] = b[k] || '';
-
   const now = new Date().toISOString();
 
   const existing = b.id ? db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(b.id) : null;
   if (b.id && !existing) return res.json({ error: { message: 'Vale no encontrado' } });
 
-  // Líneas que mueven stock. Se enlazan por item_id; si no viene, se RESUELVEN
-  // automáticamente buscando en el inventario del ORIGEN un artículo con el mismo
-  // nombre (lo que hace el traspaso automático aunque la línea se escriba a mano).
-  const stockLines = [];
-  for (const l of lines) {
-    const cant = Math.round(Number(l && l.cant) || 0);
-    if (!l || cant <= 0) continue;
-    let itemId = l.item_id;
-    if (!itemId && origen && (l.desc || '').trim()) {
-      const found = db.prepare('SELECT id FROM items WHERE project_id = ? AND lower(trim(name)) = lower(trim(?)) LIMIT 1')
-        .get(origen, (l.desc || '').trim());
-      if (found) itemId = found.id;
-    }
-    if (itemId) stockLines.push({ item_id: itemId, cant });
+  // Lo que este vale YA movió (según sus líneas guardadas).
+  const prevByKey = new Map(), prevE = new Map();
+  for (const l of movParse(existing && existing.items)) {
+    const a = l && l.ap;
+    if (!a || !a.s || !(a.c > 0)) continue;
+    if (!db.prepare('SELECT id FROM items WHERE id = ?').get(a.s)) continue;
+    const k = `${a.s}|${a.o}|${a.d}`;
+    prevByKey.set(k, (prevByKey.get(k) || 0) + a.c); prevE.set(k, a);
   }
 
-  // Se aplica el stock cuando hay líneas enlazadas y aún NO se ha aplicado en este vale.
-  // (Al crear: nunca se aplicó. Al editar: sólo si quedó pendiente, p. ej. se creó sin artículos o sin destino.)
-  const yaAplicado = !!(existing && existing.stock_aplicado);
-  const aplicarStock = stockLines.length > 0 && !yaAplicado;
-
-  if (aplicarStock) {
-    if (!origen) return res.json({ error: { message: 'Elegí la ubicación de origen (de dónde salen los artículos).' } });
-    if (!destino) return res.json({ error: { message: 'Elegí la ubicación de destino (a dónde van los artículos).' } });
-    if (origen === destino) return res.json({ error: { message: 'El origen y el destino no pueden ser el mismo.' } });
-    for (const l of stockLines) {
-      const src = db.prepare('SELECT * FROM items WHERE id = ?').get(l.item_id);
-      if (!src) return res.json({ error: { message: 'Un artículo enlazado ya no existe en el inventario.' } });
-      if (src.project_id !== origen) return res.json({ error: { message: `"${src.name}" no está en el origen seleccionado.` } });
-      if (l.cant > (src.quantity || 0)) return res.json({ error: { message: `No hay suficiente "${src.name}" en el origen (hay ${src.quantity || 0}, pedís ${l.cant}).` } });
-    }
+  // Lo que el vale pide ahora: cada línea se resuelve contra el inventario del origen.
+  const lines = (Array.isArray(b.items) ? b.items : []).map(l => { const x = { ...(l || {}) }; delete x.ap; return x; });
+  const puedeMover = origen && destino && origen !== destino;
+  if (puedeMover) for (const l of lines) {
+    const cant = Math.round(Number(l.cant) || 0);
+    if (cant <= 0) continue;
+    const src = movResolveSrc(l, origen);
+    if (!src) continue;
+    l.item_id = src.id;
+    l.ap = { s: src.id, o: origen, d: destino, c: cant };
   }
 
-  fields.stock_aplicado = aplicarStock ? 1 : (existing ? (existing.stock_aplicado || 0) : 0);
+  // Verifica stock por artículo: si no alcanza, esa parte NO se mueve (queda pendiente) y se avisa.
+  const pendientes = [];
+  const groups = new Map();
+  for (const l of lines) if (l.ap) { const k = `${l.ap.s}|${l.ap.o}|${l.ap.d}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(l); }
+  for (const [k, ls] of groups) {
+    const want = ls.reduce((s, l) => s + l.ap.c, 0), had = prevByKey.get(k) || 0, delta = want - had;
+    if (delta <= 0) continue;
+    const src = db.prepare('SELECT * FROM items WHERE id = ?').get(ls[0].ap.s);
+    const disp = src ? (src.quantity || 0) : 0;
+    if (disp >= delta) continue;
+    let allow = had;   // se mantiene sólo lo que ya estaba movido
+    for (const l of ls) { const c = Math.min(l.ap.c, allow); allow -= c; if (c > 0) l.ap.c = c; else delete l.ap; }
+    pendientes.push(`"${src ? src.name : 'artículo'}": hay ${disp} en ${movLocName(origen)}, faltan ${delta - disp}`);
+  }
+
+  const wantByKey = new Map(), wantE = new Map();
+  for (const l of lines) if (l.ap) { const k = `${l.ap.s}|${l.ap.o}|${l.ap.d}`; wantByKey.set(k, (wantByKey.get(k) || 0) + l.ap.c); wantE.set(k, l.ap); }
+
+  const fields = { tipo, origen_id: origen || null, destino_id: destino || null, items: JSON.stringify(lines), stock_aplicado: wantByKey.size ? 1 : 0 };
+  for (const k of MOV_FIELDS) if (k !== 'tipo' && k !== 'origen_id' && k !== 'destino_id') fields[k] = b[k] || '';
 
   const movId = b.id || crypto.randomUUID();
   const touched = new Set();
+  let moved = 0, devuelto = 0;
   try {
     tx(() => {
       if (b.id) {
@@ -1666,27 +1726,14 @@ app.post('/api/mov', (req, res) => {
         const vals = [movId, ...Object.keys(fields).map(k => fields[k]), u.id, now, now];
         db.prepare(`INSERT INTO equipo_movs (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...vals);
       }
-
-      if (aplicarStock) {
-        for (const l of stockLines) {
-          const src = db.prepare('SELECT * FROM items WHERE id = ?').get(l.item_id);
-          db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?')
-            .run((src.quantity || 0) - l.cant, u.id, now, src.id);
-          touched.add(src.id);
-
-          const dst = db.prepare('SELECT * FROM items WHERE project_id = ? AND lower(name) = lower(?) AND category = ? LIMIT 1')
-            .get(destino, src.name, src.category);
-          if (dst) {
-            db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?')
-              .run((dst.quantity || 0) + l.cant, u.id, now, dst.id);
-            touched.add(dst.id);
-          } else {
-            const nid = crypto.randomUUID();
-            db.prepare('INSERT INTO items (id,name,category,unit,quantity,min_stock,estado,notes,photo_id,project_id,updated_by,updated_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-              .run(nid, src.name, src.category, src.unit || '', l.cant, 0, src.estado || 'OPERATIVA', '', src.photo_id || null, destino, u.id, now, now);
-            touched.add(nid);
-          }
-        }
+      const allKeys = new Set([...prevByKey.keys(), ...wantByKey.keys()]);
+      for (const k of allKeys) {   // primero devoluciones (líneas quitadas o reducidas)
+        const delta = (wantByKey.get(k) || 0) - (prevByKey.get(k) || 0);
+        if (delta < 0) { const e = prevE.get(k); devuelto += -movTransfer(e.s, e.d, delta, u.id, now, touched); }
+      }
+      for (const k of allKeys) {   // luego traspasos nuevos
+        const delta = (wantByKey.get(k) || 0) - (prevByKey.get(k) || 0);
+        if (delta > 0) { const e = wantE.get(k); movTransfer(e.s, e.d, delta, u.id, now, touched); moved++; }
       }
     });
   } catch (e) {
@@ -1695,13 +1742,132 @@ app.post('/api/mov', (req, res) => {
 
   const movRow = db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(movId);
   broadcast({ table: 'equipo_movs', eventType: b.id ? 'UPDATE' : 'INSERT', new: movRow, old: null });
-  const items = [];
-  for (const iid of touched) {
-    const r = db.prepare('SELECT * FROM items WHERE id = ?').get(iid);
-    if (r) { broadcast({ table: 'items', eventType: 'UPDATE', new: r, old: null }); items.push(r); }
-  }
-  res.json({ data: { mov: movRow, items, moved: aplicarStock ? stockLines.length : 0, yaAplicado }, error: null });
+  const items = broadcastItems(touched);
+  res.json({ data: { mov: movRow, items, moved, devuelto, pendientes, lineas: wantByKey.size, yaAplicado: prevByKey.size > 0 && !moved && !devuelto }, error: null });
 });
+
+// ── Sincronización de vales existentes con el inventario ──
+// Revisa las líneas que nunca movieron stock (sin `ap`) y las traspasa.
+// En la primera pasada (asumir = true), si el artículo YA existía en el destino antes de
+// empezar, se asume que ese vale sí lo había movido y NO se toca (para no duplicar);
+// queda marcado como "asumido" y se puede forzar a mano desde el panel de revisión.
+function movSincronizar(asumir, userId) {
+  const now = new Date().toISOString();
+  const touched = new Set();
+  const r = { vales: 0, movidas: 0, asumidas: 0, sinStock: 0, sinCoincidencia: 0 };
+  const antes = new Set(db.prepare('SELECT project_id, lower(trim(name)) AS n, category FROM items').all().map(i => `${i.project_id}|${i.n}|${i.category}`));
+  for (const v of db.prepare('SELECT * FROM equipo_movs').all()) {
+    const origen = v.origen_id || (v.tipo === 'salida' ? 'bodega' : '');
+    const destino = v.destino_id || (v.tipo === 'entrada' ? 'bodega' : '');
+    if (!origen || !destino || origen === destino) continue;
+    const lines = movParse(v.items);
+    let cambio = false;
+    try {
+      tx(() => {
+        for (const l of lines) {
+          if (!l || l.ap) continue;
+          const cant = Math.round(Number(l.cant) || 0);
+          if (cant <= 0) continue;
+          const src = movResolveSrc(l, origen);
+          if (!src) { r.sinCoincidencia++; continue; }
+          l.item_id = src.id;
+          if (asumir && antes.has(`${destino}|${String(src.name || '').trim().toLowerCase()}|${src.category}`)) {
+            l.ap = { s: src.id, o: origen, d: destino, c: cant, asumido: 1 }; r.asumidas++; cambio = true; continue;
+          }
+          const fresh = db.prepare('SELECT quantity FROM items WHERE id = ?').get(src.id);
+          if (!fresh || (fresh.quantity || 0) < cant) { r.sinStock++; continue; }
+          movTransfer(src.id, destino, cant, userId, now, touched);
+          l.ap = { s: src.id, o: origen, d: destino, c: cant };
+          r.movidas++; cambio = true;
+        }
+        if (cambio) db.prepare('UPDATE equipo_movs SET items = ?, stock_aplicado = 1 WHERE id = ?').run(JSON.stringify(lines), v.id);
+      });
+    } catch (e) { console.error('[vales] no se pudo sincronizar', v.numero || v.id, e.message); }
+    if (cambio) { r.vales++; broadcast({ table: 'equipo_movs', eventType: 'UPDATE', new: db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(v.id), old: null }); }
+  }
+  broadcastItems(touched);
+  return r;
+}
+
+// Estado línea por línea de todos los vales (para el panel de revisión).
+app.post('/api/mov/estado', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  const out = [];
+  for (const v of db.prepare('SELECT * FROM equipo_movs ORDER BY created_at DESC').all()) {
+    const origen = v.origen_id || (v.tipo === 'salida' ? 'bodega' : '');
+    const destino = v.destino_id || (v.tipo === 'entrada' ? 'bodega' : '');
+    movParse(v.items).forEach((l, idx) => {
+      if (!l) return;
+      const cant = Math.round(Number(l.cant) || 0);
+      if (cant <= 0 && !(l.desc || '').trim()) return;
+      let estado, detalle = '';
+      if (l.ap && l.ap.asumido) { estado = 'asumido'; detalle = 'Ya existía en el destino: se asumió movido para no duplicar.'; }
+      else if (l.ap) { estado = 'movido'; detalle = `${l.ap.c} movido(s)`; }
+      else if (!destino || !origen || origen === destino) { estado = 'sin_destino'; detalle = 'El vale no tiene origen/destino válidos.'; }
+      else if (cant <= 0) { estado = 'sin_cantidad'; detalle = 'Sin cantidad.'; }
+      else {
+        const src = movResolveSrc(l, origen);
+        if (!src) { estado = 'sin_coincidencia'; detalle = `No hay un artículo con ese nombre en ${movLocName(origen)}.`; }
+        else { estado = 'pendiente'; detalle = `Disponible en ${movLocName(origen)}: ${src.quantity || 0}`; }
+      }
+      out.push({ mov_id: v.id, numero: v.numero, tipo: v.tipo, fecha: v.fecha, idx, desc: l.desc || '', cant, origen, destino, estado, detalle });
+    });
+  }
+  res.json({ data: out, error: null });
+});
+
+// Forzar el traspaso de UNA línea (pendiente o asumida). Sólo admin.
+app.post('/api/mov/mover-linea', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Sólo el administrador' } });
+  const { mov_id, idx } = req.body || {};
+  const v = db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(mov_id);
+  if (!v) return res.json({ error: { message: 'Vale no encontrado' } });
+  const origen = v.origen_id || (v.tipo === 'salida' ? 'bodega' : '');
+  const destino = v.destino_id || (v.tipo === 'entrada' ? 'bodega' : '');
+  if (!origen || !destino || origen === destino) return res.json({ error: { message: 'El vale no tiene origen y destino válidos. Edítalo primero.' } });
+  const lines = movParse(v.items);
+  const l = lines[idx];
+  if (!l) return res.json({ error: { message: 'Línea no encontrada' } });
+  if (l.ap && !l.ap.asumido) return res.json({ error: { message: 'Esa línea ya movió su stock.' } });
+  const cant = Math.round(Number(l.cant) || 0);
+  if (cant <= 0) return res.json({ error: { message: 'La línea no tiene cantidad.' } });
+  const src = movResolveSrc(l, origen);
+  if (!src) return res.json({ error: { message: `No hay un artículo "${l.desc}" en ${movLocName(origen)}.` } });
+  if ((src.quantity || 0) < cant) return res.json({ error: { message: `No hay suficiente "${src.name}" en ${movLocName(origen)} (hay ${src.quantity || 0}, se necesitan ${cant}).` } });
+  const now = new Date().toISOString();
+  const touched = new Set();
+  try {
+    tx(() => {
+      movTransfer(src.id, destino, cant, u.id, now, touched);
+      l.item_id = src.id;
+      l.ap = { s: src.id, o: origen, d: destino, c: cant };
+      db.prepare('UPDATE equipo_movs SET items = ?, stock_aplicado = 1, updated_at = ? WHERE id = ?').run(JSON.stringify(lines), now, v.id);
+    });
+  } catch (e) { return res.json({ error: { message: e.message } }); }
+  broadcast({ table: 'equipo_movs', eventType: 'UPDATE', new: db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(v.id), old: null });
+  broadcastItems(touched);
+  res.json({ data: { ok: true, nombre: src.name, cant, destino: movLocName(destino) }, error: null });
+});
+
+// Reintentar las líneas pendientes de todos los vales (sin asumir nada). Sólo admin.
+app.post('/api/mov/sincronizar', (req, res) => {
+  const u = getUser(req);
+  if (!u) return res.status(401).json({ error: { message: 'No autenticado' } });
+  if (u.role !== 'admin') return res.status(403).json({ error: { message: 'Sólo el administrador' } });
+  res.json({ data: movSincronizar(false, u.id), error: null });
+});
+
+// Primera sincronización automática de los vales existentes (una sola vez).
+try {
+  if (!db.prepare('SELECT value FROM meta WHERE key = ?').get('vales_stock_v2')) {
+    const r = movSincronizar(true, null);
+    db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('vales_stock_v2', JSON.stringify({ at: new Date().toISOString(), ...r }));
+    console.log('[vales] sincronización inicial:', JSON.stringify(r));
+  }
+} catch (e) { console.error('[vales] sincronización inicial falló:', e.message); }
 
 // Saldos por cuenta en un rango: base del balance de comprobación, el estado
 // de resultados y el balance general (el front arma cada vista con esto).

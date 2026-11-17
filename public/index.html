@@ -3600,7 +3600,8 @@ async function deleteRuta(id){
 async function renderTransfers(){
   setTopbar('Transferencias y Vales');
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-sm btn-primary" onclick="showMovModal('salida')">📤 Salida</button> <button class="btn btn-sm btn-ghost" onclick="showMovModal('entrada')">📥 Entrada</button>`;
+    `<button class="btn btn-sm btn-primary" onclick="showMovModal('salida')">📤 Salida</button> <button class="btn btn-sm btn-ghost" onclick="showMovModal('entrada')">📥 Entrada</button>`
+    + (state.isAdmin?` <button class="btn btn-sm btn-ghost" onclick="showMovEstado()">🔎 Revisar vs inventario</button>`:'');
   document.getElementById('view').innerHTML = `<div style="padding:20px 24px;max-width:880px">
     <div id="movList"><div class="nodata" style="padding:30px">Cargando vales…</div></div>
     <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:26px 0 10px">Movimientos rápidos de inventario</h3>
@@ -3610,6 +3611,67 @@ async function renderTransfers(){
   mstate.movs = data || [];
   const list=document.getElementById('movList'); if(list) list.innerHTML = movListHtml(mstate.movs);
   const qt=document.getElementById('quickTransfers'); if(qt) qt.innerHTML = quickTransfersHtml();
+}
+// ── Revisión de vales vs inventario (línea por línea) ──
+const MOV_EST_UI={
+  movido:['✔ Movido','#16A34A'],
+  asumido:['≈ Asumido','#2563EB'],
+  pendiente:['⏳ Pendiente','#D97706'],
+  sin_coincidencia:['✖ Sin coincidencia','#DC2626'],
+  sin_destino:['✖ Sin origen/destino','#DC2626'],
+  sin_cantidad:['— Sin cantidad','#6B7280']
+};
+function movLoc(id){ return id==='bodega'?'Depósito':(projName(id)||id||'—'); }
+async function showMovEstado(filtro){
+  openModal(`<div class="modal-head"><h2>Vales vs inventario</h2><button class="overlay-close" onclick="closeModal()">×</button></div><div class="modal-body"><div class="nodata" style="padding:24px">Revisando…</div></div>`);
+  const r=await apiPost('/api/mov/estado',{});
+  if(r.error){ showToast(r.error.message,'err'); return; }
+  const all=r.data||[];
+  const f=filtro||'atencion';
+  const cnt=k=>all.filter(x=>x.estado===k).length;
+  const atencion=x=>['pendiente','asumido','sin_coincidencia','sin_destino'].includes(x.estado);
+  const rows=all.filter(x=>f==='todas'?true:f==='atencion'?atencion(x):x.estado===f);
+  const chip=(k,l)=>`<span class="chip ${f===k?'active':''}" onclick="showMovEstado('${k}')">${l}</span>`;
+  document.getElementById('modalBox').innerHTML=`
+  <div class="modal-head"><h2>Vales vs inventario</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body" style="max-height:72vh;overflow:auto">
+    <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">Cada línea de cada vale y si ya movió su stock del <b>origen</b> al <b>destino</b>. Los traspasos se hacen solos; aquí ves lo que quedó pendiente.</div>
+    <div class="filter-chips" style="margin-bottom:10px">
+      ${chip('atencion','Requieren atención ('+all.filter(atencion).length+')')}
+      ${chip('movido','Movidas ('+cnt('movido')+')')}
+      ${chip('asumido','Asumidas ('+cnt('asumido')+')')}
+      ${chip('pendiente','Pendientes ('+cnt('pendiente')+')')}
+      ${chip('sin_coincidencia','Sin coincidencia ('+cnt('sin_coincidencia')+')')}
+      ${chip('todas','Todas ('+all.length+')')}
+    </div>
+    ${cnt('pendiente')?`<div style="margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="sincronizarVales()">🔄 Reintentar todas las pendientes</button></div>`:''}
+    <div class="item-table"><table>
+      <thead><tr><th>Vale</th><th>Artículo</th><th style="text-align:right">Cant.</th><th>Origen → Destino</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${rows.length===0?`<tr><td colspan="6"><div class="empty-state">${f==='atencion'?'✔ Todo cuadra: no hay líneas pendientes.':'Sin líneas en este filtro.'}</div></td></tr>`:rows.map(x=>{ const e=MOV_EST_UI[x.estado]||[x.estado,'#6B7280']; return `<tr>
+        <td style="white-space:nowrap;font-size:12px"><b>${esc(x.numero||'—')}</b><div style="font-size:10px;color:var(--c-muted)">${x.tipo==='salida'?'Salida':'Entrada'} · ${esc(x.fecha||'')}</div></td>
+        <td style="font-size:12px">${esc(x.desc||'—')}</td>
+        <td style="text-align:right;font-weight:700">${x.cant||'—'}</td>
+        <td style="font-size:11px;color:var(--c-muted)">${esc(movLoc(x.origen))} → <b style="color:var(--c-text)">${esc(movLoc(x.destino))}</b></td>
+        <td><span style="font-size:11px;font-weight:700;color:${e[1]}">${e[0]}</span><div style="font-size:10px;color:var(--c-muted)">${esc(x.detalle||'')}</div></td>
+        <td style="text-align:right">${(x.estado==='pendiente'||x.estado==='asumido')?`<button class="btn btn-sm ${x.estado==='pendiente'?'btn-primary':'btn-ghost'}" onclick="moverLineaVale('${x.mov_id}',${x.idx},'${f}')">Mover ahora</button>`:''}</td>
+      </tr>`; }).join('')}</tbody>
+    </table></div>
+    <div style="font-size:10px;color:var(--c-muted);margin-top:8px"><b>Asumida</b> = el artículo ya existía en el destino cuando se revisaron los vales antiguos, así que no se tocó para no duplicar. Si en realidad nunca llegó, toca <b>Mover ahora</b>. <b>Sin coincidencia</b> = el nombre de la línea no está en el inventario del origen (edita el vale y elige el artículo de la lista).</div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button></div>`;
+}
+async function moverLineaVale(movId, idx, filtro){
+  const r=await apiPost('/api/mov/mover-linea',{mov_id:movId, idx});
+  if(r.error){ showToast(r.error.message,'err'); return; }
+  showToast(`✔ ${r.data.cant} "${r.data.nombre}" traspasado(s) a ${r.data.destino}`,'ok');
+  showMovEstado(filtro);
+}
+async function sincronizarVales(){
+  const r=await apiPost('/api/mov/sincronizar',{});
+  if(r.error){ showToast(r.error.message,'err'); return; }
+  const d=r.data||{};
+  showToast(`Sincronización: ${d.movidas||0} línea(s) traspasada(s)${d.sinStock?` · ${d.sinStock} sin stock suficiente`:''}${d.sinCoincidencia?` · ${d.sinCoincidencia} sin coincidencia`:''}`, d.sinStock||d.sinCoincidencia?'err':'ok');
+  showMovEstado('atencion');
 }
 
 function movBadge(tipo){
@@ -3770,9 +3832,13 @@ async function saveMov(tipo, id){
   const r=await apiPost('/api/mov', payload);
   if(r.error){ showToast(r.error.message,'err'); return; }
   closeModal();
-  const moved=(r.data&&r.data.moved)||0;
-  if(moved>0) showToast(`✔ ${moved} artículo(s) movido(s): restados del origen y sumados al destino.`,'ok');
-  else if(r.data&&r.data.yaAplicado) showToast('Vale actualizado (el stock ya se había movido antes).','ok');
+  const dd=r.data||{}, moved=dd.moved||0, dev=dd.devuelto||0, pend=dd.pendientes||[];
+  const partes=[];
+  if(moved>0) partes.push(`✔ ${moved} artículo(s) traspasado(s) al destino`);
+  if(dev>0) partes.push(`↩ ${dev} unidad(es) devueltas al origen`);
+  if(pend.length) partes.push(`⚠ Sin stock suficiente: ${pend.join(' · ')}`);
+  if(partes.length) showToast(partes.join(' — '), pend.length?'err':'ok');
+  else if(dd.lineas>0) showToast('Vale actualizado · el inventario ya estaba al día.','ok');
   else showToast('Guardado como documento. No se movió stock: elige Origen y Destino y que la descripción coincida con un artículo del inventario del origen.','err');
   renderTransfers();
 }
