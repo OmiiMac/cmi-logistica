@@ -997,7 +997,7 @@ function setupRealtime(){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('licitaciones');
       } else if(['campanas','publicaciones','mercadeo_tareas','mkt_piezas','mkt_push','mkt_efemerides','mkt_biblioteca'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('mercadeo');
-      } else if(['pp_inventario','pp_entregas','pp_ordenes','pp_devoluciones','pp_eventos','pp_clientes','pp_visitas'].includes(table)){
+      } else if(['pp_inventario','pp_entregas','pp_ordenes','pp_devoluciones','pp_eventos','pp_clientes','pp_visitas','pp_leads'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else if(state.view==='paintpro') renderPaintPro();
       }
     } catch(ex){}
@@ -4623,12 +4623,13 @@ function renderPaintPro(){
   setTopbar('Paint Pro','Venta de pintura');
   const ta=document.getElementById('topbarActions'); if(ta) ta.innerHTML='';
   const tab=state.ppTab||'panel';
-  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['clientes','👥 Clientes'],['visitas','🗒️ Visitas'],['entregas','🚚 Entregas'],['ordenes','🧾 Órdenes de compra'],['devoluciones','↩️ Devoluciones'],['calendario','📅 Calendario']];
+  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['clientes','👥 Clientes'],['seguimiento','🎯 Seguimiento'],['visitas','🗒️ Visitas'],['entregas','🚚 Entregas'],['ordenes','🧾 Órdenes de compra'],['devoluciones','↩️ Devoluciones'],['calendario','📅 Calendario']];
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px">
     <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="white-space:nowrap" onclick="state.ppTab='${k}';renderPaintPro()">${l}</span>`).join('')}</div>
     <div id="ppBody"><div class="nodata" style="padding:24px">Cargando…</div></div></div>`;
   if(tab==='inventario') renderPpInventario();
   else if(tab==='clientes') renderPpClientes();
+  else if(tab==='seguimiento') renderPpLeads();
   else if(tab==='visitas') renderPpVisitas();
   else if(tab==='entregas') renderPpEntregas();
   else if(tab==='ordenes') renderPpOrdenes();
@@ -4749,6 +4750,86 @@ async function savePpCli(id){
   const n=g('pcNombre').trim(); if(!n){ showToast('Escribe el nombre','err'); return; }
   const values={nombre:n,empresa:g('pcEmpresa').trim(),tipo:g('pcTipo'),telefono:g('pcTel').trim(),email:g('pcEmail').trim(),direccion:g('pcDir').trim(),ruc:g('pcRuc').trim(),notas:g('pcNotas').trim()};
   let d; if(id){ d=await api('/api/update',{table:'pp_clientes',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_clientes',values:{...values,created_at:new Date().toISOString()}}); }
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  closeModal(); showToast('Guardado','ok'); renderPaintPro();
+}
+
+// ── Paint Pro: Base de seguimiento de clientes (leads / CRM) ──
+const PP_PRIORIDAD=[['alta','Alta','#7C3AED'],['media','Media','#2563EB'],['baja','Baja','#06B6D4']];
+const PP_TIPO=[['constructora','Constructora','#F97316'],['subcontratista','Subcontratista','#0EA5E9'],['ph','PH','#EAB308'],['proveedor','Proveedor','#14B8A6'],['otro','Otro','#EC4899']];
+const PP_LEAD_EST=[['contactado','Contactado','#0EA5E9'],['licitacion','Licitación','#6B7280'],['visita','Visita','#CA8A04'],['visita_correo','Visita + Correo','#EA580C'],['cotizacion_visita','Cotización + Visita','#EAB308'],['cotizacion','Cotización enviada','#2563EB'],['cotizacion_aprobada','Cotización Aprobada','#16A34A'],['cerrado','Cerrado / Ganado','#166534'],['descartado','Descartado','#DC2626']];
+// Select de colores (chip editable) para prioridad/tipo/estado
+function ppColoredSelect(list,value,onchange){ const e=(list.find(x=>x[0]===value)||list[0]||['','','#6B7280']); return `<select onchange="${onchange}" style="font-size:11px;font-weight:700;padding:3px 7px;border-radius:7px;border:none;color:#fff;cursor:pointer;background:${e[2]}">${list.map(([k,l])=>`<option value="${k}" ${value===k?'selected':''} style="background:#fff;color:#111">${l}</option>`).join('')}</select>`; }
+async function setPpField(table,id,field,value){ const v={}; v[field]=value; const d=await api('/api/update',{table,values:v,filters:[{col:'id',val:id}]}); if(d.error){ showToast('Error','err'); return; } renderPaintPro(); }
+async function renderPpLeads(){
+  const b=document.getElementById('ppBody'); if(!b) return;
+  const d=await api('/api/select',{table:'pp_leads',order:[{col:'created_at',asc:false}],limit:5000});
+  if((state.ppTab||'panel')!=='seguimiento') return;
+  const leads=d.data||[]; state._ppLeads=leads;
+  const f=state.ppLeadFilter||'all';
+  const shown=leads.filter(l=>f==='all'||l.estado===f);
+  const lbl=(list,v)=>(list.find(x=>x[0]===v)||[v,v])[1];
+  const estChip=v=>{ const e=PP_LEAD_EST.find(x=>x[0]===v)||[v,v,'#6B7280']; return e; };
+  const cntE=k=>leads.filter(l=>l.estado===k).length;
+  const ganados=leads.filter(l=>l.estado==='cotizacion_aprobada'||l.estado==='cerrado').length;
+  const chipF=(k,l)=>`<span class="chip ${f===k?'active':''}" onclick="state.ppLeadFilter='${k}';renderPaintPro()">${l}</span>`;
+  b.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
+      ${kpiTile('Clientes en seguimiento',leads.length,'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Cotización aprobada',cntE('cotizacion_aprobada'),'#166534','#DCFCE7')}
+      ${kpiTile('En licitación',cntE('licitacion'),'#6B7280','#F3F4F6')}
+      ${kpiTile('Contactados',cntE('contactado'),'#0EA5E9','#E0F2FE')}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div class="filter-chips">${chipF('all','Todos')}${PP_LEAD_EST.map(e=>chipF(e[0],e[1])).join('')}</div>
+      <button class="btn btn-sm btn-primary" onclick="showPpLeadModal()">+ Cliente</button>
+    </div>
+    <div class="item-table"><table>
+      <thead><tr><th>Cliente</th><th>Prioridad</th><th>Tipo</th><th>Proyecto / Interés</th><th>Contacto</th><th>Cargo</th><th>Teléfono</th><th>Correo</th><th>Estado del Lead</th><th></th></tr></thead>
+      <tbody>${shown.length===0?`<tr><td colspan="10"><div class="empty-state">Sin clientes en seguimiento${f!=='all'?' con ese estado':''}. Agrega con "+ Cliente".</div></td></tr>`:shown.map(l=>`
+        <tr>
+          <td><b style="font-size:13px">${esc(l.cliente||'')}</b></td>
+          <td>${ppColoredSelect(PP_PRIORIDAD,l.prioridad||'media',`setPpField('pp_leads','${l.id}','prioridad',this.value)`)}</td>
+          <td>${ppColoredSelect(PP_TIPO,l.tipo||'otro',`setPpField('pp_leads','${l.id}','tipo',this.value)`)}</td>
+          <td style="font-size:12px">${esc(l.proyecto||'')}</td>
+          <td style="font-size:12px">${esc(l.contacto||'')}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(l.cargo||'')}</td>
+          <td style="font-size:12px;white-space:nowrap">${l.telefono?`<a href="tel:${esc(l.telefono)}" style="color:var(--c-primary)">${esc(l.telefono)}</a>`:'—'}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${l.email?`<a href="mailto:${esc(l.email)}" style="color:var(--c-muted)">${esc(l.email)}</a>`:'—'}</td>
+          <td>${ppColoredSelect(PP_LEAD_EST,l.estado||'contactado',`setPpField('pp_leads','${l.id}','estado',this.value)`)}</td>
+          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpLeadModal('${l.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_leads','${l.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+        </tr>`).join('')}</tbody>
+    </table></div>`;
+}
+function showPpLeadModal(id){
+  const l=id?(state._ppLeads||[]).find(x=>x.id===id):null;
+  const selOpts=(list,v)=>list.map(([k,lab])=>`<option value="${k}" ${v===k?'selected':''}>${lab}</option>`).join('');
+  openModal(`<div class="modal-head"><h2>${l?'Editar seguimiento':'Nuevo cliente en seguimiento'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Cliente</label><input id="plCliente" value="${esc(l?.cliente||'')}" placeholder="Nombre del cliente / empresa"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Prioridad</label><select id="plPrioridad">${selOpts(PP_PRIORIDAD,l?.prioridad||'media')}</select></div>
+      <div class="form-group"><label>Tipo</label><select id="plTipo">${selOpts(PP_TIPO,l?.tipo||'otro')}</select></div>
+    </div>
+    <div class="form-group"><label>Proyecto / Interés</label><input id="plProyecto" value="${esc(l?.proyecto||'')}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Contacto</label><input id="plContacto" value="${esc(l?.contacto||'')}"></div>
+      <div class="form-group"><label>Cargo</label><input id="plCargo" value="${esc(l?.cargo||'')}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Teléfono</label><input id="plTel" value="${esc(l?.telefono||'')}"></div>
+      <div class="form-group"><label>Correo</label><input id="plEmail" value="${esc(l?.email||'')}"></div>
+    </div>
+    <div class="form-group"><label>Estado del Lead</label><select id="plEstado">${selOpts(PP_LEAD_EST,l?.estado||'contactado')}</select></div>
+    <div class="form-group"><label>Notas / seguimiento</label><textarea id="plNotas" rows="2">${esc(l?.notas||'')}</textarea></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpLead(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+}
+async function savePpLead(id){
+  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
+  const c=g('plCliente').trim(); if(!c){ showToast('Escribe el cliente','err'); return; }
+  const values={cliente:c,prioridad:g('plPrioridad'),tipo:g('plTipo'),proyecto:g('plProyecto').trim(),contacto:g('plContacto').trim(),cargo:g('plCargo').trim(),telefono:g('plTel').trim(),email:g('plEmail').trim(),estado:g('plEstado'),notas:g('plNotas').trim()};
+  let d; if(id){ d=await api('/api/update',{table:'pp_leads',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_leads',values:{...values,created_at:new Date().toISOString()}}); }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
   closeModal(); showToast('Guardado','ok'); renderPaintPro();
 }

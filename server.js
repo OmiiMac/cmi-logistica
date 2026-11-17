@@ -391,6 +391,11 @@ CREATE TABLE IF NOT EXISTS pp_visitas (
   motivo TEXT, estado TEXT DEFAULT 'programada', lugar TEXT, reporte_file TEXT, notas TEXT,
   created_by TEXT, created_at TEXT, updated_at TEXT
 );
+CREATE TABLE IF NOT EXISTS pp_leads (
+  id TEXT PRIMARY KEY, cliente TEXT, prioridad TEXT DEFAULT 'media', tipo TEXT, proyecto TEXT,
+  contacto TEXT, cargo TEXT, telefono TEXT, email TEXT, estado TEXT DEFAULT 'contactado',
+  notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
+);
 
 -- Mercadeo: calendario de mensajes push (planificación, por empresa)
 CREATE TABLE IF NOT EXISTS mkt_push (
@@ -654,7 +659,8 @@ const SCHEMA = {
   pp_devoluciones: ['id', 'fecha', 'cliente', 'producto', 'cantidad', 'motivo', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_eventos:      ['id', 'fecha', 'hora', 'titulo', 'tipo', 'color', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_clientes:     ['id', 'nombre', 'empresa', 'telefono', 'email', 'direccion', 'ruc', 'tipo', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_visitas:      ['id', 'fecha', 'hora', 'titulo', 'cliente', 'responsable', 'motivo', 'estado', 'lugar', 'reporte_file', 'notas', 'created_by', 'created_at', 'updated_at']
+  pp_visitas:      ['id', 'fecha', 'hora', 'titulo', 'cliente', 'responsable', 'motivo', 'estado', 'lugar', 'reporte_file', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_leads:        ['id', 'cliente', 'prioridad', 'tipo', 'proyecto', 'contacto', 'cargo', 'telefono', 'email', 'estado', 'notas', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
@@ -670,7 +676,7 @@ const TABLE_MODULE = {
   licitaciones: 'licit',
   lic_competidores: 'licit',
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt',
-  pp_inventario: 'paintpro', pp_entregas: 'paintpro', pp_ordenes: 'paintpro', pp_devoluciones: 'paintpro', pp_eventos: 'paintpro', pp_clientes: 'paintpro', pp_visitas: 'paintpro'
+  pp_inventario: 'paintpro', pp_entregas: 'paintpro', pp_ordenes: 'paintpro', pp_devoluciones: 'paintpro', pp_eventos: 'paintpro', pp_clientes: 'paintpro', pp_visitas: 'paintpro', pp_leads: 'paintpro'
 };
 const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt', paintpro: 'paintpro' };
 // Salas de chat restringidas (heredan el permiso del módulo). Las demás
@@ -1296,6 +1302,7 @@ function canWrite(table, op, user, values, filters) {
     case 'pp_eventos':
     case 'pp_clientes':
     case 'pp_visitas':
+    case 'pp_leads':
       return roleCan('paintpro', user);
     default:
       return false;
