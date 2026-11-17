@@ -542,6 +542,7 @@ ensureColumn('messages', 'file_id', 'TEXT');
 ensureColumn('items', 'photo_id', 'TEXT');
 ensureColumn('equipo_movs', 'origen_id', 'TEXT');
 ensureColumn('equipo_movs', 'destino_id', 'TEXT');
+ensureColumn('equipo_movs', 'stock_aplicado', 'INTEGER');   // 1 = el movimiento de stock ya se aplicó
 ensureColumn('profiles', 'restrict_mods', 'TEXT'); // módulos ocultos para este usuario (ej: 'conta,licit')
 ensureColumn('profiles', 'phone', 'TEXT');          // teléfono para avisos por WhatsApp (formato +503...)
 ensureColumn('profiles', 'wa_optin', 'INTEGER DEFAULT 0'); // 1 = acepta recibir avisos por WhatsApp
@@ -625,7 +626,7 @@ const SCHEMA = {
   projects:  ['id', 'name', 'address', 'supervisor', 'engineer_id', 'color', 'status', 'notes', 'created_at', 'updated_at'],
   items:     ['id', 'name', 'category', 'unit', 'quantity', 'min_stock', 'estado', 'notes', 'obs_noop', 'costo', 'photo_id', 'project_id', 'updated_by', 'updated_at', 'created_at'],
   transfers: ['id', 'item_name', 'from_project', 'to_project', 'quantity', 'unit', 'by_user', 'notes', 'date'],
-  equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'origen_id', 'destino_id', 'created_by', 'created_at', 'updated_at'],
+  equipo_movs: ['id', 'tipo', 'numero', 'fecha', 'proyecto_motivo', 'placa', 'responsable', 'cedula', 'cargo', 'tel', 'sitio', 'supervisor', 'fecha_mov', 'fecha_ret', 'condicion', 'observaciones', 'firma_sol', 'firma_aut', 'firma_sup', 'items', 'origen_id', 'destino_id', 'stock_aplicado', 'created_by', 'created_at', 'updated_at'],
   rutas:     ['id', 'date', 'hora', 'origen', 'destino', 'conductor', 'descripcion', 'status', 'placa', 'tipo_carga', 'cliente', 'costo_flete', 'km_salida', 'km_entrada', 'observaciones', 'recibido_por', 'comprobante_file', 'updated_by', 'updated_at', 'created_at'],
   vehiculos: ['id', 'placa', 'nombre', 'km_actual', 'activo', 'condicion', 'created_at'],
   combustible: ['id', 'placa', 'vehiculo_id', 'fecha', 'monto', 'galones', 'km', 'estacion', 'notas', 'created_by', 'created_at'],
@@ -1612,23 +1613,20 @@ app.post('/api/mov', (req, res) => {
 
   const now = new Date().toISOString();
 
-  // ── EDICIÓN: sólo actualiza el documento, sin tocar stock ──
-  if (b.id) {
-    const keys = Object.keys(fields);
-    db.prepare(`UPDATE equipo_movs SET ${keys.map(k => `"${k}" = ?`).join(',')}, updated_at = ? WHERE id = ?`)
-      .run(...keys.map(k => fields[k]), now, b.id);
-    const row = db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(b.id);
-    if (!row) return res.json({ error: { message: 'Vale no encontrado' } });
-    broadcast({ table: 'equipo_movs', eventType: 'UPDATE', new: row, old: null });
-    return res.json({ data: { mov: row, items: [] }, error: null });
-  }
+  const existing = b.id ? db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(b.id) : null;
+  if (b.id && !existing) return res.json({ error: { message: 'Vale no encontrado' } });
 
-  // ── NUEVO: aplica stock a las líneas enlazadas ──
+  // Líneas enlazadas al inventario que mueven stock.
   const stockLines = lines
     .filter(l => l && l.item_id && Math.round(Number(l.cant) || 0) > 0)
     .map(l => ({ item_id: l.item_id, cant: Math.round(Number(l.cant) || 0) }));
 
-  if (stockLines.length) {
+  // Se aplica el stock cuando hay líneas enlazadas y aún NO se ha aplicado en este vale.
+  // (Al crear: nunca se aplicó. Al editar: sólo si quedó pendiente, p. ej. se creó sin artículos o sin destino.)
+  const yaAplicado = !!(existing && existing.stock_aplicado);
+  const aplicarStock = stockLines.length > 0 && !yaAplicado;
+
+  if (aplicarStock) {
     if (!origen) return res.json({ error: { message: 'Elegí la ubicación de origen (de dónde salen los artículos).' } });
     if (!destino) return res.json({ error: { message: 'Elegí la ubicación de destino (a dónde van los artículos).' } });
     if (origen === destino) return res.json({ error: { message: 'El origen y el destino no pueden ser el mismo.' } });
@@ -1640,31 +1638,41 @@ app.post('/api/mov', (req, res) => {
     }
   }
 
-  const movId = crypto.randomUUID();
+  fields.stock_aplicado = aplicarStock ? 1 : (existing ? (existing.stock_aplicado || 0) : 0);
+
+  const movId = b.id || crypto.randomUUID();
   const touched = new Set();
   try {
     tx(() => {
-      const keys = ['id', ...Object.keys(fields), 'created_by', 'created_at', 'updated_at'];
-      const vals = [movId, ...Object.keys(fields).map(k => fields[k]), u.id, now, now];
-      db.prepare(`INSERT INTO equipo_movs (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...vals);
+      if (b.id) {
+        const keys = Object.keys(fields);
+        db.prepare(`UPDATE equipo_movs SET ${keys.map(k => `"${k}" = ?`).join(',')}, updated_at = ? WHERE id = ?`)
+          .run(...keys.map(k => fields[k]), now, b.id);
+      } else {
+        const keys = ['id', ...Object.keys(fields), 'created_by', 'created_at', 'updated_at'];
+        const vals = [movId, ...Object.keys(fields).map(k => fields[k]), u.id, now, now];
+        db.prepare(`INSERT INTO equipo_movs (${keys.map(k => `"${k}"`).join(',')}) VALUES (${keys.map(() => '?').join(',')})`).run(...vals);
+      }
 
-      for (const l of stockLines) {
-        const src = db.prepare('SELECT * FROM items WHERE id = ?').get(l.item_id);
-        db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?')
-          .run((src.quantity || 0) - l.cant, u.id, now, src.id);
-        touched.add(src.id);
-
-        const dst = db.prepare('SELECT * FROM items WHERE project_id = ? AND lower(name) = lower(?) AND category = ? LIMIT 1')
-          .get(destino, src.name, src.category);
-        if (dst) {
+      if (aplicarStock) {
+        for (const l of stockLines) {
+          const src = db.prepare('SELECT * FROM items WHERE id = ?').get(l.item_id);
           db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?')
-            .run((dst.quantity || 0) + l.cant, u.id, now, dst.id);
-          touched.add(dst.id);
-        } else {
-          const nid = crypto.randomUUID();
-          db.prepare('INSERT INTO items (id,name,category,unit,quantity,min_stock,estado,notes,photo_id,project_id,updated_by,updated_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-            .run(nid, src.name, src.category, src.unit || '', l.cant, 0, src.estado || 'OPERATIVA', '', src.photo_id || null, destino, u.id, now, now);
-          touched.add(nid);
+            .run((src.quantity || 0) - l.cant, u.id, now, src.id);
+          touched.add(src.id);
+
+          const dst = db.prepare('SELECT * FROM items WHERE project_id = ? AND lower(name) = lower(?) AND category = ? LIMIT 1')
+            .get(destino, src.name, src.category);
+          if (dst) {
+            db.prepare('UPDATE items SET quantity = ?, updated_by = ?, updated_at = ? WHERE id = ?')
+              .run((dst.quantity || 0) + l.cant, u.id, now, dst.id);
+            touched.add(dst.id);
+          } else {
+            const nid = crypto.randomUUID();
+            db.prepare('INSERT INTO items (id,name,category,unit,quantity,min_stock,estado,notes,photo_id,project_id,updated_by,updated_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+              .run(nid, src.name, src.category, src.unit || '', l.cant, 0, src.estado || 'OPERATIVA', '', src.photo_id || null, destino, u.id, now, now);
+            touched.add(nid);
+          }
         }
       }
     });
@@ -1673,7 +1681,7 @@ app.post('/api/mov', (req, res) => {
   }
 
   const movRow = db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(movId);
-  broadcast({ table: 'equipo_movs', eventType: 'INSERT', new: movRow, old: null });
+  broadcast({ table: 'equipo_movs', eventType: b.id ? 'UPDATE' : 'INSERT', new: movRow, old: null });
   const items = [];
   for (const iid of touched) {
     const r = db.prepare('SELECT * FROM items WHERE id = ?').get(iid);
