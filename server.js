@@ -1618,10 +1618,21 @@ app.post('/api/mov', (req, res) => {
   const existing = b.id ? db.prepare('SELECT * FROM equipo_movs WHERE id = ?').get(b.id) : null;
   if (b.id && !existing) return res.json({ error: { message: 'Vale no encontrado' } });
 
-  // Líneas enlazadas al inventario que mueven stock.
-  const stockLines = lines
-    .filter(l => l && l.item_id && Math.round(Number(l.cant) || 0) > 0)
-    .map(l => ({ item_id: l.item_id, cant: Math.round(Number(l.cant) || 0) }));
+  // Líneas que mueven stock. Se enlazan por item_id; si no viene, se RESUELVEN
+  // automáticamente buscando en el inventario del ORIGEN un artículo con el mismo
+  // nombre (lo que hace el traspaso automático aunque la línea se escriba a mano).
+  const stockLines = [];
+  for (const l of lines) {
+    const cant = Math.round(Number(l && l.cant) || 0);
+    if (!l || cant <= 0) continue;
+    let itemId = l.item_id;
+    if (!itemId && origen && (l.desc || '').trim()) {
+      const found = db.prepare('SELECT id FROM items WHERE project_id = ? AND lower(trim(name)) = lower(trim(?)) LIMIT 1')
+        .get(origen, (l.desc || '').trim());
+      if (found) itemId = found.id;
+    }
+    if (itemId) stockLines.push({ item_id: itemId, cant });
+  }
 
   // Se aplica el stock cuando hay líneas enlazadas y aún NO se ha aplicado en este vale.
   // (Al crear: nunca se aplicó. Al editar: sólo si quedó pendiente, p. ej. se creó sin artículos o sin destino.)
@@ -1689,7 +1700,7 @@ app.post('/api/mov', (req, res) => {
     const r = db.prepare('SELECT * FROM items WHERE id = ?').get(iid);
     if (r) { broadcast({ table: 'items', eventType: 'UPDATE', new: r, old: null }); items.push(r); }
   }
-  res.json({ data: { mov: movRow, items }, error: null });
+  res.json({ data: { mov: movRow, items, moved: aplicarStock ? stockLines.length : 0, yaAplicado }, error: null });
 });
 
 // Saldos por cuenta en un rango: base del balance de comprobación, el estado

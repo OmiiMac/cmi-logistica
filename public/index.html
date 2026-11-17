@@ -3767,9 +3767,14 @@ async function saveMov(tipo, id){
     responsable:v('mvResp'), cedula:v('mvCed'), cargo:v('mvCargo'), tel:v('mvTel'), sitio:v('mvSitio'), supervisor:v('mvSup'),
     fecha_mov:v('mvFechaMov'), fecha_ret:v('mvFechaRet'), condicion:v('mvCond'), observaciones:v('mvObs'),
     firma_sol:v('mvF1'), firma_aut:v('mvF2'), firma_sup:v('mvF3'), origen_id:origen, destino_id:destino, items };
-  const {error}=await apiPost('/api/mov', payload);
-  if(error){ showToast(error.message,'err'); return; }
-  closeModal(); showToast(id?'Vale actualizado':'Vale guardado — stock actualizado','ok'); renderTransfers();
+  const r=await apiPost('/api/mov', payload);
+  if(r.error){ showToast(r.error.message,'err'); return; }
+  closeModal();
+  const moved=(r.data&&r.data.moved)||0;
+  if(moved>0) showToast(`✔ ${moved} artículo(s) movido(s): restados del origen y sumados al destino.`,'ok');
+  else if(r.data&&r.data.yaAplicado) showToast('Vale actualizado (el stock ya se había movido antes).','ok');
+  else showToast('Guardado como documento. No se movió stock: elige Origen y Destino y que la descripción coincida con un artículo del inventario del origen.','err');
+  renderTransfers();
 }
 
 function movFormHtml(m){
