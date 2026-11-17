@@ -543,6 +543,8 @@ ensureColumn('items', 'photo_id', 'TEXT');
 ensureColumn('equipo_movs', 'origen_id', 'TEXT');
 ensureColumn('equipo_movs', 'destino_id', 'TEXT');
 ensureColumn('equipo_movs', 'stock_aplicado', 'INTEGER');   // 1 = el movimiento de stock ya se aplicó
+// Los vales existentes (de antes de este control) se consideran ya liquidados para no re-mover stock al editarlos.
+try { db.exec("UPDATE equipo_movs SET stock_aplicado = 1 WHERE stock_aplicado IS NULL"); } catch (e) {}
 ensureColumn('profiles', 'restrict_mods', 'TEXT'); // módulos ocultos para este usuario (ej: 'conta,licit')
 ensureColumn('profiles', 'phone', 'TEXT');          // teléfono para avisos por WhatsApp (formato +503...)
 ensureColumn('profiles', 'wa_optin', 'INTEGER DEFAULT 0'); // 1 = acepta recibir avisos por WhatsApp
