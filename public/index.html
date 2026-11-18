@@ -986,7 +986,7 @@ function setupRealtime(){
         }
       } else if(['asientos','cuentas','compromisos','gastos_mensuales'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('contabilidad');
-      } else if(['caja_chica','salidas_material','compras','obra_resumen','proyecto_costos','cuadrilla','asistencia'].includes(table)){
+      } else if(['caja_chica','salidas_material','compras','obra_resumen','proyecto_costos','cuadrilla','cuadrilla_grupos','asistencia'].includes(table)){
         // Movimientos de proyecto: refrescar la vista si se está viendo
         if(state.view==='project') renderProject();
         else if(state.view==='dashboard') renderDashboard();   // la tarjeta de Compras del tablero
@@ -2086,47 +2086,67 @@ function asistVistaChips(){
     <span class="chip ${v==='resumen'?'active':''}" onclick="state.asistVista='resumen';renderProject()">📊 Resumen</span>
   </div>`;
 }
+// ── Cuadrillas (grupos de trabajo) dentro del proyecto, cada una con su capataz ──
+const GRUPO_COLORS=['#2563EB','#16A34A','#D97706','#7C3AED','#DC2626','#0891B2','#DB2777','#65A30D'];
+function asistLoadGrupos(projId){ return api('/api/select',{table:'cuadrilla_grupos',filters:[{col:'project_id',val:projId}],limit:500}); }
+// Secciones por cuadrilla (orden alfabético) + "Sin cuadrilla" al final si hay personal sin asignar.
+function asistSecciones(crew, grupos, f){
+  const gs=(grupos||[]).slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const ids=new Set(gs.map(g=>g.id));
+  const secs=gs.map((g,i)=>({key:g.id, g, nombre:g.nombre, capataz:g.capataz||'', color:g.color||GRUPO_COLORS[i%GRUPO_COLORS.length], list:crew.filter(c=>c.grupo_id===g.id)}));
+  const sin=crew.filter(c=>!c.grupo_id||!ids.has(c.grupo_id));
+  if(sin.length||!gs.length) secs.push({key:'none', g:null, nombre:gs.length?'Sin cuadrilla asignada':'Personal del proyecto', capataz:'', color:'#6B7280', list:sin});
+  f=f||'all';
+  return f==='all'?secs:secs.filter(x=>x.key===f);
+}
+// Si el filtro guardado ya no existe (otro proyecto o cuadrilla eliminada) vuelve a "todas".
+function asistFiltroValido(crew, grupos){
+  const keys=asistSecciones(crew,grupos,'all').map(x=>x.key);
+  if(state.asistGrupo && state.asistGrupo!=='all' && !keys.includes(state.asistGrupo)) state.asistGrupo='all';
+  return state.asistGrupo||'all';
+}
+function asistGrupoChips(crew, grupos){
+  if(!(grupos||[]).length) return '';
+  const f=state.asistGrupo||'all';
+  const secs=asistSecciones(crew, grupos, 'all');
+  return `<div class="filter-chips" style="margin-bottom:12px;flex-wrap:wrap">
+    <span class="chip ${f==='all'?'active':''}" onclick="state.asistGrupo='all';renderProject()">Todas las cuadrillas (${crew.length})</span>
+    ${secs.map(x=>`<span class="chip ${f===x.key?'active':''}" onclick="state.asistGrupo='${x.key}';renderProject()"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${x.color};margin-right:5px;vertical-align:middle"></span>${esc(x.nombre)}${x.capataz?' · '+esc(x.capataz):''} (${x.list.length})</span>`).join('')}
+  </div>`;
+}
+function asistSecHead(x, info, right){
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--c-border);border-left:5px solid ${x.color};border-radius:10px;background:var(--c-card);margin:16px 0 6px">
+    <div style="flex:1;min-width:180px"><div style="font-weight:800;font-size:14px">${x.g?'👷 ':''}${esc(x.nombre)}</div>
+      <div style="font-size:12px;color:var(--c-muted)">${x.capataz?'Capataz: <b style="color:var(--c-text)">'+esc(x.capataz)+'</b> · ':''}${x.list.length} trabajador(es)${info?' · '+info:''}</div></div>
+    ${right||''}</div>`;
+}
 async function renderProjAsistencia(proj){
   if((state.asistVista||'dia')==='resumen') return renderAsistResumen(proj);
   const b=document.getElementById('projBody'); if(!b) return;
   b.innerHTML='<div class="nodata" style="padding:20px">Cargando asistencia…</div>';
   const fecha=state.asistFecha||todayStr();
-  const [rc,ra]=await Promise.all([
+  const [rc,ra,rg]=await Promise.all([
     api('/api/select',{table:'cuadrilla',filters:[{col:'project_id',val:proj.id}],limit:2000}),
-    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:proj.id},{col:'fecha',val:fecha}],limit:2000})
+    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:proj.id},{col:'fecha',val:fecha}],limit:2000}),
+    asistLoadGrupos(proj.id)
   ]);
   if(state.view!=='project'||state.projectId!==proj.id||(state.projTab||'')!=='asistencia') return;
   const all=rc.data||[]; state._crewCache=all;
-  const crew=all.filter(c=>c.activo!==0).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const grupos=rg.data||[]; state._gruposCache=grupos;
+  const activos=all.filter(c=>c.activo!==0).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
   const rows=ra.data||[]; state._asistCache={fecha,rows};
   const byTrab={}; rows.forEach(r=>{ byTrab[r.trabajador_id]=r; });
+  const secs=asistSecciones(activos, grupos, asistFiltroValido(activos, grupos));
+  const crew=secs.flatMap(x=>x.list);   // personal visible según la cuadrilla elegida
+  state._asistSecIds={all:crew.map(c=>c.id)}; secs.forEach(x=>{ state._asistSecIds[x.key]=x.list.map(c=>c.id); });
   const cnt=k=>crew.filter(c=>(byTrab[c.id]||{}).estado===k).length;
   const pres=cnt('presente'),tard=cnt('tarde'),just=cnt('justificado'),aus=cnt('ausente');
   const marc=pres+tard+just+aus; const sinM=crew.length-marc;
   const isHoy=fecha===todayStr();
+  const presDe=list=>list.filter(c=>['presente','tarde'].includes((byTrab[c.id]||{}).estado)).length;
   const estBtn=(c)=>{ const cur=(byTrab[c.id]||{}).estado||''; return ASIST_EST.map(([k,l,col])=>`<button onclick="setAsistencia('${c.id}','${k}')" title="${l}" style="padding:4px 9px;border-radius:7px;border:1.5px solid ${cur===k?col:'var(--c-border)'};background:${cur===k?col:'var(--c-card)'};color:${cur===k?'#fff':'var(--c-muted)'};font-size:11px;font-weight:700;cursor:pointer">${l}</button>`).join(''); };
-  b.innerHTML=`
-    ${asistVistaChips()}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
-      ${kpiTile('En la cuadrilla',crew.length,'#1D4ED8','rgba(29,78,216,.14)')}
-      ${kpiTile('Presentes',pres+tard,'#166534','rgba(22,101,52,.14)')}
-      ${kpiTile('Ausentes',aus,aus?'#DC2626':'#166534',aus?'rgba(220,38,38,.14)':'rgba(22,101,52,.14)')}
-      ${kpiTile('Sin marcar',sinM,sinM?'#D97706':'#166534',sinM?'rgba(217,119,6,.14)':'rgba(22,101,52,.14)')}
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-      <button class="nav-arrow" onclick="shiftAsistFecha(-1)">‹</button>
-      <input type="date" value="${esc(fecha)}" onchange="state.asistFecha=this.value;renderProject()" style="padding:6px 8px">
-      <button class="nav-arrow" onclick="shiftAsistFecha(1)">›</button>
-      ${isHoy?'<span style="font-size:11px;color:var(--c-ok);font-weight:700">HOY</span>':`<button class="btn btn-sm btn-ghost" onclick="state.asistFecha='';renderProject()">Ir a hoy</button>`}
-      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
-        ${puedeCaja()?`<button class="btn btn-sm btn-ghost" onclick="marcarTodos('presente')">Todos presentes</button>`:''}
-        <button class="btn btn-sm btn-ghost" onclick="imprimirAsistencia('${proj.id}')">🖨 Imprimir</button>
-        ${puedeCaja()?`<button class="btn btn-sm btn-primary" onclick="showCrewModal()">+ Trabajador</button>`:''}
-      </div>
-    </div>
-    <div class="item-table"><table>
-      <thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th>Entrada</th><th>Salida</th><th title="Horas extra del día">H. extra</th><th>Asistencia</th>${puedeCaja()?'<th></th>':''}</tr></thead>
-      <tbody>${crew.length===0?`<tr><td colspan="8"><div class="empty-state">Aún no hay trabajadores en la cuadrilla. Agrégalos con "+ Trabajador".</div></td></tr>`:crew.map(c=>{ const a=byTrab[c.id]||{}; return `
+  const head=`<thead><tr><th>Trabajador</th><th>Cargo</th><th style="text-align:right">Salario/día</th><th>Entrada</th><th>Salida</th><th title="Horas extra del día">H. extra</th><th>Asistencia</th>${puedeCaja()?'<th></th>':''}</tr></thead>`;
+  const rowHtml=c=>{ const a=byTrab[c.id]||{}; return `
         <tr>
           <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b></div></td>
           <td style="font-size:12px;color:var(--c-muted)">${esc(c.cargo||'')}</td>
@@ -2136,9 +2156,103 @@ async function renderProjAsistencia(proj){
           <td><input type="number" min="0" step="0.5" value="${a.horas_extra!=null&&a.horas_extra!==''?a.horas_extra:''}" onchange="setAsistenciaHora('${c.id}','horas_extra',this.value)" placeholder="0" title="Horas extra" style="width:62px;text-align:center;font-size:12px;padding:3px 5px"></td>
           <td><div style="display:flex;gap:6px;flex-wrap:wrap">${estBtn(c)}</div></td>
           ${puedeCaja()?`<td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showCrewModal('${c.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="deleteCrew('${c.id}')" title="Quitar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>`:''}
-        </tr>`;}).join('')}</tbody>
-    </table></div>
+        </tr>`; };
+  const seccionesHtml=secs.map(x=>
+    (grupos.length?asistSecHead(x, `${presDe(x.list)} presente(s)`, puedeCaja()?`<div style="display:flex;gap:6px;flex-wrap:wrap">${x.list.length?`<button class="btn btn-sm btn-ghost" onclick="marcarTodos('presente','${x.key}')">✔ Todos presentes</button>`:''}${x.g?`<button class="btn btn-sm btn-ghost" onclick="showGrupoModal('${x.g.id}')">Editar cuadrilla</button>`:''}</div>`:''):'')
+    +`<div class="item-table"><table>${head}<tbody>${x.list.length?x.list.map(rowHtml).join(''):`<tr><td colspan="8"><div class="empty-state">${x.g?'Esta cuadrilla no tiene trabajadores. Agrégalos con "Editar cuadrilla" o "+ Trabajador".':'Aún no hay trabajadores. Agrégalos con "+ Trabajador".'}</div></td></tr>`}</tbody></table></div>`
+  ).join('');
+  const filtrado=state.asistGrupo&&state.asistGrupo!=='all';
+  b.innerHTML=`
+    ${asistVistaChips()}
+    ${asistGrupoChips(activos, grupos)}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
+      ${grupos.length&&!filtrado?kpiTile('Cuadrillas',grupos.length,'#7C3AED','rgba(124,58,237,.14)'):''}
+      ${kpiTile('Trabajadores',crew.length,'#1D4ED8','rgba(29,78,216,.14)')}
+      ${kpiTile('Presentes',pres+tard,'#166534','rgba(22,101,52,.14)')}
+      ${kpiTile('Ausentes',aus,aus?'#DC2626':'#166534',aus?'rgba(220,38,38,.14)':'rgba(22,101,52,.14)')}
+      ${kpiTile('Sin marcar',sinM,sinM?'#D97706':'#166534',sinM?'rgba(217,119,6,.14)':'rgba(22,101,52,.14)')}
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
+      <button class="nav-arrow" onclick="shiftAsistFecha(-1)">‹</button>
+      <input type="date" value="${esc(fecha)}" onchange="state.asistFecha=this.value;renderProject()" style="padding:6px 8px">
+      <button class="nav-arrow" onclick="shiftAsistFecha(1)">›</button>
+      ${isHoy?'<span style="font-size:11px;color:var(--c-ok);font-weight:700">HOY</span>':`<button class="btn btn-sm btn-ghost" onclick="state.asistFecha='';renderProject()">Ir a hoy</button>`}
+      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+        ${puedeCaja()&&crew.length?`<button class="btn btn-sm btn-ghost" onclick="marcarTodos('presente','all')">Todos presentes</button>`:''}
+        ${puedeCaja()?`<button class="btn btn-sm btn-ghost" onclick="showGruposModal()">👷 Cuadrillas</button>`:''}
+        <button class="btn btn-sm btn-ghost" onclick="imprimirAsistencia('${proj.id}')">🖨 Imprimir</button>
+        ${puedeCaja()?`<button class="btn btn-sm btn-primary" onclick="showCrewModal()">+ Trabajador</button>`:''}
+      </div>
+    </div>
+    ${!grupos.length&&puedeCaja()?`<div style="font-size:12px;color:var(--c-muted);margin:8px 0 10px">💡 ¿Hay varias cuadrillas en el proyecto? Créalas con <b>👷 Cuadrillas</b> (cada una con su capataz) y la lista se agrupa sola.</div>`:''}
+    ${seccionesHtml}
     <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Toca un estado para marcar. Volver a tocar el mismo estado quita la marca. La hora y el estado se guardan por día. La planilla de la quincena se calcula en Contabilidad → Planilla.</div>`;
+}
+// ── Gestión de cuadrillas ──
+function showGruposModal(){
+  const gs=(state._gruposCache||[]).slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const crew=(state._crewCache||[]).filter(c=>c.activo!==0);
+  const sinAsignar=crew.filter(c=>!c.grupo_id||!gs.some(g=>g.id===c.grupo_id)).length;
+  openModal(`<div class="modal-head"><h2>👷 Cuadrillas del proyecto</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div style="font-size:12px;color:var(--c-muted);margin-bottom:10px">Cada cuadrilla tiene su capataz y sus trabajadores. La asistencia, el resumen y la impresión se agrupan por cuadrilla.</div>
+    ${gs.length?gs.map((g,i)=>{ const n=crew.filter(c=>c.grupo_id===g.id).length; const col=g.color||GRUPO_COLORS[i%GRUPO_COLORS.length]; return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--c-border);border-left:5px solid ${col};border-radius:10px;margin-bottom:8px">
+      <div style="flex:1;min-width:0"><b style="font-size:14px">${esc(g.nombre)}</b><div style="font-size:12px;color:var(--c-muted)">${g.capataz?'Capataz: '+esc(g.capataz)+' · ':''}${n} trabajador(es)</div></div>
+      <button class="btn btn-sm btn-ghost" onclick="showGrupoModal('${g.id}')">Editar</button>
+      <button class="act-btn del" onclick="deleteGrupo('${g.id}')" title="Eliminar cuadrilla"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+    </div>`; }).join(''):'<div class="nodata" style="padding:16px">Aún no hay cuadrillas.</div>'}
+    ${gs.length&&sinAsignar?`<div style="font-size:12px;color:#D97706;margin-top:6px">⚠ ${sinAsignar} trabajador(es) sin cuadrilla asignada.</div>`:''}
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-primary" onclick="showGrupoModal()">+ Nueva cuadrilla</button></div>`);
+}
+function showGrupoModal(id){
+  const gs=state._gruposCache||[];
+  const g=id?gs.find(x=>x.id===id):null;
+  const gname=gid=>(gs.find(x=>x.id===gid)||{}).nombre;
+  const crew=(state._crewCache||[]).filter(c=>c.activo!==0).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const col=(g&&g.color)||GRUPO_COLORS[gs.length%GRUPO_COLORS.length];
+  openModal(`<div class="modal-head"><h2>${g?'Editar cuadrilla':'Nueva cuadrilla'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-group"><label>Nombre de la cuadrilla</label><input id="grNombre" value="${esc(g?.nombre||'')}" placeholder="Ej: Cuadrilla A · Tramo 5"></div>
+    <div class="form-group"><label>Capataz</label><input id="grCapataz" list="grCapList" value="${esc(g?.capataz||'')}" placeholder="Escribe o elige del personal">
+      <datalist id="grCapList">${crew.map(c=>`<option value="${esc(c.nombre)}">${esc(c.cargo||'')}</option>`).join('')}</datalist></div>
+    <div class="form-group"><label>Color</label><input type="hidden" id="grColor" value="${col}">
+      <div style="display:flex;gap:9px;flex-wrap:wrap">${GRUPO_COLORS.map(h=>`<span class="gr-sw" onclick="document.getElementById('grColor').value='${h}';document.querySelectorAll('.gr-sw').forEach(x=>x.style.outline='none');this.style.outline='3px solid var(--c-text)'" style="width:28px;height:28px;border-radius:50%;background:${h};cursor:pointer;outline:${col===h?'3px solid var(--c-text)':'none'};outline-offset:2px"></span>`).join('')}</div></div>
+    <div class="form-group"><label>Trabajadores de esta cuadrilla</label>
+      <div style="max-height:260px;overflow:auto;border:1px solid var(--c-border);border-radius:10px;padding:4px 10px">
+        ${crew.length?crew.map(c=>{ const otra=c.grupo_id&&c.grupo_id!==id?gname(c.grupo_id):''; return `<label style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--c-border);cursor:pointer">
+          <input type="checkbox" class="gr-mem" value="${c.id}" ${id&&c.grupo_id===id?'checked':''} style="width:17px;height:17px">
+          <span style="flex:1"><b style="font-size:13px">${esc(c.nombre)}</b>${c.cargo?` <span style="font-size:11px;color:var(--c-muted)">· ${esc(c.cargo)}</span>`:''}</span>
+          ${otra?`<span style="font-size:10px;color:#D97706">ahora en ${esc(otra)}</span>`:''}
+        </label>`; }).join(''):'<div style="padding:10px;font-size:12px;color:var(--c-muted)">Primero agrega trabajadores con "+ Trabajador".</div>'}
+      </div>
+      <div style="font-size:11px;color:var(--c-muted);margin-top:4px">Si marcas a alguien que está en otra cuadrilla, se pasa a esta.</div></div>
+    <div class="form-group"><label>Notas (opcional)</label><input id="grNotas" value="${esc(g?.notas||'')}" placeholder="Frente de trabajo, horario…"></div>
+  </div>
+  <div class="modal-foot" style="justify-content:space-between"><div>${g?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="deleteGrupo('${g.id}')">Eliminar</button>`:''}</div><div><button class="btn btn-ghost" onclick="showGruposModal()">Volver</button> <button class="btn btn-primary" onclick="saveGrupo(${id?`'${id}'`:'null'})">Guardar</button></div></div>`);
+}
+async function saveGrupo(id){
+  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
+  const nombre=g('grNombre').trim(); if(!nombre){ showToast('Escribe el nombre de la cuadrilla','err'); return; }
+  const checked=new Set([...document.querySelectorAll('.gr-mem')].filter(x=>x.checked).map(x=>x.value));
+  const values={project_id:state.projectId,nombre,capataz:g('grCapataz').trim(),color:g('grColor'),notas:g('grNotas').trim()};
+  let d,gid=id;
+  if(id){ d=await api('/api/update',{table:'cuadrilla_grupos',values,filters:[{col:'id',val:id}]}); }
+  else { d=await api('/api/insert',{table:'cuadrilla_grupos',values:{...values,created_at:new Date().toISOString()}}); gid=(d.data&&d.data[0]&&d.data[0].id)||null; }
+  if(d.error||!gid){ showToast('Error: '+((d.error&&d.error.message)||'no se guardó'),'err'); return; }
+  for(const c of (state._crewCache||[]).filter(c=>c.activo!==0)){
+    if(checked.has(c.id) && c.grupo_id!==gid) await api('/api/update',{table:'cuadrilla',values:{grupo_id:gid},filters:[{col:'id',val:c.id}]});
+    else if(!checked.has(c.id) && c.grupo_id===gid) await api('/api/update',{table:'cuadrilla',values:{grupo_id:null},filters:[{col:'id',val:c.id}]});
+  }
+  closeModal(); showToast('Cuadrilla guardada','ok'); renderProject();
+}
+async function deleteGrupo(id){
+  if(!confirm('¿Eliminar esta cuadrilla?\n\nLos trabajadores y su asistencia NO se borran: quedan como "Sin cuadrilla asignada".')) return;
+  await api('/api/update',{table:'cuadrilla',values:{grupo_id:null},filters:[{col:'grupo_id',val:id}]});
+  const d=await api('/api/delete',{table:'cuadrilla_grupos',filters:[{col:'id',val:id}]});
+  if(d.error){ showToast('Error al eliminar','err'); return; }
+  if(state.asistGrupo===id) state.asistGrupo='all';
+  closeModal(); showToast('Cuadrilla eliminada','ok'); renderProject();
 }
 function shiftAsistResMes(dir){ const ym=state.asistResMes||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); state.asistResMes=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderProject(); }
 function setAsistResQ(q){ state.asistResQ=q; renderProject(); }
@@ -2161,17 +2275,21 @@ async function renderAsistResumen(proj){
   const b=document.getElementById('projBody'); if(!b) return;
   b.innerHTML=asistVistaChips()+'<div class="nodata" style="padding:20px">Cargando resumen…</div>';
   const mes=state.asistResMes||todayStr().slice(0,7);
-  const [rc,ra]=await Promise.all([
+  const [rc,ra,rg]=await Promise.all([
     api('/api/select',{table:'cuadrilla',filters:[{col:'project_id',val:proj.id}],limit:2000}),
-    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:proj.id}],limit:20000})
+    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:proj.id}],limit:20000}),
+    asistLoadGrupos(proj.id)
   ]);
   if(state.view!=='project'||state.projectId!==proj.id||(state.projTab||'')!=='asistencia'||(state.asistVista||'dia')!=='resumen') return;
-  const crew=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const todos=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const grupos=rg.data||[]; state._gruposCache=grupos; state._crewCache=rc.data||[];
+  const secs=asistSecciones(todos, grupos, asistFiltroValido(todos, grupos));
+  const crew=secs.flatMap(x=>x.list);
   const rango=asistResRango(mes); const asist=(ra.data||[]).filter(a=>a.fecha>=rango.desde && a.fecha<=rango.hasta);
   const stat={}; asist.forEach(a=>{ const s=stat[a.trabajador_id]=stat[a.trabajador_id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; if(s[a.estado]!=null) s[a.estado]++; s.he+=(+a.horas_extra||0); });
   const [Y,M]=mes.split('-').map(Number); const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')||'';
-  let granPago=0, granDias=0, granHE=0;
-  const rows=crew.map(c=>{ const s=stat[c.id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; const diasPag=s.presente+s.tarde; const pago=diasPag*(+c.salario_dia||0)+s.he*(+c.valor_hora_extra||0); granPago+=pago; granDias+=diasPag; granHE+=s.he; return `<tr>
+  const calc=c=>{ const s=stat[c.id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; const diasPag=s.presente+s.tarde; return {s,diasPag,pago:diasPag*(+c.salario_dia||0)+s.he*(+c.valor_hora_extra||0)}; };
+  const rowHtml=c=>{ const {s,diasPag,pago}=calc(c); return `<tr>
       <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b>${c.activo===0?' <span style="font-size:10px;color:var(--c-muted)">(baja)</span>':''}</div></td>
       <td style="text-align:center;color:#166534;font-weight:700">${s.presente||'—'}</td>
       <td style="text-align:center;color:#D97706">${s.tarde||'—'}</td>
@@ -2180,8 +2298,17 @@ async function renderAsistResumen(proj){
       <td style="text-align:center;font-weight:800">${diasPag}</td>
       <td style="text-align:center">${s.he?s.he+' h':'—'}</td>
       <td style="text-align:right;font-weight:800;color:${pago>0?'#166534':'var(--c-muted)'}">${cajaMoney(pago)}</td>
-    </tr>`; }).join('');
-  b.innerHTML=asistVistaChips()+`
+    </tr>`; };
+  const cuerpo=secs.map(x=>{
+    const sub=x.list.reduce((t,c)=>{ const r=calc(c); t.d+=r.diasPag; t.h+=r.s.he; t.p+=r.pago; return t; },{d:0,h:0,p:0});
+    const filas=x.list.map(rowHtml).join('');
+    if(!grupos.length) return filas;
+    return `<tr><td colspan="8" style="background:var(--c-bg);border-left:5px solid ${x.color};font-weight:800;font-size:13px">${x.g?'👷 ':''}${esc(x.nombre)}${x.capataz?` <span style="font-weight:600;color:var(--c-muted);font-size:12px">· Capataz: ${esc(x.capataz)}</span>`:''} <span style="font-weight:600;color:var(--c-muted);font-size:12px">· ${x.list.length} trabajador(es)</span></td></tr>`
+      +(filas||`<tr><td colspan="8" style="font-size:12px;color:var(--c-muted)">Sin trabajadores.</td></tr>`)
+      +(x.list.length?`<tr><td colspan="5" style="text-align:right;font-size:12px;color:var(--c-muted)">Subtotal ${esc(x.nombre)}</td><td style="text-align:center;font-weight:800">${sub.d}</td><td style="text-align:center">${sub.h?sub.h+' h':'—'}</td><td style="text-align:right;font-weight:800">${cajaMoney(sub.p)}</td></tr>`:'');
+  }).join('');
+  const tot=crew.reduce((t,c)=>{ const r=calc(c); t.d+=r.diasPag; t.h+=r.s.he; t.p+=r.pago; return t; },{d:0,h:0,p:0});
+  b.innerHTML=asistVistaChips()+asistGrupoChips(todos, grupos)+`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
       <button class="nav-arrow" onclick="shiftAsistResMes(-1)">‹</button>
       <div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${mesNom} ${Y}</div>
@@ -2190,45 +2317,56 @@ async function renderAsistResumen(proj){
       <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="imprimirAsistenciaMes('${proj.id}')">🖨 Imprimir / PDF</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:14px">
-      ${kpiTile('En la cuadrilla',crew.length,'#1D4ED8','rgba(29,78,216,.14)')}
-      ${kpiTile('Días trabajados',granDias,'#166534','rgba(22,101,52,.14)')}
-      ${kpiTile('Horas extra',granHE+' h','#B45309','rgba(180,83,9,.14)')}
-      ${kpiTile('Total · '+rango.etq,cajaMoney(granPago),'#7C3AED','rgba(124,58,237,.14)')}
+      ${kpiTile('Trabajadores',crew.length,'#1D4ED8','rgba(29,78,216,.14)')}
+      ${kpiTile('Días trabajados',tot.d,'#166534','rgba(22,101,52,.14)')}
+      ${kpiTile('Horas extra',tot.h+' h','#B45309','rgba(180,83,9,.14)')}
+      ${kpiTile('Total · '+rango.etq,cajaMoney(tot.p),'#7C3AED','rgba(124,58,237,.14)')}
     </div>
     <div class="item-table"><table>
       <thead><tr><th>Trabajador</th><th style="text-align:center" title="Presente">Pres.</th><th style="text-align:center" title="Tarde">Tarde</th><th style="text-align:center" title="Justificado">Just.</th><th style="text-align:center" title="Ausente">Aus.</th><th style="text-align:center">Días pag.</th><th style="text-align:center">H. extra</th><th style="text-align:right">A pagar</th></tr></thead>
-      <tbody>${crew.length===0?`<tr><td colspan="8"><div class="empty-state">Sin trabajadores en la cuadrilla.</div></td></tr>`:rows}</tbody>
+      <tbody>${crew.length===0&&!grupos.length?`<tr><td colspan="8"><div class="empty-state">Sin trabajadores en la cuadrilla.</div></td></tr>`:cuerpo}</tbody>
     </table></div>
     <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Resumen · ${rango.etq} (${rango.desde} al ${rango.hasta}). Días pagables = Presente + Tarde. A pagar = días × salario diario + horas extra × valor hora extra.</div>`;
 }
 async function imprimirAsistenciaMes(projId){
   const proj=state.projects.get(projId)||{};
   const mes=state.asistResMes||todayStr().slice(0,7);
-  const [rc,ra]=await Promise.all([
+  const [rc,ra,rg]=await Promise.all([
     api('/api/select',{table:'cuadrilla',filters:[{col:'project_id',val:projId}],limit:2000}),
-    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:projId}],limit:20000})
+    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:projId}],limit:20000}),
+    asistLoadGrupos(projId)
   ]);
-  const crew=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const todos=(rc.data||[]).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const grupos=rg.data||[];
+  const secs=asistSecciones(todos, grupos, asistFiltroValido(todos, grupos));
   const rango=asistResRango(mes); const asist=(ra.data||[]).filter(a=>a.fecha>=rango.desde && a.fecha<=rango.hasta);
   const stat={}; asist.forEach(a=>{ const s=stat[a.trabajador_id]=stat[a.trabajador_id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; if(s[a.estado]!=null) s[a.estado]++; s.he+=(+a.horas_extra||0); });
   const [Y,M]=mes.split('-').map(Number); const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')||'';
-  let gran=0;
-  const rows=crew.map((c,i)=>{ const s=stat[c.id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; const diasPag=s.presente+s.tarde; const pago=diasPag*(+c.salario_dia||0)+s.he*(+c.valor_hora_extra||0); gran+=pago; return `<tr>
-    <td style="border:1px solid #ddd;padding:4px 6px">${i+1}</td><td style="border:1px solid #ddd;padding:4px 6px">${esc(c.nombre)}</td>
-    <td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.presente}</td><td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.tarde}</td>
-    <td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.justificado}</td><td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.ausente}</td>
-    <td style="border:1px solid #ddd;padding:4px 6px;text-align:center;font-weight:700">${diasPag}</td><td style="border:1px solid #ddd;padding:4px 6px;text-align:center">${s.he||'—'}</td>
-    <td style="border:1px solid #ddd;padding:4px 6px;text-align:right;font-weight:700">${cajaMoney(pago)}</td></tr>`; }).join('');
+  const td='border:1px solid #ddd;padding:4px 6px';
+  let gran=0, n=0;
+  const cuerpo=secs.map(x=>{
+    let sub=0;
+    const filas=x.list.map(c=>{ const s=stat[c.id]||{presente:0,tarde:0,justificado:0,ausente:0,he:0}; const diasPag=s.presente+s.tarde; const pago=diasPag*(+c.salario_dia||0)+s.he*(+c.valor_hora_extra||0); sub+=pago; gran+=pago; n++; return `<tr>
+      <td style="${td}">${n}</td><td style="${td}">${esc(c.nombre)}</td>
+      <td style="${td};text-align:center">${s.presente}</td><td style="${td};text-align:center">${s.tarde}</td>
+      <td style="${td};text-align:center">${s.justificado}</td><td style="${td};text-align:center">${s.ausente}</td>
+      <td style="${td};text-align:center;font-weight:700">${diasPag}</td><td style="${td};text-align:center">${s.he||'—'}</td>
+      <td style="${td};text-align:right;font-weight:700">${cajaMoney(pago)}</td></tr>`; }).join('');
+    if(!grupos.length) return filas;
+    return `<tr><td colspan="9" style="background:#f3f3f3;border-left:5px solid ${x.color};padding:5px 7px;font-weight:700">${esc(x.nombre)}${x.capataz?' — Capataz: '+esc(x.capataz):''}</td></tr>${filas}`
+      +(x.list.length?`<tr><td colspan="8" style="${td};text-align:right;color:#555">Subtotal ${esc(x.nombre)}</td><td style="${td};text-align:right;font-weight:800">${cajaMoney(sub)}</td></tr>`:'');
+  }).join('');
+  const filtro=state.asistGrupo&&state.asistGrupo!=='all'&&secs[0]?' · '+secs[0].nombre:'';
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#1b1b20;max-width:900px;margin:0 auto">
     <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #9B1B30;padding-bottom:8px">
       <img src="${location.origin}/cmi-logo-full.svg" style="height:38px">
       <div><div style="color:#9B1B30;font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
-      <div style="font-size:11px;color:#555">Resumen de asistencia — ${esc(proj.name||'Proyecto')} · ${mesNom} ${Y} · ${rango.etq}</div></div>
-      <div style="margin-left:auto;text-align:right"><div style="font-size:10px;color:#777">Total del mes</div><div style="font-size:15px;font-weight:800;color:#166534">${cajaMoney(gran)}</div></div>
+      <div style="font-size:11px;color:#555">Resumen de asistencia — ${esc(proj.name||'Proyecto')}${esc(filtro)} · ${mesNom} ${Y} · ${rango.etq}</div></div>
+      <div style="margin-left:auto;text-align:right"><div style="font-size:10px;color:#777">Total</div><div style="font-size:15px;font-weight:800;color:#166534">${cajaMoney(gran)}</div></div>
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:12px">
-      <thead><tr style="background:#333;color:#fff"><th style="border:1px solid #ddd;padding:4px 6px">#</th><th style="border:1px solid #ddd;padding:4px 6px;text-align:left">Trabajador</th><th style="border:1px solid #ddd;padding:4px 6px">Pres.</th><th style="border:1px solid #ddd;padding:4px 6px">Tarde</th><th style="border:1px solid #ddd;padding:4px 6px">Just.</th><th style="border:1px solid #ddd;padding:4px 6px">Aus.</th><th style="border:1px solid #ddd;padding:4px 6px">Días pag.</th><th style="border:1px solid #ddd;padding:4px 6px">H.extra</th><th style="border:1px solid #ddd;padding:4px 6px">A pagar</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan="9" style="padding:10px;text-align:center;color:#777">Sin datos</td></tr>'}</tbody>
+      <thead><tr style="background:#333;color:#fff"><th style="${td}">#</th><th style="${td};text-align:left">Trabajador</th><th style="${td}">Pres.</th><th style="${td}">Tarde</th><th style="${td}">Just.</th><th style="${td}">Aus.</th><th style="${td}">Días pag.</th><th style="${td}">H.extra</th><th style="${td}">A pagar</th></tr></thead>
+      <tbody>${cuerpo||'<tr><td colspan="9" style="padding:10px;text-align:center;color:#777">Sin datos</td></tr>'}</tbody>
     </table>
     <div style="font-size:10px;color:#999;margin-top:10px">Días pagables = Presente + Tarde. · CMI Construction Corp. — Uso interno.</div>
   </div>`;
@@ -2261,11 +2399,12 @@ async function setAsistencia(trabId, estado){
   if(d.error){ showToast('No se guardó: '+(d.error.message||'error'),'err'); return; }
   renderProject();
 }
-async function marcarTodos(estado){
-  const crew=(state._crewCache||[]).filter(c=>c.activo!==0);
+async function marcarTodos(estado, key){
+  // key = 'all' (lo visible) o el id de una cuadrilla: sólo marca a ese grupo.
+  const ids=((state._asistSecIds||{})[key||'all'])||[];
   const cache=state._asistCache||{}; const fecha=cache.fecha||state.asistFecha||todayStr();
-  for(const c of crew){ const ex=(cache.rows||[]).find(r=>r.trabajador_id===c.id); if(ex){ if(ex.estado!==estado) await api('/api/update',{table:'asistencia',values:{estado},filters:[{col:'id',val:ex.id}]}); } else { await api('/api/insert',{table:'asistencia',values:{project_id:state.projectId,trabajador_id:c.id,fecha,estado,created_at:new Date().toISOString()}}); } }
-  showToast('Marcados','ok'); renderProject();
+  for(const id of ids){ const ex=(cache.rows||[]).find(r=>r.trabajador_id===id); if(ex){ if(ex.estado!==estado) await api('/api/update',{table:'asistencia',values:{estado},filters:[{col:'id',val:ex.id}]}); } else { await api('/api/insert',{table:'asistencia',values:{project_id:state.projectId,trabajador_id:id,fecha,estado,created_at:new Date().toISOString()}}); } }
+  showToast(`${ids.length} marcado(s) como presente`,'ok'); renderProject();
 }
 function showCrewModal(id){
   const c=id?(state._crewCache||[]).find(x=>x.id===id):null;
@@ -2273,6 +2412,7 @@ function showCrewModal(id){
   <div class="modal-body">
     <div class="form-group"><label>Nombre</label><input id="cwNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre y apellido"></div>
     <div class="form-group"><label>Cargo (opcional)</label><input id="cwCargo" value="${esc(c?.cargo||'')}" placeholder="Ej: Albañil, Ayudante, Operador"></div>
+    ${(state._gruposCache||[]).length?(()=>{ const def=c?c.grupo_id:((state.asistGrupo&&state.asistGrupo!=='all'&&state.asistGrupo!=='none')?state.asistGrupo:''); return `<div class="form-group"><label>Cuadrilla</label><select id="cwGrupo"><option value="">— Sin cuadrilla —</option>${(state._gruposCache||[]).slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||'')).map(g=>`<option value="${g.id}" ${def===g.id?'selected':''}>${esc(g.nombre)}${g.capataz?' · '+esc(g.capataz):''}</option>`).join('')}</select></div>`; })():''}
     <div class="form-row">
       <div class="form-group"><label>Salario por día ($)</label><input id="cwSalario" type="number" min="0" step="0.01" value="${c&&c.salario_dia?c.salario_dia:''}" placeholder="Ej: 20.00"></div>
       <div class="form-group"><label>Valor hora extra ($)</label><input id="cwHoraExtra" type="number" min="0" step="0.01" value="${c&&c.valor_hora_extra?c.valor_hora_extra:''}" placeholder="Ej: 3.50"></div>
@@ -2294,6 +2434,7 @@ async function saveCrew(id){
   if(!nombre){ showToast('Escribe el nombre','err'); return; }
   const values={project_id:state.projectId,nombre,cargo:document.getElementById('cwCargo').value.trim(),salario_dia:parseFloat(document.getElementById('cwSalario').value)||0,valor_hora_extra:parseFloat(document.getElementById('cwHoraExtra').value)||0};
   const ac=document.getElementById('cwActivo'); if(ac) values.activo=parseInt(ac.value);
+  const gr=document.getElementById('cwGrupo'); if(gr) values.grupo_id=gr.value||null;
   let d, rid=id;
   if(id){ d=await api('/api/update',{table:'cuadrilla',values,filters:[{col:'id',val:id}]}); }
   else { d=await api('/api/insert',{table:'cuadrilla',values:{...values,activo:1,created_at:new Date().toISOString()}}); rid=(d.data&&d.data[0]&&d.data[0].id)||null; }
@@ -2316,28 +2457,40 @@ async function deleteCrew(id){
 async function imprimirAsistencia(projId){
   const proj=state.projects.get(projId)||{};
   const fecha=state.asistFecha||todayStr();
-  const [rc,ra]=await Promise.all([
+  const [rc,ra,rg]=await Promise.all([
     api('/api/select',{table:'cuadrilla',filters:[{col:'project_id',val:projId}],limit:2000}),
-    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:projId},{col:'fecha',val:fecha}],limit:2000})
+    api('/api/select',{table:'asistencia',filters:[{col:'project_id',val:projId},{col:'fecha',val:fecha}],limit:2000}),
+    asistLoadGrupos(projId)
   ]);
-  const crew=(rc.data||[]).filter(c=>c.activo!==0).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const activos=(rc.data||[]).filter(c=>c.activo!==0).sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  const grupos=rg.data||[];
+  const secs=asistSecciones(activos, grupos, asistFiltroValido(activos, grupos));
+  const crew=secs.flatMap(x=>x.list);
   const by={}; (ra.data||[]).forEach(r=>by[r.trabajador_id]=r);
   const lbl={presente:'Presente',tarde:'Tarde',justificado:'Justificado',ausente:'Ausente'};
-  const rws=crew.map((c,i)=>`<tr><td style="border:1px solid #ddd;padding:5px 7px">${i+1}</td><td style="border:1px solid #ddd;padding:5px 7px">${esc(c.nombre)}</td><td style="border:1px solid #ddd;padding:5px 7px">${esc(c.cargo||'')}</td><td style="border:1px solid #ddd;padding:5px 7px">${lbl[(by[c.id]||{}).estado]||'—'}</td></tr>`).join('');
+  const td='border:1px solid #ddd;padding:5px 7px';
+  let n=0;
+  const cuerpo=secs.map(x=>{
+    const filas=x.list.map(c=>{ n++; const a=by[c.id]||{}; return `<tr><td style="${td}">${n}</td><td style="${td}">${esc(c.nombre)}</td><td style="${td}">${esc(c.cargo||'')}</td><td style="${td}">${esc(a.hora_entrada||'')}</td><td style="${td}">${esc(a.hora_salida||'')}</td><td style="${td}">${lbl[a.estado]||'—'}</td></tr>`; }).join('');
+    if(!grupos.length) return filas;
+    const p=x.list.filter(c=>['presente','tarde'].includes((by[c.id]||{}).estado)).length;
+    return `<tr><td colspan="6" style="background:#f3f3f3;border-left:5px solid ${x.color};padding:6px 8px;font-weight:700">${esc(x.nombre)}${x.capataz?' — Capataz: '+esc(x.capataz):''} <span style="font-weight:400;color:#555">· ${x.list.length} trabajador(es) · ${p} presente(s)</span></td></tr>${filas}`;
+  }).join('');
   const pres=crew.filter(c=>['presente','tarde'].includes((by[c.id]||{}).estado)).length;
+  const filtro=state.asistGrupo&&state.asistGrupo!=='all'&&secs[0]?' · '+secs[0].nombre:'';
   const html=`<div style="font-family:Arial,Helvetica,sans-serif;color:#1b1b20;max-width:820px;margin:0 auto">
     <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #9B1B30;padding-bottom:8px">
       <img src="${location.origin}/cmi-logo-full.svg" style="height:38px">
       <div><div style="color:#9B1B30;font-weight:800;font-size:15px">CMI CONSTRUCTION CORP.</div>
-      <div style="font-size:11px;color:#555">Asistencia de cuadrilla — ${esc(proj.name||'Proyecto')}</div></div>
+      <div style="font-size:11px;color:#555">Asistencia — ${esc(proj.name||'Proyecto')}${esc(filtro)}</div></div>
       <div style="margin-left:auto;text-align:right;font-size:11px;color:#555">Fecha: ${esc(fecha)}</div>
     </div>
-    <div style="margin:10px 0;font-size:13px"><b>En la cuadrilla:</b> ${crew.length} &nbsp;·&nbsp; <b>Presentes:</b> ${pres} &nbsp;·&nbsp; <b>Ausentes:</b> ${crew.length-pres}</div>
+    <div style="margin:10px 0;font-size:13px">${grupos.length&&!filtro?`<b>Cuadrillas:</b> ${grupos.length} &nbsp;·&nbsp; `:''}<b>Trabajadores:</b> ${crew.length} &nbsp;·&nbsp; <b>Presentes:</b> ${pres} &nbsp;·&nbsp; <b>Ausentes / sin marcar:</b> ${crew.length-pres}</div>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
-      <thead><tr style="background:#9B1B30;color:#fff"><th style="border:1px solid #ddd;padding:5px 7px;text-align:left">#</th><th style="border:1px solid #ddd;padding:5px 7px;text-align:left">Trabajador</th><th style="border:1px solid #ddd;padding:5px 7px;text-align:left">Cargo</th><th style="border:1px solid #ddd;padding:5px 7px;text-align:left">Asistencia</th></tr></thead>
-      <tbody>${rws||'<tr><td colspan="4" style="padding:10px;text-align:center;color:#777">Sin trabajadores</td></tr>'}</tbody>
+      <thead><tr style="background:#9B1B30;color:#fff"><th style="${td};text-align:left">#</th><th style="${td};text-align:left">Trabajador</th><th style="${td};text-align:left">Cargo</th><th style="${td};text-align:left">Entrada</th><th style="${td};text-align:left">Salida</th><th style="${td};text-align:left">Asistencia</th></tr></thead>
+      <tbody>${cuerpo||'<tr><td colspan="6" style="padding:10px;text-align:center;color:#777">Sin trabajadores</td></tr>'}</tbody>
     </table>
-    <div style="font-size:10px;color:#999;text-align:center;margin-top:10px">Asistencia de cuadrilla · CMI Construction Corp. — Uso interno.</div>
+    <div style="font-size:10px;color:#999;text-align:center;margin-top:10px">Asistencia por cuadrilla · CMI Construction Corp. — Uso interno.</div>
   </div>`;
   printHtmlDoc('Asistencia '+(proj.name||''), html);
 }
@@ -5694,10 +5847,12 @@ function planPeriodo(){
 function shiftPlanMes(dir){ const ym=mstate.planMes||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.planMes=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderContabilidad(); }
 function setPlanQ(q){ mstate.planQ=q; renderContabilidad(); }
 async function planillaData(){
-  const [rc,ra]=await Promise.all([
+  const [rc,ra,rg]=await Promise.all([
     api('/api/select',{table:'cuadrilla',limit:5000}),
-    api('/api/select',{table:'asistencia',limit:20000})
+    api('/api/select',{table:'asistencia',limit:20000}),
+    api('/api/select',{table:'cuadrilla_grupos',limit:2000})
   ]);
+  const gmap={}; (rg.data||[]).forEach(g=>{ gmap[g.id]=g; });
   const p=planPeriodo();
   const crew=rc.data||[];
   const asist=(ra.data||[]).filter(a=>a.fecha>=p.desde && a.fecha<=p.hasta);
@@ -5706,12 +5861,12 @@ async function planillaData(){
   // Agrupar por proyecto: trabajadores activos o con asistencia/horas en el periodo
   const byProj={};
   crew.filter(c=>c.activo!==0 || dias[c.id] || extras[c.id]).forEach(c=>{ const pid=c.project_id||'—'; (byProj[pid]=byProj[pid]||[]).push(c); });
-  return {p,byProj,dias,extras};
+  return {p,byProj,dias,extras,gmap};
 }
 async function renderPlanilla(){
   const body=document.getElementById('contaBody'); if(!body) return;
   body.innerHTML='<div class="nodata" style="padding:20px">Cargando planilla…</div>';
-  const {p,byProj,dias,extras}=await planillaData();
+  const {p,byProj,dias,extras,gmap}=await planillaData();
   if(mstate.contaTab!=='planilla') return;
   const mesNom=(typeof MESES_ES!=='undefined'?MESES_ES[p.M-1]:'')||'';
   let granTotal=0, granDias=0, granHE=0, nTrab=0;
@@ -5721,7 +5876,7 @@ async function renderPlanilla(){
     let sub=0;
     const rows=list.map(c=>{ const d=dias[c.id]||0; const he=extras[c.id]||0; const pagoD=d*(+c.salario_dia||0); const pagoHE=he*(+c.valor_hora_extra||0); const pago=pagoD+pagoHE; sub+=pago; granDias+=d; granHE+=he; nTrab++; return `<tr>
         <td><div style="display:flex;align-items:center;gap:9px">${crewAvatar(c)}<b style="font-size:13px">${esc(c.nombre)}</b>${c.activo===0?' <span style="font-size:10px;color:var(--c-muted)">(baja)</span>':''}</div></td>
-        <td style="font-size:12px;color:var(--c-muted)">${esc(c.cargo||'')}</td>
+        <td style="font-size:12px;color:var(--c-muted)">${esc(c.cargo||'')}${c.grupo_id&&gmap[c.grupo_id]?`<div style="font-size:10px">👷 ${esc(gmap[c.grupo_id].nombre)}${gmap[c.grupo_id].capataz?' · '+esc(gmap[c.grupo_id].capataz):''}</div>`:''}</td>
         <td style="text-align:right">${cajaMoney(c.salario_dia||0)}</td>
         <td style="text-align:center;font-weight:700">${d}</td>
         <td style="text-align:center">${he?he+' h':'<span style="color:var(--c-muted)">—</span>'}</td>

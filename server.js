@@ -343,6 +343,18 @@ CREATE TABLE IF NOT EXISTS cuadrilla (
   created_at TEXT,
   updated_at TEXT
 );
+-- Cuadrillas (grupos de trabajo) de un proyecto, cada una con su capataz
+CREATE TABLE IF NOT EXISTS cuadrilla_grupos (
+  id         TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  nombre     TEXT NOT NULL,
+  capataz    TEXT,
+  color      TEXT,
+  notas      TEXT,
+  created_by TEXT,
+  created_at TEXT,
+  updated_at TEXT
+);
 -- Asistencia diaria de la cuadrilla
 CREATE TABLE IF NOT EXISTS asistencia (
   id           TEXT PRIMARY KEY,
@@ -570,6 +582,7 @@ ensureColumn('vehiculos', 'condicion', 'TEXT');   // operativo | necesita_mant |
 ensureColumn('cuadrilla', 'salario_dia', 'REAL'); // planilla: pago por día
 ensureColumn('cuadrilla', 'foto_file', 'TEXT');   // foto del rostro
 ensureColumn('cuadrilla', 'valor_hora_extra', 'REAL'); // pago por cada hora extra
+ensureColumn('cuadrilla', 'grupo_id', 'TEXT');   // cuadrilla (grupo) a la que pertenece
 ensureColumn('asistencia', 'hora_entrada', 'TEXT');
 ensureColumn('asistencia', 'hora_salida', 'TEXT');
 ensureColumn('asistencia', 'horas_extra', 'REAL');   // horas extra del día
@@ -652,7 +665,8 @@ const SCHEMA = {
   obra_resumen: ['id', 'project_id', 'avance_pct', 'presupuesto', 'notas', 'updated_by', 'updated_at'],
   lic_competidores: ['id', 'licitacion_id', 'nombre', 'monto', 'resultado', 'notas', 'created_by', 'created_at'],
   proyecto_costos: ['id', 'project_id', 'rubro', 'concepto', 'monto', 'fecha', 'proveedor', 'comprobante_file', 'notas', 'created_by', 'created_at', 'updated_at'],
-  cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'salario_dia', 'valor_hora_extra', 'foto_file', 'activo', 'created_by', 'created_at', 'updated_at'],
+  cuadrilla:    ['id', 'project_id', 'nombre', 'cargo', 'salario_dia', 'valor_hora_extra', 'foto_file', 'grupo_id', 'activo', 'created_by', 'created_at', 'updated_at'],
+  cuadrilla_grupos: ['id', 'project_id', 'nombre', 'capataz', 'color', 'notas', 'created_by', 'created_at', 'updated_at'],
   asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'horas_extra', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_inventario:   ['id', 'producto', 'marca', 'color', 'codigo', 'categoria', 'cantidad', 'unidad', 'costo', 'precio', 'min_stock', 'foto_file', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_entregas:     ['id', 'fecha', 'hora', 'cliente', 'telefono', 'direccion', 'detalle', 'cantidad', 'monto', 'estado', 'item_id', 'stock_aplicado', 'notas', 'created_by', 'created_at', 'updated_at'],
@@ -696,7 +710,7 @@ function isFullAdmin(user) {
 }
 // Tablas financieras/confidenciales del proyecto: los supervisores no las ven ni editan.
 // (Contabilidad, licitaciones y mercadeo ya quedan fuera por módulo en roleCan.)
-const FINANZAS_PROYECTO = new Set(['caja_chica', 'compras', 'proyecto_costos', 'obra_resumen', 'cuadrilla', 'asistencia']);
+const FINANZAS_PROYECTO = new Set(['caja_chica', 'compras', 'proyecto_costos', 'obra_resumen', 'cuadrilla', 'cuadrilla_grupos', 'asistencia']);
 function supervisorBloqueado(table, user) {
   return !!user && user.role === 'supervisor' && FINANZAS_PROYECTO.has(table);
 }
@@ -1247,6 +1261,7 @@ function canWrite(table, op, user, values, filters) {
       if (user.role === 'supervisor') return false; // financiero del proyecto: confidencial para supervisores
       return op === 'delete' ? user.role === 'admin' : true; // registrar/editar: cualquier activo; borrar: admin
     case 'cuadrilla':
+    case 'cuadrilla_grupos':
     case 'asistencia':
       if (user.role === 'supervisor') return false; // planilla: confidencial para supervisores
       // La maneja el ingeniero del proyecto (y admin)
