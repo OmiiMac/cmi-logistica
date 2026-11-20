@@ -2515,10 +2515,10 @@ async function renderProjGraficas(proj){
   const avance=+resumen.avance_pct||0;
   b.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
-      ${kpiTile('Unidades en stock',unidades,'#1D4ED8','rgba(29,78,216,.14)')}
-      ${kpiTile('Material retirado',(+retirado.toFixed(2)),'#D97706','rgba(217,119,6,.14)')}
-      ${kpiTile('Saldo caja chica',money(ingresos-gastos),(ingresos-gastos)<0?'#DC2626':'#166534',(ingresos-gastos)<0?'rgba(220,38,38,.14)':'rgba(22,101,52,.14)')}
-      ${kpiTile('Avance del proyecto',avance+'%','#7C3AED','rgba(124,58,237,.14)')}
+      <div style="background:rgba(29,78,216,.14);border-radius:10px;padding:14px;cursor:pointer" onclick="state.projTab='inventario';renderProject()" title="Ver inventario del proyecto"><div style="font-size:20px;font-weight:800;color:#1D4ED8">${unidades}</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">Unidades en stock</div></div>
+      <div style="background:rgba(217,119,6,.14);border-radius:10px;padding:14px;cursor:pointer" onclick="state.projTab='salidas';renderProject()" title="Ver salidas de material"><div style="font-size:20px;font-weight:800;color:#D97706">${(+retirado.toFixed(2))}</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">Material retirado</div></div>
+      <div style="background:${(ingresos-gastos)<0?'rgba(220,38,38,.14)':'rgba(22,101,52,.14)'};border-radius:10px;padding:14px;cursor:pointer" onclick="state.projTab='caja';renderProject()" title="Ver caja chica"><div style="font-size:20px;font-weight:800;color:${(ingresos-gastos)<0?'#DC2626':'#166534'}">${money(ingresos-gastos)}</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">Saldo caja chica</div>${caja.length?`<div style="font-size:10px;color:var(--c-muted);margin-top:4px">${caja.length} mov · Ing ${money(ingresos)} · Gas ${money(gastos)}</div>`:''}</div>
+      <div style="background:rgba(124,58,237,.14);border-radius:10px;padding:14px;cursor:pointer" onclick="showResumenModal('${proj.id}')" title="Editar avance y presupuesto"><div style="font-size:20px;font-weight:800;color:#7C3AED">${avance}%</div><div style="font-size:11px;color:#6B6B78;font-weight:600;text-transform:uppercase;margin-top:2px">Avance del proyecto</div></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:16px;max-width:900px">
       <div class="section-card" style="padding:16px"><h3 style="font-size:13px;margin:0 0 12px">📦 Inventario por categoría</h3><div style="position:relative;height:260px"><canvas id="chProjCat"></canvas></div></div>
