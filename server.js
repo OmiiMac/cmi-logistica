@@ -370,25 +370,16 @@ CREATE TABLE IF NOT EXISTS asistencia (
   updated_at   TEXT
 );
 
--- ── Paint Pro (venta de pintura): inventario, entregas, órdenes, devoluciones, calendario ──
+-- ── Paint Pro (venta de pintura): inventario, clientes, visitas, cotizaciones, calendario ──
 CREATE TABLE IF NOT EXISTS pp_inventario (
   id TEXT PRIMARY KEY, producto TEXT, marca TEXT, color TEXT, codigo TEXT, categoria TEXT,
   cantidad REAL DEFAULT 0, unidad TEXT, costo REAL DEFAULT 0, precio REAL DEFAULT 0,
   min_stock REAL DEFAULT 0, foto_file TEXT, notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
 );
-CREATE TABLE IF NOT EXISTS pp_entregas (
-  id TEXT PRIMARY KEY, fecha TEXT, hora TEXT, cliente TEXT, telefono TEXT, direccion TEXT,
-  detalle TEXT, cantidad REAL, monto REAL DEFAULT 0, estado TEXT DEFAULT 'pendiente',
-  notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
-);
 CREATE TABLE IF NOT EXISTS pp_ordenes (
   id TEXT PRIMARY KEY, fecha TEXT, numero TEXT, proveedor TEXT, producto TEXT, cantidad REAL,
   costo_unitario REAL DEFAULT 0, total REAL DEFAULT 0, estado TEXT DEFAULT 'solicitada',
   notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
-);
-CREATE TABLE IF NOT EXISTS pp_devoluciones (
-  id TEXT PRIMARY KEY, fecha TEXT, cliente TEXT, producto TEXT, cantidad REAL, motivo TEXT,
-  monto REAL DEFAULT 0, estado TEXT DEFAULT 'pendiente', notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
 );
 CREATE TABLE IF NOT EXISTS pp_eventos (
   id TEXT PRIMARY KEY, fecha TEXT, hora TEXT, titulo TEXT, tipo TEXT, color TEXT, notas TEXT,
@@ -597,9 +588,9 @@ ensureColumn('cuadrilla', 'grupo_id', 'TEXT');   // cuadrilla (grupo) a la que p
 ensureColumn('asistencia', 'hora_entrada', 'TEXT');
 ensureColumn('asistencia', 'hora_salida', 'TEXT');
 ensureColumn('asistencia', 'horas_extra', 'REAL');   // horas extra del día
+// Paint Pro: Entregas y Devoluciones se retiraron del módulo; se descartan sus tablas.
+db.exec('DROP TABLE IF EXISTS pp_entregas; DROP TABLE IF EXISTS pp_devoluciones;');
 // Paint Pro: vínculo al inventario (item) y control de movimiento de stock ya aplicado
-ensureColumn('pp_entregas', 'item_id', 'TEXT');
-ensureColumn('pp_entregas', 'stock_aplicado', 'REAL');
 ensureColumn('pp_ordenes', 'item_id', 'TEXT');
 ensureColumn('pp_ordenes', 'stock_aplicado', 'REAL');
 // Paint Pro: Seguimiento quedó unificado dentro de la Base de Clientes.
@@ -724,9 +715,7 @@ const SCHEMA = {
   cuadrilla_grupos: ['id', 'project_id', 'nombre', 'capataz', 'color', 'notas', 'created_by', 'created_at', 'updated_at'],
   asistencia:   ['id', 'project_id', 'trabajador_id', 'fecha', 'estado', 'hora_entrada', 'hora_salida', 'horas_extra', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_inventario:   ['id', 'producto', 'marca', 'color', 'codigo', 'categoria', 'cantidad', 'unidad', 'costo', 'precio', 'min_stock', 'foto_file', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_entregas:     ['id', 'fecha', 'hora', 'cliente', 'telefono', 'direccion', 'detalle', 'cantidad', 'monto', 'estado', 'item_id', 'stock_aplicado', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_ordenes:      ['id', 'fecha', 'numero', 'proveedor', 'producto', 'cantidad', 'costo_unitario', 'total', 'estado', 'item_id', 'stock_aplicado', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_devoluciones: ['id', 'fecha', 'cliente', 'producto', 'cantidad', 'motivo', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_eventos:      ['id', 'fecha', 'hora', 'titulo', 'tipo', 'color', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_clientes:     ['id', 'nombre', 'empresa', 'telefono', 'email', 'direccion', 'ruc', 'tipo', 'notas', 'prioridad', 'tipo_lead', 'proyecto', 'contacto', 'cargo', 'estado', 'created_by', 'created_at', 'updated_at'],
   pp_visitas:      ['id', 'fecha', 'hora', 'titulo', 'cliente', 'cliente_id', 'responsable', 'motivo', 'estado', 'lugar', 'reporte_file', 'notas', 'created_by', 'created_at', 'updated_at'],
@@ -748,7 +737,7 @@ const TABLE_MODULE = {
   licitaciones: 'licit',
   lic_competidores: 'licit',
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt',
-  pp_inventario: 'paintpro', pp_entregas: 'paintpro', pp_ordenes: 'paintpro', pp_devoluciones: 'paintpro', pp_eventos: 'paintpro', pp_clientes: 'paintpro', pp_visitas: 'paintpro', pp_leads: 'paintpro', pp_cotizaciones: 'paintpro', pp_notas: 'paintpro'
+  pp_inventario: 'paintpro', pp_ordenes: 'paintpro', pp_eventos: 'paintpro', pp_clientes: 'paintpro', pp_visitas: 'paintpro', pp_leads: 'paintpro', pp_cotizaciones: 'paintpro', pp_notas: 'paintpro'
 };
 const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt', paintpro: 'paintpro' };
 // Salas de chat restringidas (heredan el permiso del módulo). Las demás
@@ -1369,9 +1358,7 @@ function canWrite(table, op, user, values, filters) {
       return roleCan('mkt', user);
     // ── Paint Pro ──
     case 'pp_inventario':
-    case 'pp_entregas':
     case 'pp_ordenes':
-    case 'pp_devoluciones':
     case 'pp_eventos':
     case 'pp_clientes':
     case 'pp_visitas':
