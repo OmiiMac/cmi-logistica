@@ -5445,11 +5445,12 @@ async function renderPpPanel(){
 // ── Paint Pro: Calendario (entregas + órdenes + devoluciones + eventos) ──
 async function renderPpCalendario(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const [ent,ord,dev,evt]=await Promise.all([
+  const [ent,ord,dev,evt,vis]=await Promise.all([
     api('/api/select',{table:'pp_entregas',limit:5000}),
     api('/api/select',{table:'pp_ordenes',limit:5000}),
     api('/api/select',{table:'pp_devoluciones',limit:5000}),
-    api('/api/select',{table:'pp_eventos',limit:5000})
+    api('/api/select',{table:'pp_eventos',limit:5000}),
+    api('/api/select',{table:'pp_visitas',limit:5000})
   ]);
   if((state.ppTab||'panel')!=='calendario') return;
   state._ppEvt=evt.data||[];
@@ -5460,6 +5461,7 @@ async function renderPpCalendario(){
   (ord.data||[]).forEach(o=>add(o.fecha,'🧾 '+(o.proveedor||'Orden'),'#2563EB',`state.ppTab='ordenes';renderPaintPro()`));
   (dev.data||[]).forEach(v=>add(v.fecha,'↩️ '+(v.cliente||'Devolución'),'#DC2626',`state.ppTab='devoluciones';renderPaintPro()`));
   (evt.data||[]).forEach(v=>add(v.fecha,'📌 '+(v.titulo||'Evento'),v.color||'#7C3AED',`showPpEvtModal('${v.id}')`));
+  (vis.data||[]).forEach(v=>add(v.fecha,'👁 '+(v.titulo||v.cliente||'Visita'),'#D97706',`state.ppTab='visitas';renderPaintPro()`));
   const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7; const days=new Date(Y,M,0).getDate(); const hoy=todayStr();
   let cells=''; for(let i=0;i<startDow;i++) cells+='<div></div>';
   for(let d=1;d<=days;d++){ const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
@@ -5475,13 +5477,13 @@ async function renderPpCalendario(){
       <div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')} ${Y}</div>
       <button class="nav-arrow" onclick="shiftPpMonth(1)">›</button>
       <div style="margin-left:auto;display:flex;gap:10px;font-size:11px;color:var(--c-muted);flex-wrap:wrap;align-items:center">
-        <span>🚚 Entregas</span><span>🧾 Órdenes</span><span>↩️ Devoluciones</span><span>📌 Eventos</span>
+        <span>🚚 Entregas</span><span>🧾 Órdenes</span><span>↩️ Devoluciones</span><span>👁 Visitas</span><span>📌 Eventos</span>
         <button class="btn btn-sm btn-primary" onclick="showPpEvtModal(null,'${ym}-15')">+ Evento</button>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Entregas, órdenes y devoluciones aparecen solas por su fecha. Toca un día para agregar un evento.</div>`;
+    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Entregas, órdenes, devoluciones y visitas aparecen solas por su fecha. Toca un día para agregar un evento.</div>`;
 }
 function showPpEvtModal(id,defFecha){
   const e=id?(state._ppEvt||[]).find(x=>x.id===id):null;
