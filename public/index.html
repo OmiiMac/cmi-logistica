@@ -997,7 +997,7 @@ function setupRealtime(){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('licitaciones');
       } else if(['campanas','publicaciones','mercadeo_tareas','mkt_piezas','mkt_push','mkt_efemerides','mkt_biblioteca'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else modRefresh('mercadeo');
-      } else if(['pp_inventario','pp_entregas','pp_ordenes','pp_devoluciones','pp_eventos','pp_clientes','pp_visitas','pp_leads'].includes(table)){
+      } else if(['pp_inventario','pp_cotizaciones','pp_eventos','pp_clientes','pp_visitas','pp_notas'].includes(table)){
         if(state.view==='dashboard') renderDashboard(); else if(state.view==='paintpro') renderPaintPro();
       }
     } catch(ex){}
@@ -1621,7 +1621,7 @@ function renderDashboard(){
     <div class="stat-card" onclick="nav('paintpro')" style="--stat-color:#0891B2;cursor:pointer">
       <div class="stat-icon" style="background:rgba(8,145,178,.12);color:#0891B2"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 11V5a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h8"/><path d="M7 3v4M11 3v4M15 3v4"/><path d="M16 15a3 3 0 013 3v3h-3a3 3 0 010-6z"/></svg></div>
       <div class="stat-val" id="dashPaint" style="color:#0891B2">…</div>
-      <div class="stat-label">Paint Pro · entregas</div>
+      <div class="stat-label">Paint Pro · cotizaciones</div>
     </div>` : ''}
   </div>
 
@@ -1715,7 +1715,7 @@ function renderDashboard(){
   if(canModule('mkt'))   sb.from('campanas').select('id').then(({data})=>{ const el=document.getElementById('dashMkt'); if(el) el.textContent=(data||[]).length; });
   if(canModule('conta')) sb.from('asientos').select('id').then(({data})=>{ const el=document.getElementById('dashConta'); if(el) el.textContent=(data||[]).length; });
   if(state.isAdmin||state.isContador) api('/api/select',{table:'compras',limit:5000}).then(d=>{ const el=document.getElementById('dashCompras'); if(el) el.textContent=(d.data||[]).filter(c=>c.estado!=='entregada').length; });
-  if(canModule('paintpro')) api('/api/select',{table:'pp_entregas',limit:5000}).then(d=>{ const el=document.getElementById('dashPaint'); if(el) el.textContent=(d.data||[]).filter(e=>e.estado==='pendiente'||e.estado==='en_ruta').length; });
+  if(canModule('paintpro')) api('/api/select',{table:'pp_cotizaciones',limit:5000}).then(d=>{ const el=document.getElementById('dashPaint'); if(el) el.textContent=(d.data||[]).filter(c=>(c.estado||'enviada')==='enviada').length; });
 
   // Listado de licitaciones en el panel lateral (para quien tenga acceso)
   if(canModule('licit')) sb.from('licitaciones').select('*').order('created_at',{ascending:false}).then(({data})=>{
@@ -4810,24 +4810,22 @@ async function saveProfile(){
 }
 
 // ══════════════════════════════════════════════════════════════
-// PAINT PRO — venta de pintura (inventario, entregas, órdenes, devoluciones, calendario)
+// PAINT PRO — venta de pintura (inventario, base de clientes, visitas, cotizaciones, calendario)
 // ══════════════════════════════════════════════════════════════
-const PP_ENTREGA_EST=[['pendiente','Pendiente','#D97706'],['en_ruta','En ruta','#2563EB'],['entregada','Entregada','#16A34A'],['cancelada','Cancelada','#9CA3AF']];
-const PP_ORDEN_EST=[['solicitada','Solicitada','#D97706'],['aprobada','Aprobada','#2563EB'],['recibida','Recibida','#16A34A'],['cancelada','Cancelada','#9CA3AF']];
-const PP_DEVO_EST=[['pendiente','Pendiente','#D97706'],['aceptada','Aceptada','#16A34A'],['rechazada','Rechazada','#DC2626']];
+const PP_COTI_EST=[['enviada','Enviada','#2563EB'],['aprobada','Aprobada','#16A34A'],['rechazada','Rechazada','#DC2626'],['pagada','Pagada','#7C3AED'],['en_camino','En camino','#0891B2'],['facturada','Facturada','#D97706'],['entregada','Entregada','#166534']];
 function ppEst(list,v){ return list.find(x=>x[0]===v)||[v,v,'#6B7280']; }
-function ppEstChip(list,v){ const e=ppEst(list,v); return `<span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:${e[2]}22;color:${e[2]}">${e[1]}</span>`; }
 function ppEstSelect(list,v,onchange){ return `<select onchange="${onchange}" style="font-size:11px;padding:3px 6px;border-radius:7px">${list.map(([k,l])=>`<option value="${k}" ${v===k?'selected':''}>${l}</option>`).join('')}</select>`; }
 let _ppCharts=[]; function destroyPpCharts(){ _ppCharts.forEach(c=>{ try{c.destroy()}catch(e){} }); _ppCharts=[]; }
 function shiftPpMonth(d){ const ym=state.ppMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const dt=new Date(Y,M-1+d,1); state.ppMonth=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0'); renderPaintPro(); }
 function goPp(tab){ state.ppTab=tab; renderPaintPro(); }
-// Rejilla de calendario Paint Pro (entregas, órdenes, devoluciones y eventos del mes ym)
-function ppCalendarHtml(ym, ent, ord, dev, evt, opts){
+// Abre la ficha completa de un cliente (info + visitas + cotizaciones + notas)
+function openPpCliente(id){ state.ppCliId=id; state.ppTab='cliente'; renderPaintPro(); }
+// Rejilla de calendario Paint Pro (visitas, cotizaciones y eventos del mes ym)
+function ppCalendarHtml(ym, vis, cot, evt, opts){
   opts=opts||{}; const [Y,M]=ym.split('-').map(Number);
   const byDay={}; const add=(fecha,txt,color,onclick)=>{ if((fecha||'').slice(0,7)!==ym) return; const d=+fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push({txt,color,onclick}); };
-  (ent||[]).forEach(e=>add(e.fecha,'🚚 '+(e.cliente||'Entrega'),'#16A34A',"goPp('entregas')"));
-  (ord||[]).forEach(o=>add(o.fecha,'🧾 '+(o.proveedor||'Orden'),'#2563EB',"goPp('ordenes')"));
-  (dev||[]).forEach(v=>add(v.fecha,'↩️ '+(v.cliente||'Devolución'),'#DC2626',"goPp('devoluciones')"));
+  (vis||[]).forEach(v=>add(v.fecha,'👁 '+(v.titulo||v.cliente||'Visita'),'#D97706',"goPp('visitas')"));
+  (cot||[]).forEach(c=>add(c.fecha,'🧾 '+(c.cliente||'Cotización'),'#2563EB',"goPp('cotizaciones')"));
   (evt||[]).forEach(v=>add(v.fecha,'📌 '+(v.titulo||'Evento'),v.color||'#7C3AED',`showPpEvtModal('${v.id}')`));
   const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7; const days=new Date(Y,M,0).getDate(); const hoy=todayStr();
   const maxShow=opts.max||4; const minH=opts.minH||88;
@@ -4847,17 +4845,16 @@ function renderPaintPro(){
   setTopbar('Paint Pro','Venta de pintura');
   const ta=document.getElementById('topbarActions'); if(ta) ta.innerHTML='';
   const tab=state.ppTab||'panel';
-  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['clientes','👥 Clientes'],['seguimiento','🎯 Seguimiento'],['visitas','🗒️ Visitas'],['entregas','🚚 Entregas'],['ordenes','🧾 Órdenes de compra'],['devoluciones','↩️ Devoluciones'],['calendario','📅 Calendario']];
+  const tabs=[['panel','📊 Panel'],['inventario','📦 Inventario'],['clientes','👥 Base de Clientes'],['visitas','🗒️ Visitas'],['cotizaciones','🧾 Cotizaciones'],['calendario','📅 Calendario']];
+  const act=tab==='cliente'?'clientes':tab;   // la ficha de un cliente mantiene marcada su pestaña
   document.getElementById('view').innerHTML=`<div style="padding:20px 24px">
-    <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="white-space:nowrap" onclick="state.ppTab='${k}';renderPaintPro()">${l}</span>`).join('')}</div>
+    <div class="filter-chips" style="margin-bottom:14px;overflow-x:auto;flex-wrap:nowrap">${tabs.map(([k,l])=>`<span class="chip ${act===k?'active':''}" style="white-space:nowrap" onclick="goPp('${k}')">${l}</span>`).join('')}</div>
     <div id="ppBody"><div class="nodata" style="padding:24px">Cargando…</div></div></div>`;
   if(tab==='inventario') renderPpInventario();
   else if(tab==='clientes') renderPpClientes();
-  else if(tab==='seguimiento') renderPpLeads();
+  else if(tab==='cliente') renderPpClienteDetalle();
   else if(tab==='visitas') renderPpVisitas();
-  else if(tab==='entregas') renderPpEntregas();
-  else if(tab==='ordenes') renderPpOrdenes();
-  else if(tab==='devoluciones') renderPpDevoluciones();
+  else if(tab==='cotizaciones') renderPpCotizaciones();
   else if(tab==='calendario') renderPpCalendario();
   else renderPpPanel();
 }
@@ -4923,139 +4920,223 @@ async function savePpInv(id){
   closeModal(); showToast('Guardado','ok'); renderPaintPro();
 }
 
-// ── Paint Pro: Clientes (base de clientes con su info) ────────
+// ── Paint Pro: Base de Clientes (info del cliente + seguimiento unificados) ──
 const PP_CLI_TIPO=['Frecuente','Ocasional','Mayorista','Empresa','Otro'];
-async function renderPpClientes(){
-  const b=document.getElementById('ppBody'); if(!b) return;
-  const [rc,re]=await Promise.all([
-    api('/api/select',{table:'pp_clientes',order:[{col:'nombre',asc:true}],limit:5000}),
-    api('/api/select',{table:'pp_entregas',limit:5000})
-  ]);
-  if((state.ppTab||'panel')!=='clientes') return;
-  const cli=rc.data||[]; state._ppCli=cli; const ent=re.data||[];
-  const statOf=nombre=>{ const n=(nombre||'').trim().toLowerCase(); const es=ent.filter(e=>(e.cliente||'').trim().toLowerCase()===n); return {num:es.length,total:es.filter(e=>e.estado==='entregada').reduce((s,e)=>s+(+e.monto||0),0)}; };
-  const conCompras=cli.filter(c=>statOf(c.nombre).num>0).length;
-  const vendido=cli.reduce((s,c)=>s+statOf(c.nombre).total,0);
-  b.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
-      ${kpiTile('Clientes',cli.length,'#1D4ED8','#DBEAFE')}
-      ${kpiTile('Con compras',conCompras,'#166534','#DCFCE7')}
-      ${kpiTile('Vendido a clientes',cajaMoney(vendido),'#7C3AED','#EDE9FE')}
-    </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="showPpCliModal()">+ Cliente</button></div>
-    <div class="item-table"><table>
-      <thead><tr><th>Cliente</th><th>Teléfono</th><th>Correo / Dirección</th><th style="text-align:center">Compras</th><th style="text-align:right">Total</th><th></th></tr></thead>
-      <tbody>${cli.length===0?`<tr><td colspan="6"><div class="empty-state">Sin clientes. Agrega el primero con "+ Cliente".</div></td></tr>`:cli.map(c=>{ const st=statOf(c.nombre); return `
-        <tr>
-          <td><b style="font-size:13px">${esc(c.nombre||'')}</b>${c.empresa?`<div style="font-size:11px;color:var(--c-muted)">${esc(c.empresa)}</div>`:''}${c.tipo?`<div style="font-size:10px;color:var(--c-muted)">${esc(c.tipo)}</div>`:''}</td>
-          <td style="font-size:12px">${c.telefono?`<a href="tel:${esc(c.telefono)}" style="color:var(--c-primary)">${esc(c.telefono)}</a>`:'—'}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(c.email||'')}${c.email&&c.direccion?'<br>':''}${esc(c.direccion||'')}</td>
-          <td style="text-align:center;font-weight:700">${st.num||'—'}</td>
-          <td style="text-align:right;font-weight:700">${cajaMoney(st.total)}</td>
-          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpCliModal('${c.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_clientes','${c.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
-        </tr>`;}).join('')}</tbody>
-    </table></div>`;
-}
-function showPpCliModal(id){
-  const c=id?(state._ppCli||[]).find(x=>x.id===id):null;
-  openModal(`<div class="modal-head"><h2>${c?'Editar cliente':'Nuevo cliente'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-  <div class="modal-body">
-    <div class="form-group"><label>Nombre</label><input id="pcNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre y apellido"></div>
-    <div class="form-row"><div class="form-group"><label>Empresa (opcional)</label><input id="pcEmpresa" value="${esc(c?.empresa||'')}"></div><div class="form-group"><label>Tipo</label><select id="pcTipo"><option value="">—</option>${PP_CLI_TIPO.map(t=>`<option ${c?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Teléfono</label><input id="pcTel" value="${esc(c?.telefono||'')}"></div><div class="form-group"><label>Correo</label><input id="pcEmail" value="${esc(c?.email||'')}"></div></div>
-    <div class="form-group"><label>Dirección</label><input id="pcDir" value="${esc(c?.direccion||'')}"></div>
-    <div class="form-group"><label>RUC / Cédula (opcional)</label><input id="pcRuc" value="${esc(c?.ruc||'')}"></div>
-    <div class="form-group"><label>Notas</label><textarea id="pcNotas" rows="2">${esc(c?.notas||'')}</textarea></div>
-  </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpCli(${id?`'${id}'`:'null'})">Guardar</button></div>`);
-}
-async function savePpCli(id){
-  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
-  const n=g('pcNombre').trim(); if(!n){ showToast('Escribe el nombre','err'); return; }
-  const values={nombre:n,empresa:g('pcEmpresa').trim(),tipo:g('pcTipo'),telefono:g('pcTel').trim(),email:g('pcEmail').trim(),direccion:g('pcDir').trim(),ruc:g('pcRuc').trim(),notas:g('pcNotas').trim()};
-  let d; if(id){ d=await api('/api/update',{table:'pp_clientes',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_clientes',values:{...values,created_at:new Date().toISOString()}}); }
-  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
-  closeModal(); showToast('Guardado','ok'); renderPaintPro();
-}
-
-// ── Paint Pro: Base de seguimiento de clientes (leads / CRM) ──
 const PP_PRIORIDAD=[['alta','Alta','#7C3AED'],['media','Media','#2563EB'],['baja','Baja','#06B6D4']];
 const PP_TIPO=[['constructora','Constructora','#F97316'],['subcontratista','Subcontratista','#0EA5E9'],['ph','PH','#EAB308'],['proveedor','Proveedor','#14B8A6'],['otro','Otro','#EC4899']];
 const PP_LEAD_EST=[['contactado','Contactado','#0EA5E9'],['licitacion','Licitación','#6B7280'],['visita','Visita','#CA8A04'],['visita_correo','Visita + Correo','#EA580C'],['cotizacion_visita','Cotización + Visita','#EAB308'],['cotizacion','Cotización enviada','#2563EB'],['cotizacion_aprobada','Cotización Aprobada','#16A34A'],['cerrado','Cerrado / Ganado','#166534'],['descartado','Descartado','#DC2626']];
 // Select de colores (chip editable) para prioridad/tipo/estado
 function ppColoredSelect(list,value,onchange){ const e=(list.find(x=>x[0]===value)||list[0]||['','','#6B7280']); return `<select onchange="${onchange}" style="font-size:11px;font-weight:700;padding:3px 7px;border-radius:7px;border:none;color:#fff;cursor:pointer;background:${e[2]}">${list.map(([k,l])=>`<option value="${k}" ${value===k?'selected':''} style="background:#fff;color:#111">${l}</option>`).join('')}</select>`; }
 async function setPpField(table,id,field,value){ const v={}; v[field]=value; const d=await api('/api/update',{table,values:v,filters:[{col:'id',val:id}]}); if(d.error){ showToast('Error','err'); return; } renderPaintPro(); }
-async function renderPpLeads(){
+async function renderPpClientes(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const d=await api('/api/select',{table:'pp_leads',order:[{col:'created_at',asc:false}],limit:5000});
-  if((state.ppTab||'panel')!=='seguimiento') return;
-  const leads=d.data||[]; state._ppLeads=leads;
+  const [rc,rk]=await Promise.all([
+    api('/api/select',{table:'pp_clientes',order:[{col:'nombre',asc:true}],limit:5000}),
+    api('/api/select',{table:'pp_cotizaciones',limit:5000})
+  ]);
+  if((state.ppTab||'panel')!=='clientes') return;
+  const cli=rc.data||[]; state._ppCli=cli; const cot=rk.data||[];
+  const statOf=c=>{ const cs=cot.filter(k=>k.cliente_id===c.id||(k.cliente||'').trim().toLowerCase()===(c.nombre||'').trim().toLowerCase()); return {num:cs.length,total:cs.reduce((s,k)=>s+(+k.monto||0),0)}; };
   const f=state.ppLeadFilter||'all';
-  const shown=leads.filter(l=>f==='all'||l.estado===f);
-  const lbl=(list,v)=>(list.find(x=>x[0]===v)||[v,v])[1];
-  const estChip=v=>{ const e=PP_LEAD_EST.find(x=>x[0]===v)||[v,v,'#6B7280']; return e; };
-  const cntE=k=>leads.filter(l=>l.estado===k).length;
-  const ganados=leads.filter(l=>l.estado==='cotizacion_aprobada'||l.estado==='cerrado').length;
+  const shown=cli.filter(c=>f==='all'||(c.estado||'contactado')===f);
+  const cntE=k=>cli.filter(c=>(c.estado||'contactado')===k).length;
+  const conCoti=cli.filter(c=>statOf(c).num>0).length;
+  const totCotizado=cot.reduce((s,k)=>s+(+k.monto||0),0);
   const chipF=(k,l)=>`<span class="chip ${f===k?'active':''}" onclick="state.ppLeadFilter='${k}';renderPaintPro()">${l}</span>`;
   b.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
-      ${kpiTile('Clientes en seguimiento',leads.length,'#1D4ED8','#DBEAFE')}
-      ${kpiTile('Cotización aprobada',cntE('cotizacion_aprobada'),'#166534','#DCFCE7')}
-      ${kpiTile('En licitación',cntE('licitacion'),'#6B7280','#F3F4F6')}
-      ${kpiTile('Contactados',cntE('contactado'),'#0EA5E9','#E0F2FE')}
+      ${kpiTile('Clientes',cli.length,'#1D4ED8','#DBEAFE')}
+      ${kpiTile('Con cotización',conCoti,'#166534','#DCFCE7')}
+      ${kpiTile('Cotización aprobada',cntE('cotizacion_aprobada'),'#16A34A','#DCFCE7')}
+      ${kpiTile('Total cotizado',cajaMoney(totCotizado),'#7C3AED','#EDE9FE')}
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
       <div class="filter-chips">${chipF('all','Todos')}${PP_LEAD_EST.map(e=>chipF(e[0],e[1])).join('')}</div>
-      <button class="btn btn-sm btn-primary" onclick="showPpLeadModal()">+ Cliente</button>
+      <button class="btn btn-sm btn-primary" onclick="showPpCliModal()">+ Cliente</button>
     </div>
+    <div style="font-size:12px;color:var(--c-muted);margin-bottom:8px">Toca el nombre del cliente para ver su ficha completa: visitas, cotizaciones y notas.</div>
     <div class="item-table"><table>
-      <thead><tr><th>Cliente</th><th>Prioridad</th><th>Tipo</th><th>Proyecto / Interés</th><th>Contacto</th><th>Cargo</th><th>Teléfono</th><th>Correo</th><th>Estado del Lead</th><th></th></tr></thead>
-      <tbody>${shown.length===0?`<tr><td colspan="10"><div class="empty-state">Sin clientes en seguimiento${f!=='all'?' con ese estado':''}. Agrega con "+ Cliente".</div></td></tr>`:shown.map(l=>`
+      <thead><tr><th>Cliente</th><th>Prioridad</th><th>Tipo</th><th>Proyecto / Interés</th><th>Contacto</th><th>Teléfono</th><th>Correo</th><th style="text-align:center">Cotiz.</th><th style="text-align:right">Total</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${shown.length===0?`<tr><td colspan="11"><div class="empty-state">Sin clientes${f!=='all'?' con ese estado':''}. Agrega el primero con "+ Cliente".</div></td></tr>`:shown.map(c=>{ const st=statOf(c); return `
         <tr>
-          <td><b style="font-size:13px">${esc(l.cliente||'')}</b></td>
-          <td>${ppColoredSelect(PP_PRIORIDAD,l.prioridad||'media',`setPpField('pp_leads','${l.id}','prioridad',this.value)`)}</td>
-          <td>${ppColoredSelect(PP_TIPO,l.tipo||'otro',`setPpField('pp_leads','${l.id}','tipo',this.value)`)}</td>
-          <td style="font-size:12px">${esc(l.proyecto||'')}</td>
-          <td style="font-size:12px">${esc(l.contacto||'')}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(l.cargo||'')}</td>
-          <td style="font-size:12px;white-space:nowrap">${l.telefono?`<a href="tel:${esc(l.telefono)}" style="color:var(--c-primary)">${esc(l.telefono)}</a>`:'—'}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${l.email?`<a href="mailto:${esc(l.email)}" style="color:var(--c-muted)">${esc(l.email)}</a>`:'—'}</td>
-          <td>${ppColoredSelect(PP_LEAD_EST,l.estado||'contactado',`setPpField('pp_leads','${l.id}','estado',this.value)`)}</td>
-          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpLeadModal('${l.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_leads','${l.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
-        </tr>`).join('')}</tbody>
+          <td><b style="font-size:13px;color:var(--c-primary);cursor:pointer;text-decoration:underline" onclick="openPpCliente('${c.id}')">${esc(c.nombre||'')}</b>${c.empresa?`<div style="font-size:11px;color:var(--c-muted)">${esc(c.empresa)}</div>`:''}${c.tipo?`<div style="font-size:10px;color:var(--c-muted)">${esc(c.tipo)}</div>`:''}</td>
+          <td>${ppColoredSelect(PP_PRIORIDAD,c.prioridad||'media',`setPpField('pp_clientes','${c.id}','prioridad',this.value)`)}</td>
+          <td>${ppColoredSelect(PP_TIPO,c.tipo_lead||'otro',`setPpField('pp_clientes','${c.id}','tipo_lead',this.value)`)}</td>
+          <td style="font-size:12px">${esc(c.proyecto||'')}</td>
+          <td style="font-size:12px">${esc(c.contacto||'')}${c.cargo?`<div style="font-size:11px;color:var(--c-muted)">${esc(c.cargo)}</div>`:''}</td>
+          <td style="font-size:12px;white-space:nowrap">${c.telefono?`<a href="tel:${esc(c.telefono)}" style="color:var(--c-primary)">${esc(c.telefono)}</a>`:'—'}</td>
+          <td style="font-size:12px;color:var(--c-muted)">${c.email?`<a href="mailto:${esc(c.email)}" style="color:var(--c-muted)">${esc(c.email)}</a>`:'—'}</td>
+          <td style="text-align:center;font-weight:700">${st.num||'—'}</td>
+          <td style="text-align:right;font-weight:700">${cajaMoney(st.total)}</td>
+          <td>${ppColoredSelect(PP_LEAD_EST,c.estado||'contactado',`setPpField('pp_clientes','${c.id}','estado',this.value)`)}</td>
+          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpCliModal('${c.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_clientes','${c.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+        </tr>`;}).join('')}</tbody>
     </table></div>`;
 }
-function showPpLeadModal(id){
-  const l=id?(state._ppLeads||[]).find(x=>x.id===id):null;
+function showPpCliModal(id){
+  const c=id?(state._ppCli||[]).find(x=>x.id===id):null;
   const selOpts=(list,v)=>list.map(([k,lab])=>`<option value="${k}" ${v===k?'selected':''}>${lab}</option>`).join('');
-  openModal(`<div class="modal-head"><h2>${l?'Editar seguimiento':'Nuevo cliente en seguimiento'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+  openModal(`<div class="modal-head"><h2>${c?'Editar cliente':'Nuevo cliente'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
-    <div class="form-group"><label>Cliente</label><input id="plCliente" value="${esc(l?.cliente||'')}" placeholder="Nombre del cliente / empresa"></div>
+    <div class="form-group"><label>Cliente</label><input id="pcNombre" value="${esc(c?.nombre||'')}" placeholder="Nombre del cliente / empresa"></div>
+    <div class="form-row"><div class="form-group"><label>Empresa (opcional)</label><input id="pcEmpresa" value="${esc(c?.empresa||'')}"></div><div class="form-group"><label>Tipo de cliente</label><select id="pcTipo"><option value="">—</option>${PP_CLI_TIPO.map(t=>`<option ${c?.tipo===t?'selected':''}>${t}</option>`).join('')}</select></div></div>
+    <div class="form-row"><div class="form-group"><label>Teléfono</label><input id="pcTel" value="${esc(c?.telefono||'')}"></div><div class="form-group"><label>Correo</label><input id="pcEmail" value="${esc(c?.email||'')}"></div></div>
+    <div class="form-group"><label>Dirección</label><input id="pcDir" value="${esc(c?.direccion||'')}"></div>
+    <div class="form-group"><label>RUC / Cédula (opcional)</label><input id="pcRuc" value="${esc(c?.ruc||'')}"></div>
     <div class="form-row">
-      <div class="form-group"><label>Prioridad</label><select id="plPrioridad">${selOpts(PP_PRIORIDAD,l?.prioridad||'media')}</select></div>
-      <div class="form-group"><label>Tipo</label><select id="plTipo">${selOpts(PP_TIPO,l?.tipo||'otro')}</select></div>
+      <div class="form-group"><label>Prioridad</label><select id="pcPrioridad">${selOpts(PP_PRIORIDAD,c?.prioridad||'media')}</select></div>
+      <div class="form-group"><label>Rubro</label><select id="pcTipoLead">${selOpts(PP_TIPO,c?.tipo_lead||'otro')}</select></div>
     </div>
-    <div class="form-group"><label>Proyecto / Interés</label><input id="plProyecto" value="${esc(l?.proyecto||'')}"></div>
+    <div class="form-group"><label>Proyecto / Interés</label><input id="pcProyecto" value="${esc(c?.proyecto||'')}"></div>
     <div class="form-row">
-      <div class="form-group"><label>Contacto</label><input id="plContacto" value="${esc(l?.contacto||'')}"></div>
-      <div class="form-group"><label>Cargo</label><input id="plCargo" value="${esc(l?.cargo||'')}"></div>
+      <div class="form-group"><label>Persona de contacto</label><input id="pcContacto" value="${esc(c?.contacto||'')}"></div>
+      <div class="form-group"><label>Cargo</label><input id="pcCargo" value="${esc(c?.cargo||'')}"></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Teléfono</label><input id="plTel" value="${esc(l?.telefono||'')}"></div>
-      <div class="form-group"><label>Correo</label><input id="plEmail" value="${esc(l?.email||'')}"></div>
-    </div>
-    <div class="form-group"><label>Estado del Lead</label><select id="plEstado">${selOpts(PP_LEAD_EST,l?.estado||'contactado')}</select></div>
-    <div class="form-group"><label>Notas / seguimiento</label><textarea id="plNotas" rows="2">${esc(l?.notas||'')}</textarea></div>
+    <div class="form-group"><label>Estado del seguimiento</label><select id="pcEstado">${selOpts(PP_LEAD_EST,c?.estado||'contactado')}</select></div>
+    <div class="form-group"><label>Notas</label><textarea id="pcNotas" rows="2">${esc(c?.notas||'')}</textarea></div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpLead(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpCli(${id?`'${id}'`:'null'})">Guardar</button></div>`);
 }
-async function savePpLead(id){
+async function savePpCli(id){
   const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
-  const c=g('plCliente').trim(); if(!c){ showToast('Escribe el cliente','err'); return; }
-  const values={cliente:c,prioridad:g('plPrioridad'),tipo:g('plTipo'),proyecto:g('plProyecto').trim(),contacto:g('plContacto').trim(),cargo:g('plCargo').trim(),telefono:g('plTel').trim(),email:g('plEmail').trim(),estado:g('plEstado'),notas:g('plNotas').trim()};
-  let d; if(id){ d=await api('/api/update',{table:'pp_leads',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_leads',values:{...values,created_at:new Date().toISOString()}}); }
+  const n=g('pcNombre').trim(); if(!n){ showToast('Escribe el cliente','err'); return; }
+  const values={nombre:n,empresa:g('pcEmpresa').trim(),tipo:g('pcTipo'),telefono:g('pcTel').trim(),email:g('pcEmail').trim(),direccion:g('pcDir').trim(),ruc:g('pcRuc').trim(),
+    prioridad:g('pcPrioridad'),tipo_lead:g('pcTipoLead'),proyecto:g('pcProyecto').trim(),contacto:g('pcContacto').trim(),cargo:g('pcCargo').trim(),estado:g('pcEstado'),notas:g('pcNotas').trim()};
+  let d; if(id){ d=await api('/api/update',{table:'pp_clientes',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_clientes',values:{...values,created_at:new Date().toISOString()}}); }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
   closeModal(); showToast('Guardado','ok'); renderPaintPro();
+}
+
+// ── Paint Pro: Ficha del cliente (info + visitas + cotizaciones + notas) ──
+// Une a un cliente todo lo suyo: sus visitas, sus cotizaciones con los archivos
+// adjuntos y un hilo de notas para llevar la comunicación del seguimiento.
+function ppCliMatch(rec, cli){
+  return rec.cliente_id===cli.id || (rec.cliente||'').trim().toLowerCase()===(cli.nombre||'').trim().toLowerCase();
+}
+async function renderPpClienteDetalle(){
+  const b=document.getElementById('ppBody'); if(!b) return;
+  const id=state.ppCliId;
+  if(!id){ goPp('clientes'); return; }
+  const [rc,rv,rk,rn]=await Promise.all([
+    api('/api/select',{table:'pp_clientes',limit:5000}),
+    api('/api/select',{table:'pp_visitas',order:[{col:'fecha',asc:false}],limit:5000}),
+    api('/api/select',{table:'pp_cotizaciones',order:[{col:'fecha',asc:false}],limit:5000}),
+    api('/api/select',{table:'pp_notas',order:[{col:'created_at',asc:true}],limit:5000})
+  ]);
+  if((state.ppTab||'panel')!=='cliente') return;
+  state._ppCli=rc.data||[];
+  const cli=(rc.data||[]).find(x=>x.id===id);
+  if(!cli){ showToast('El cliente ya no existe','err'); goPp('clientes'); return; }
+  const vis=(rv.data||[]).filter(v=>ppCliMatch(v,cli));
+  const cot=(rk.data||[]).filter(k=>ppCliMatch(k,cli));
+  const notas=(rn.data||[]).filter(n=>n.cliente_id===id);
+  state._ppVis=rv.data||[]; state._ppCot=rk.data||[];
+  const totCot=cot.reduce((s,k)=>s+(+k.monto||0),0);
+  const aprob=cot.filter(k=>['aprobada','pagada','facturada','entregada'].includes(k.estado)).reduce((s,k)=>s+(+k.monto||0),0);
+  const dato=(l,v)=>v?`<div style="margin-bottom:7px"><div style="font-size:10px;font-weight:700;color:var(--c-muted);text-transform:uppercase;letter-spacing:.07em">${l}</div><div style="font-size:13px">${v}</div></div>`:'';
+  const lbl=(list,v)=>{ const e=ppEst(list,v); return `<span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:${e[2]}22;color:${e[2]}">${e[1]}</span>`; };
+  b.innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn btn-sm btn-ghost" onclick="goPp('clientes')">‹ Base de Clientes</button>
+      <h2 style="font-size:19px;margin:0">${esc(cli.nombre||'')}</h2>
+      ${lbl(PP_LEAD_EST,cli.estado||'contactado')}
+      <button class="btn btn-sm btn-ghost" style="margin-left:auto" onclick="showPpCliModal('${cli.id}')">Editar datos</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px">
+      ${kpiTile('Visitas',vis.length,'#D97706','#FEF3C7')}
+      ${kpiTile('Cotizaciones',cot.length,'#2563EB','#DBEAFE')}
+      ${kpiTile('Total cotizado',cajaMoney(totCot),'#7C3AED','#EDE9FE')}
+      ${kpiTile('Aprobado',cajaMoney(aprob),'#166534','#DCFCE7')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:16px">
+      <div class="section-card" style="padding:16px">
+        <h3 style="font-size:13px;margin:0 0 12px">📇 Información del cliente</h3>
+        ${dato('Empresa',esc(cli.empresa||''))}
+        ${dato('Tipo de cliente',esc(cli.tipo||''))}
+        ${dato('Rubro',esc(ppEst(PP_TIPO,cli.tipo_lead||'otro')[1]))}
+        ${dato('Prioridad',esc(ppEst(PP_PRIORIDAD,cli.prioridad||'media')[1]))}
+        ${dato('Proyecto / Interés',esc(cli.proyecto||''))}
+        ${dato('Persona de contacto',esc(cli.contacto||'')+(cli.cargo?' · '+esc(cli.cargo):''))}
+        ${dato('Teléfono',cli.telefono?`<a href="tel:${esc(cli.telefono)}" style="color:var(--c-primary)">${esc(cli.telefono)}</a>`:'')}
+        ${dato('Correo',cli.email?`<a href="mailto:${esc(cli.email)}" style="color:var(--c-primary)">${esc(cli.email)}</a>`:'')}
+        ${dato('Dirección',esc(cli.direccion||''))}
+        ${dato('RUC / Cédula',esc(cli.ruc||''))}
+        ${dato('Notas',esc(cli.notas||''))}
+      </div>
+      <div class="section-card" style="padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <h3 style="font-size:13px;margin:0">👁 Visitas</h3>
+          <button class="btn btn-sm btn-primary" onclick="showPpVisModal(null,'${cli.id}')">+ Visita</button>
+        </div>
+        ${vis.length===0?'<div class="nodata" style="padding:16px;font-size:12px">Sin visitas registradas.</div>':vis.map(v=>`
+          <div style="border-bottom:1px solid var(--c-border);padding:8px 0;display:flex;gap:10px;align-items:flex-start">
+            <div style="flex:1">
+              <div style="font-size:13px;font-weight:700;cursor:pointer" onclick="showPpVisModal('${v.id}')">${esc(v.titulo||'Visita')}</div>
+              <div style="font-size:11px;color:var(--c-muted)">${esc(v.fecha||'')}${v.hora?' · '+esc(v.hora):''}${v.lugar?' · '+esc(v.lugar):''}</div>
+              ${v.motivo?`<div style="font-size:11px;color:var(--c-muted);margin-top:2px">${esc(v.motivo)}</div>`:''}
+            </div>
+            <div style="text-align:right;white-space:nowrap">${lbl(PP_VISITA_EST,v.estado||'programada')}
+              ${v.reporte_file?`<div style="margin-top:4px"><a href="${fileUrl(v.reporte_file)}" target="_blank" style="color:var(--c-primary);font-size:11px">📄 reporte</a></div>`:''}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="section-card" style="padding:16px;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="font-size:13px;margin:0">🧾 Cotizaciones</h3>
+        <button class="btn btn-sm btn-primary" onclick="showPpCotModal(null,'${cli.id}')">+ Cotización</button>
+      </div>
+      ${cot.length===0?'<div class="nodata" style="padding:16px;font-size:12px">Sin cotizaciones para este cliente.</div>':`
+      <div class="item-table"><table>
+        <thead><tr><th>Fecha</th><th>N°</th><th>Descripción</th><th style="text-align:right">Monto</th><th>Estado</th><th>Adjuntos</th></tr></thead>
+        <tbody>${cot.map(k=>`<tr>
+          <td style="white-space:nowrap;font-size:12px">${esc(k.fecha||'')}</td>
+          <td style="font-size:12px">${esc(k.numero||'')}</td>
+          <td style="font-size:12px;cursor:pointer" onclick="showPpCotModal('${k.id}')"><b>${esc(k.descripcion||'—')}</b></td>
+          <td style="text-align:right;font-weight:700">${cajaMoney(k.monto||0)}</td>
+          <td>${lbl(PP_COTI_EST,k.estado||'enviada')}</td>
+          <td id="ppCotFiles-${k.id}" style="font-size:11px;color:var(--c-muted)">—</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`}
+    </div>
+    <div class="section-card" style="padding:16px">
+      <h3 style="font-size:13px;margin:0 0 4px">💬 Notas y comunicación</h3>
+      <div style="font-size:11px;color:var(--c-muted);margin-bottom:12px">Hilo de seguimiento del cliente: acuerdos, llamadas, respuestas y documentos.</div>
+      <div id="ppNotasList" style="max-height:380px;overflow-y:auto;margin-bottom:12px">
+        ${notas.length===0?'<div class="nodata" style="padding:16px;font-size:12px">Sin notas todavía. Escribe la primera abajo.</div>':notas.map(n=>`
+          <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--c-border)">
+            <div style="width:30px;height:30px;border-radius:50%;background:var(--c-primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${esc((state.profiles[n.created_by]||'?').slice(0,2).toUpperCase())}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:700">${esc(state.profiles[n.created_by]||'Usuario')} <span style="font-weight:400;color:var(--c-muted);font-size:11px">${esc(fmtDate(n.created_at)||'')}</span></div>
+              ${n.texto?`<div style="font-size:13px;white-space:pre-wrap;margin-top:2px">${esc(n.texto)}</div>`:''}
+              ${n.file_id?`<div style="margin-top:5px"><a href="${fileUrl(n.file_id)}" target="_blank" style="color:var(--c-primary);font-size:12px">📎 ver archivo adjunto</a></div>`:''}
+            </div>
+            <button class="act-btn del" onclick="delPp('pp_notas','${n.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+          </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <textarea id="ppNotaTxt" rows="2" placeholder="Escribe una nota del seguimiento…" style="flex:1;min-width:220px"></textarea>
+        <input type="file" id="ppNotaFile" style="max-width:190px;font-size:12px">
+        <button class="btn btn-primary" onclick="savePpNota('${cli.id}')">Enviar</button>
+      </div>
+    </div>`;
+  cot.forEach(k=>ppRenderCotFiles(k.id));
+}
+// Lista los archivos adjuntos de una cotización dentro de la ficha del cliente.
+async function ppRenderCotFiles(cotId){
+  const el=document.getElementById('ppCotFiles-'+cotId); if(!el) return;
+  const {data}=await sb.from('files').select('*').eq('scope','paintpro').eq('ref_id',cotId);
+  const fs=data||[];
+  el.innerHTML = fs.length===0 ? '—' : fs.map(f=>`<a href="${fileUrl(f.id)}" target="_blank" style="color:var(--c-primary);display:block">📎 ${esc(f.name||'archivo')}</a>`).join('');
+}
+async function savePpNota(cliId){
+  const t=document.getElementById('ppNotaTxt'); const fin=document.getElementById('ppNotaFile');
+  const texto=t?t.value.trim():''; const file=fin&&fin.files&&fin.files[0];
+  if(!texto && !file){ showToast('Escribe una nota o adjunta un archivo','err'); return; }
+  const d=await api('/api/insert',{table:'pp_notas',values:{cliente_id:cliId,texto,created_at:new Date().toISOString()}});
+  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  const rid=d.data&&d.data[0]&&d.data[0].id;
+  if(file&&rid){ showToast('Subiendo archivo…','ok'); const up=await apiUpload('paintpro',rid,file); if(!up.error&&up.data) await api('/api/update',{table:'pp_notas',values:{file_id:up.data.id},filters:[{col:'id',val:rid}]}); }
+  renderPaintPro();
 }
 
 // ── Paint Pro: Visitas y seguimiento ──────────────────────────
@@ -5075,7 +5156,7 @@ async function renderPpVisitas(){
   const mesLabel=m=>{ if(m==='s/f') return 'Sin fecha'; const [Y,M]=m.split('-').map(Number); return ((typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')+' '+Y).toUpperCase(); };
   const rowHtml=v=>`<tr>
       <td><b style="font-size:13px">${esc(v.titulo||'')}</b>${v.motivo?`<div style="font-size:11px;color:var(--c-muted)">${esc(v.motivo)}</div>`:''}</td>
-      <td style="font-size:12px">${esc(v.cliente||'')}</td>
+      <td style="font-size:12px">${(cid=>cid?`<b style="color:var(--c-primary);cursor:pointer;text-decoration:underline" onclick="openPpCliente('${cid}')">${esc(v.cliente||'')}</b>`:esc(v.cliente||''))(ppCliIdOf(v))}</td>
       <td style="font-size:12px;color:var(--c-muted)">${esc(v.responsable||'')}</td>
       <td style="white-space:nowrap;font-size:12px">${esc(v.fecha||'')}${v.hora?`<div style="font-size:11px;color:var(--c-muted)">${esc(v.hora)}</div>`:''}</td>
       <td>${ppEstSelect(PP_VISITA_EST,v.estado||'programada',`setPpEstado('pp_visitas','${v.id}',this.value)`)}</td>
@@ -5101,14 +5182,26 @@ async function renderPpVisitas(){
     <div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-sm btn-primary" onclick="showPpVisModal()">+ Visita</button></div>
     ${groups}`;
 }
-function showPpVisModal(id){
+function ppCliOptions(sel){
+  const cli=(state._ppCli||[]).slice().sort((a,b)=>(a.nombre||'').localeCompare(b.nombre||''));
+  return '<option value="">— Elegí un cliente —</option>'+cli.map(c=>`<option value="${c.id}" ${sel===c.id?'selected':''}>${esc(c.nombre||'')}${c.empresa?' · '+esc(c.empresa):''}</option>`).join('');
+}
+// Busca el cliente de un registro: por id, o por nombre si viene de antes del vínculo.
+function ppCliIdOf(rec){
+  if(!rec) return '';
+  if(rec.cliente_id) return rec.cliente_id;
+  const n=(rec.cliente||'').trim().toLowerCase(); if(!n) return '';
+  const c=(state._ppCli||[]).find(x=>(x.nombre||'').trim().toLowerCase()===n);
+  return c?c.id:'';
+}
+function showPpVisModal(id,cliId){
   const v=id?(state._ppVis||[]).find(x=>x.id===id):null;
+  const selCli=ppCliIdOf(v)||cliId||'';
   openModal(`<div class="modal-head"><h2>${v?'Editar visita':'Nueva visita'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
     <div class="form-group"><label>Visita (título)</label><input id="pvTitulo" value="${esc(v?.titulo||'')}" placeholder="Ej: Visita a Sherwin Williams"></div>
     <div class="form-row">
-      <div class="form-group"><label>Cliente</label><input id="pvCliente" list="ppVisCliDL" value="${esc(v?.cliente||'')}" placeholder="Escribe o elige">
-        <datalist id="ppVisCliDL">${(state._ppCli||[]).map(c=>`<option value="${esc(c.nombre||'')}">${esc(c.empresa||'')}</option>`).join('')}</datalist></div>
+      <div class="form-group"><label>Cliente (de la Base de Clientes)</label><select id="pvCliente">${ppCliOptions(selCli)}</select></div>
       <div class="form-group"><label>Persona responsable</label><input id="pvResp" value="${esc(v?.responsable||'')}"></div>
     </div>
     <div class="form-row">
@@ -5130,7 +5223,9 @@ function showPpVisModal(id){
 async function savePpVis(id){
   const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
   const t=g('pvTitulo').trim(); if(!t){ showToast('Escribe el título de la visita','err'); return; }
-  const values={titulo:t,cliente:g('pvCliente').trim(),responsable:g('pvResp').trim(),fecha:g('pvFecha')||todayStr(),hora:g('pvHora').trim(),estado:g('pvEstado'),lugar:g('pvLugar').trim(),motivo:g('pvMotivo').trim(),notas:g('pvNotas').trim()};
+  const cliId=g('pvCliente'); if(!cliId){ showToast('Elegí el cliente','err'); return; }
+  const cliNom=((state._ppCli||[]).find(c=>c.id===cliId)||{}).nombre||'';
+  const values={titulo:t,cliente:cliNom,cliente_id:cliId,responsable:g('pvResp').trim(),fecha:g('pvFecha')||todayStr(),hora:g('pvHora').trim(),estado:g('pvEstado'),lugar:g('pvLugar').trim(),motivo:g('pvMotivo').trim(),notas:g('pvNotas').trim()};
   let d,rid=id;
   if(id){ d=await api('/api/update',{table:'pp_visitas',values,filters:[{col:'id',val:id}]}); }
   else { d=await api('/api/insert',{table:'pp_visitas',values:{...values,created_at:new Date().toISOString()}}); rid=(d.data&&d.data[0]&&d.data[0].id)||null; }
@@ -5148,261 +5243,146 @@ async function uploadPpVisReporte(id, inputEl){
   showToast('Reporte adjuntado','ok'); renderPaintPro();
 }
 
-// ── Paint Pro: Entregas ───────────────────────────────────────
-async function renderPpEntregas(){
+// ── Paint Pro: Cotizaciones (enviadas al cliente, con documentos adjuntos) ──
+async function renderPpCotizaciones(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const [d,rc]=await Promise.all([
-    api('/api/select',{table:'pp_entregas',order:[{col:'fecha',asc:false}],limit:5000}),
+  const [rk,rc]=await Promise.all([
+    api('/api/select',{table:'pp_cotizaciones',order:[{col:'fecha',asc:false}],limit:5000}),
     api('/api/select',{table:'pp_clientes',order:[{col:'nombre',asc:true}],limit:5000})
   ]);
-  if((state.ppTab||'panel')!=='entregas') return;
+  if((state.ppTab||'panel')!=='cotizaciones') return;
   state._ppCli=rc.data||[];
-  const rows=d.data||[]; state._ppEnt=rows; const mes=todayStr().slice(0,7);
-  const cnt=k=>rows.filter(r=>r.estado===k).length;
-  const entregadasMes=rows.filter(r=>r.estado==='entregada'&&(r.fecha||'').slice(0,7)===mes);
-  const montoMes=entregadasMes.reduce((s,r)=>s+(+r.monto||0),0);
+  const rows=rk.data||[]; state._ppCot=rows;
+  const f=state.ppCotFilter||'all';
+  const shown=rows.filter(r=>f==='all'||(r.estado||'enviada')===f);
+  const cnt=k=>rows.filter(r=>(r.estado||'enviada')===k).length;
+  const totCotizado=rows.reduce((s,r)=>s+(+r.monto||0),0);
+  const totGanado=rows.filter(r=>['aprobada','pagada','facturada','entregada'].includes(r.estado)).reduce((s,r)=>s+(+r.monto||0),0);
+  const chipF=(k,l)=>`<span class="chip ${f===k?'active':''}" onclick="state.ppCotFilter='${k}';renderPaintPro()">${l}</span>`;
   b.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
-      ${kpiTile('Pendientes',cnt('pendiente'),'#D97706','#FEF3C7')}
-      ${kpiTile('En ruta',cnt('en_ruta'),'#2563EB','#DBEAFE')}
-      ${kpiTile('Entregadas (mes)',entregadasMes.length,'#166534','#DCFCE7')}
-      ${kpiTile('Vendido (mes)',cajaMoney(montoMes),'#7C3AED','#EDE9FE')}
+      ${kpiTile('Enviadas',cnt('enviada'),'#2563EB','#DBEAFE')}
+      ${kpiTile('Aprobadas',cnt('aprobada'),'#166534','#DCFCE7')}
+      ${kpiTile('Total cotizado',cajaMoney(totCotizado),'#7C3AED','#EDE9FE')}
+      ${kpiTile('Ganado',cajaMoney(totGanado),'#166534','#DCFCE7')}
     </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="showPpEntModal()">+ Entrega</button></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div class="filter-chips">${chipF('all','Todas')}${PP_COTI_EST.map(e=>chipF(e[0],e[1])).join('')}</div>
+      <button class="btn btn-sm btn-primary" onclick="showPpCotModal()">+ Cotización</button>
+    </div>
     <div class="item-table"><table>
-      <thead><tr><th>Fecha</th><th>Cliente</th><th>Detalle</th><th style="text-align:right">Monto</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${rows.length===0?`<tr><td colspan="6"><div class="empty-state">Sin entregas registradas.</div></td></tr>`:rows.map(r=>`
+      <thead><tr><th>Fecha</th><th>N°</th><th>Cliente</th><th>Descripción</th><th style="text-align:right">Monto</th><th>Estado</th><th>Documentos</th><th></th></tr></thead>
+      <tbody>${shown.length===0?`<tr><td colspan="8"><div class="empty-state">Sin cotizaciones${f!=='all'?' con ese estado':''}. Agrega la primera con "+ Cotización".</div></td></tr>`:shown.map(r=>`
         <tr>
-          <td style="white-space:nowrap">${esc(r.fecha||'')}${r.hora?`<div style="font-size:11px;color:var(--c-muted)">${esc(r.hora)}</div>`:''}</td>
-          <td><b style="font-size:13px">${esc(r.cliente||'')}</b>${r.telefono?`<div style="font-size:11px;color:var(--c-muted)">${esc(r.telefono)}</div>`:''}${r.direccion?`<div style="font-size:11px;color:var(--c-muted)">${esc(r.direccion)}</div>`:''}</td>
-          <td style="font-size:12px">${esc(r.detalle||'')}${r.cantidad?` <span style="color:var(--c-muted)">(${r.cantidad})</span>`:''}${(+r.stock_aplicado||0)!==0?' <span style="font-size:10px;color:#166534;font-weight:700" title="Descontado del stock">📦 −stock</span>':''}</td>
-          <td style="text-align:right;font-weight:700">${cajaMoney(r.monto||0)}</td>
-          <td>${ppEstSelect(PP_ENTREGA_EST,r.estado||'pendiente',`setPpEstado('pp_entregas','${r.id}',this.value)`)}</td>
-          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpEntModal('${r.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_entregas','${r.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
-        </tr>`).join('')}</tbody>
-    </table></div>`;
-}
-function showPpEntModal(id){
-  const r=id?(state._ppEnt||[]).find(x=>x.id===id):null;
-  openModal(`<div class="modal-head"><h2>${r?'Editar entrega':'Nueva entrega'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-  <div class="modal-body">
-    <div class="form-row"><div class="form-group"><label>Fecha</label><input id="peFecha" type="date" value="${esc(r?.fecha||todayStr())}"></div><div class="form-group"><label>Hora</label><input id="peHora" value="${esc(r?.hora||'')}" placeholder="10:00 AM"></div></div>
-    <div class="form-group"><label>Cliente</label><input id="peCliente" list="ppCliDL" value="${esc(r?.cliente||'')}" placeholder="Escribe o elige un cliente">
-      <datalist id="ppCliDL">${(state._ppCli||[]).map(c=>`<option value="${esc(c.nombre||'')}">${esc(c.empresa||'')}</option>`).join('')}</datalist></div>
-    <div class="form-row"><div class="form-group"><label>Teléfono</label><input id="peTel" value="${esc(r?.telefono||'')}"></div><div class="form-group"><label>Dirección</label><input id="peDir" value="${esc(r?.direccion||'')}"></div></div>
-    <div class="form-group"><label>Detalle / notas del producto</label><textarea id="peDet" rows="2">${esc(r?.detalle||'')}</textarea></div>
-    <div class="form-group"><label>Pintura del inventario (para mover stock)</label>
-      <select id="peItem">${ppItemOptions(r?.item_id)}</select>
-      <div style="font-size:11px;color:var(--c-muted);margin-top:3px">Al marcar <b>Entregada</b> se descuenta la cantidad del Depósito. Deja "— Sin vincular —" si no quieres mover stock.</div>
-    </div>
-    <div class="form-row"><div class="form-group"><label>Cantidad</label><input id="peCant" type="number" step="0.01" value="${esc(r?.cantidad||'')}"></div><div class="form-group"><label>Monto ($)</label><input id="peMonto" type="number" step="0.01" value="${r&&r.monto?r.monto:''}"></div></div>
-    <div class="form-group"><label>Estado</label>${ppEstSelect(PP_ENTREGA_EST,r?.estado||'pendiente','').replace('<select','<select id="peEstado"')}</div>
-    <div class="form-group"><label>Notas</label><textarea id="peNotas" rows="2">${esc(r?.notas||'')}</textarea></div>
-  </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpEnt(${id?`'${id}'`:'null'})">Guardar</button></div>`);
-}
-function ppItemOptions(sel){ return '<option value="">— Sin vincular —</option>'+ppPaintItems().sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(i=>`<option value="${i.id}" ${sel===i.id?'selected':''}>${esc(i.name)} (${(+i.quantity||0)}${i.unit?' '+esc(i.unit):''})</option>`).join(''); }
-async function savePpEnt(id){
-  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
-  const cli=g('peCliente').trim(); if(!cli){ showToast('Escribe el cliente','err'); return; }
-  const values={fecha:g('peFecha')||todayStr(),hora:g('peHora').trim(),cliente:cli,telefono:g('peTel').trim(),direccion:g('peDir').trim(),detalle:g('peDet').trim(),cantidad:g('peCant').trim(),monto:parseFloat(g('peMonto'))||0,estado:g('peEstado'),item_id:g('peItem')||null,notas:g('peNotas').trim()};
-  const prev = id ? (state._ppEnt||[]).find(x=>x.id===id) : null;
-  let d; if(id){ d=await api('/api/update',{table:'pp_entregas',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_entregas',values:{...values,created_at:new Date().toISOString()}}); }
-  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
-  const rid = id || (d.data&&d.data[0]&&d.data[0].id);
-  await ppReconcileStock('pp_entregas',{id:rid,estado:values.estado,item_id:values.item_id,cantidad:values.cantidad,stock_aplicado:prev?+prev.stock_aplicado||0:0});
-  closeModal(); showToast('Guardado','ok'); renderPaintPro();
-}
-
-// ── Paint Pro: Órdenes de compra ──────────────────────────────
-async function renderPpOrdenes(){
-  const b=document.getElementById('ppBody'); if(!b) return;
-  const d=await api('/api/select',{table:'pp_ordenes',order:[{col:'fecha',asc:false}],limit:5000});
-  if((state.ppTab||'panel')!=='ordenes') return;
-  const rows=d.data||[]; state._ppOrd=rows;
-  const cnt=k=>rows.filter(r=>r.estado===k).length;
-  const totAbierto=rows.filter(r=>r.estado==='solicitada'||r.estado==='aprobada').reduce((s,r)=>s+(+r.total||0),0);
-  b.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
-      ${kpiTile('Solicitadas',cnt('solicitada'),'#D97706','#FEF3C7')}
-      ${kpiTile('Aprobadas',cnt('aprobada'),'#2563EB','#DBEAFE')}
-      ${kpiTile('Recibidas',cnt('recibida'),'#166534','#DCFCE7')}
-      ${kpiTile('Por recibir ($)',cajaMoney(totAbierto),'#7C3AED','#EDE9FE')}
-    </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="showPpOrdModal()">+ Orden de compra</button></div>
-    <div class="item-table"><table>
-      <thead><tr><th>Fecha</th><th>N°</th><th>Proveedor</th><th>Producto</th><th style="text-align:right">Cant.</th><th style="text-align:right">Total</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${rows.length===0?`<tr><td colspan="8"><div class="empty-state">Sin órdenes de compra.</div></td></tr>`:rows.map(r=>`
-        <tr>
-          <td style="white-space:nowrap">${esc(r.fecha||'')}</td>
+          <td style="white-space:nowrap;font-size:12px">${esc(r.fecha||'')}</td>
           <td style="font-size:12px">${esc(r.numero||'')}</td>
-          <td><b style="font-size:13px">${esc(r.proveedor||'')}</b></td>
-          <td style="font-size:12px">${esc(r.producto||'')}${(+r.stock_aplicado||0)!==0?' <span style="font-size:10px;color:#166534;font-weight:700" title="Sumado al stock">📦 +stock</span>':''}</td>
-          <td style="text-align:right">${esc(r.cantidad||'')}</td>
-          <td style="text-align:right;font-weight:700">${cajaMoney(r.total||0)}</td>
-          <td>${ppEstSelect(PP_ORDEN_EST,r.estado||'solicitada',`setPpEstado('pp_ordenes','${r.id}',this.value)`)}</td>
-          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpOrdModal('${r.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_ordenes','${r.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
-        </tr>`).join('')}</tbody>
-    </table></div>`;
-}
-function showPpOrdModal(id){
-  const r=id?(state._ppOrd||[]).find(x=>x.id===id):null;
-  openModal(`<div class="modal-head"><h2>${r?'Editar orden':'Nueva orden de compra'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-  <div class="modal-body">
-    <div class="form-row"><div class="form-group"><label>Fecha</label><input id="poFecha" type="date" value="${esc(r?.fecha||todayStr())}"></div><div class="form-group"><label>N° de orden</label><input id="poNum" value="${esc(r?.numero||'')}"></div></div>
-    <div class="form-group"><label>Proveedor</label><input id="poProv" value="${esc(r?.proveedor||'')}"></div>
-    <div class="form-group"><label>Producto / detalle</label><textarea id="poProd" rows="2">${esc(r?.producto||'')}</textarea></div>
-    <div class="form-group"><label>Pintura del inventario (para sumar al stock)</label>
-      <select id="poItem">${ppItemOptions(r?.item_id)}</select>
-      <div style="font-size:11px;color:var(--c-muted);margin-top:3px">Al marcar <b>Recibida</b> se suma la cantidad al Depósito. Deja "— Sin vincular —" si no quieres mover stock.</div>
-    </div>
-    <div class="form-row"><div class="form-group"><label>Cantidad</label><input id="poCant" type="number" step="0.01" value="${r&&r.cantidad!=null?r.cantidad:''}" oninput="ppOrdTotal()"></div><div class="form-group"><label>Costo unitario ($)</label><input id="poCU" type="number" step="0.01" value="${r&&r.costo_unitario?r.costo_unitario:''}" oninput="ppOrdTotal()"></div></div>
-    <div class="form-group"><label>Total ($)</label><input id="poTotal" type="number" step="0.01" value="${r&&r.total?r.total:''}"></div>
-    <div class="form-group"><label>Estado</label>${ppEstSelect(PP_ORDEN_EST,r?.estado||'solicitada','').replace('<select','<select id="poEstado"')}</div>
-    <div class="form-group"><label>Notas</label><textarea id="poNotas" rows="2">${esc(r?.notas||'')}</textarea></div>
-  </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpOrd(${id?`'${id}'`:'null'})">Guardar</button></div>`);
-}
-function ppOrdTotal(){ const c=parseFloat((document.getElementById('poCant')||{}).value)||0; const u=parseFloat((document.getElementById('poCU')||{}).value)||0; const t=document.getElementById('poTotal'); if(t&&(c||u)) t.value=(c*u).toFixed(2); }
-async function savePpOrd(id){
-  const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
-  const prov=g('poProv').trim(); if(!prov){ showToast('Escribe el proveedor','err'); return; }
-  const values={fecha:g('poFecha')||todayStr(),numero:g('poNum').trim(),proveedor:prov,producto:g('poProd').trim(),cantidad:parseFloat(g('poCant'))||0,costo_unitario:parseFloat(g('poCU'))||0,total:parseFloat(g('poTotal'))||0,estado:g('poEstado'),item_id:g('poItem')||null,notas:g('poNotas').trim()};
-  const prev = id ? (state._ppOrd||[]).find(x=>x.id===id) : null;
-  let d; if(id){ d=await api('/api/update',{table:'pp_ordenes',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_ordenes',values:{...values,created_at:new Date().toISOString()}}); }
-  if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
-  const rid = id || (d.data&&d.data[0]&&d.data[0].id);
-  await ppReconcileStock('pp_ordenes',{id:rid,estado:values.estado,item_id:values.item_id,cantidad:values.cantidad,stock_aplicado:prev?+prev.stock_aplicado||0:0});
-  closeModal(); showToast('Guardado','ok'); renderPaintPro();
-}
-
-// ── Paint Pro: Devoluciones ───────────────────────────────────
-async function renderPpDevoluciones(){
-  const b=document.getElementById('ppBody'); if(!b) return;
-  const d=await api('/api/select',{table:'pp_devoluciones',order:[{col:'fecha',asc:false}],limit:5000});
-  if((state.ppTab||'panel')!=='devoluciones') return;
-  const rows=d.data||[]; state._ppDev=rows;
-  const cnt=k=>rows.filter(r=>r.estado===k).length;
-  const totMonto=rows.reduce((s,r)=>s+(+r.monto||0),0);
-  b.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px">
-      ${kpiTile('Pendientes',cnt('pendiente'),'#D97706','#FEF3C7')}
-      ${kpiTile('Aceptadas',cnt('aceptada'),'#166534','#DCFCE7')}
-      ${kpiTile('Rechazadas',cnt('rechazada'),'#DC2626','#FEE2E2')}
-      ${kpiTile('Monto total',cajaMoney(totMonto),'#7C3AED','#EDE9FE')}
-    </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-sm btn-primary" onclick="showPpDevModal()">+ Devolución</button></div>
-    <div class="item-table"><table>
-      <thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th style="text-align:right">Cant.</th><th>Motivo</th><th style="text-align:right">Monto</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${rows.length===0?`<tr><td colspan="8"><div class="empty-state">Sin devoluciones.</div></td></tr>`:rows.map(r=>`
-        <tr>
-          <td style="white-space:nowrap">${esc(r.fecha||'')}</td>
-          <td><b style="font-size:13px">${esc(r.cliente||'')}</b></td>
-          <td style="font-size:12px">${esc(r.producto||'')}</td>
-          <td style="text-align:right">${esc(r.cantidad||'')}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(r.motivo||'')}</td>
+          <td>${r.cliente_id?`<b style="font-size:13px;color:var(--c-primary);cursor:pointer;text-decoration:underline" onclick="openPpCliente('${r.cliente_id}')">${esc(r.cliente||'')}</b>`:`<b style="font-size:13px">${esc(r.cliente||'')}</b>`}</td>
+          <td style="font-size:12px">${esc(r.descripcion||'')}</td>
           <td style="text-align:right;font-weight:700">${cajaMoney(r.monto||0)}</td>
-          <td>${ppEstSelect(PP_DEVO_EST,r.estado||'pendiente',`setPpEstado('pp_devoluciones','${r.id}',this.value)`)}</td>
-          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpDevModal('${r.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_devoluciones','${r.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+          <td>${ppEstSelect(PP_COTI_EST,r.estado||'enviada',`setPpEstado('pp_cotizaciones','${r.id}',this.value)`)}</td>
+          <td id="ppCotFiles-${r.id}" style="font-size:11px;color:var(--c-muted)">—</td>
+          <td style="text-align:right;white-space:nowrap"><button class="act-btn" onclick="showPpCotModal('${r.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delPp('pp_cotizaciones','${r.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
         </tr>`).join('')}</tbody>
     </table></div>`;
+  shown.forEach(r=>ppRenderCotFiles(r.id));
 }
-function showPpDevModal(id){
-  const r=id?(state._ppDev||[]).find(x=>x.id===id):null;
-  openModal(`<div class="modal-head"><h2>${r?'Editar devolución':'Nueva devolución'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+function showPpCotModal(id,cliId){
+  const r=id?(state._ppCot||[]).find(x=>x.id===id):null;
+  const selCli=ppCliIdOf(r)||cliId||'';
+  openModal(`<div class="modal-head"><h2>${r?'Editar cotización':'Nueva cotización'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
   <div class="modal-body">
-    <div class="form-row"><div class="form-group"><label>Fecha</label><input id="pdFecha" type="date" value="${esc(r?.fecha||todayStr())}"></div><div class="form-group"><label>Cantidad</label><input id="pdCant" value="${esc(r?.cantidad||'')}"></div></div>
-    <div class="form-group"><label>Cliente</label><input id="pdCliente" value="${esc(r?.cliente||'')}"></div>
-    <div class="form-group"><label>Producto</label><input id="pdProd" value="${esc(r?.producto||'')}"></div>
-    <div class="form-group"><label>Motivo</label><textarea id="pdMotivo" rows="2">${esc(r?.motivo||'')}</textarea></div>
-    <div class="form-row"><div class="form-group"><label>Monto ($)</label><input id="pdMonto" type="number" step="0.01" value="${r&&r.monto?r.monto:''}"></div><div class="form-group"><label>Estado</label>${ppEstSelect(PP_DEVO_EST,r?.estado||'pendiente','').replace('<select','<select id="pdEstado"')}</div></div>
-    <div class="form-group"><label>Notas</label><textarea id="pdNotas" rows="2">${esc(r?.notas||'')}</textarea></div>
+    <div class="form-row"><div class="form-group"><label>Fecha</label><input id="pkFecha" type="date" value="${esc(r?.fecha||todayStr())}"></div><div class="form-group"><label>N° de cotización</label><input id="pkNum" value="${esc(r?.numero||'')}"></div></div>
+    <div class="form-group"><label>Cliente (de la Base de Clientes)</label><select id="pkCliente">${ppCliOptions(selCli)}</select></div>
+    <div class="form-group"><label>Descripción / detalle</label><textarea id="pkDesc" rows="2" placeholder="Qué se cotizó">${esc(r?.descripcion||'')}</textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto de la cotización ($)</label><input id="pkMonto" type="number" step="0.01" value="${r&&r.monto?r.monto:''}"></div>
+      <div class="form-group"><label>Estado</label>${ppEstSelect(PP_COTI_EST,r?.estado||'enviada','').replace('<select','<select id="pkEstado"')}</div>
+    </div>
+    <div class="form-group"><label>Documentos de la cotización</label>
+      <div id="pkFiles" style="font-size:12px;color:var(--c-muted);margin-bottom:6px">${id?'Cargando…':'Elegí los archivos y se adjuntan al guardar.'}</div>
+      <input type="file" id="pkArch" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx">
+    </div>
+    <div class="form-group"><label>Notas</label><textarea id="pkNotas" rows="2">${esc(r?.notas||'')}</textarea></div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpDev(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePpCot(${id?`'${id}'`:'null'})">Guardar</button></div>`);
+  if(id) ppCotModalFiles(id);
 }
-async function savePpDev(id){
+// Lista editable de adjuntos dentro del modal de la cotización.
+async function ppCotModalFiles(id){
+  const el=document.getElementById('pkFiles'); if(!el) return;
+  const {data}=await sb.from('files').select('*').eq('scope','paintpro').eq('ref_id',id);
+  const fs=data||[];
+  el.innerHTML = fs.length===0 ? 'Sin documentos adjuntos.' : fs.map(f=>`<div style="display:flex;align-items:center;gap:8px;padding:2px 0"><a href="${fileUrl(f.id)}" target="_blank" style="color:var(--c-primary)">📎 ${esc(f.name||'archivo')}</a><button class="act-btn del" onclick="delPpCotFile('${f.id}','${id}')" title="Quitar">×</button></div>`).join('');
+}
+async function delPpCotFile(fileId,cotId){
+  if(!confirm('¿Quitar este documento?')) return;
+  const d=await apiDelete('/api/files/'+fileId);
+  if(d&&d.error){ showToast('Error al quitar','err'); return; }
+  showToast('Documento quitado','ok'); ppCotModalFiles(cotId);
+}
+async function savePpCot(id){
   const g=i=>{ const e=document.getElementById(i); return e?e.value:''; };
-  const cli=g('pdCliente').trim(); if(!cli){ showToast('Escribe el cliente','err'); return; }
-  const values={fecha:g('pdFecha')||todayStr(),cliente:cli,producto:g('pdProd').trim(),cantidad:g('pdCant').trim(),motivo:g('pdMotivo').trim(),monto:parseFloat(g('pdMonto'))||0,estado:g('pdEstado'),notas:g('pdNotas').trim()};
-  let d; if(id){ d=await api('/api/update',{table:'pp_devoluciones',values,filters:[{col:'id',val:id}]}); } else { d=await api('/api/insert',{table:'pp_devoluciones',values:{...values,created_at:new Date().toISOString()}}); }
+  const cliId=g('pkCliente'); if(!cliId){ showToast('Elegí el cliente','err'); return; }
+  const cliNom=((state._ppCli||[]).find(c=>c.id===cliId)||{}).nombre||'';
+  const values={fecha:g('pkFecha')||todayStr(),numero:g('pkNum').trim(),cliente:cliNom,cliente_id:cliId,descripcion:g('pkDesc').trim(),monto:parseFloat(g('pkMonto'))||0,estado:g('pkEstado'),notas:g('pkNotas').trim()};
+  let d,rid=id;
+  if(id){ d=await api('/api/update',{table:'pp_cotizaciones',values,filters:[{col:'id',val:id}]}); }
+  else { d=await api('/api/insert',{table:'pp_cotizaciones',values:{...values,created_at:new Date().toISOString()}}); rid=(d.data&&d.data[0]&&d.data[0].id)||null; }
   if(d.error){ showToast('Error: '+d.error.message,'err'); return; }
+  const fin=document.getElementById('pkArch');
+  if(fin&&fin.files&&fin.files.length&&rid){
+    showToast('Subiendo documentos…','ok');
+    for(const f of Array.from(fin.files)){ const up=await apiUpload('paintpro',rid,f); if(up.error) showToast('No se pudo subir '+f.name,'err'); }
+  }
   closeModal(); showToast('Guardado','ok'); renderPaintPro();
 }
 
-// Movimiento automático de stock: entregada = resta, recibida = suma. Idempotente y reversible.
-// stock_aplicado guarda la cantidad ya movida al item (con signo), para no duplicar ni perder al cambiar de estado.
-async function ppReconcileStock(table, rec){
-  if(!rec) return;
-  const target = table==='pp_entregas' ? 'entregada' : 'recibida';
-  const dir = table==='pp_entregas' ? -1 : 1;
-  const qty = parseFloat(rec.cantidad)||0;
-  const desired = (rec.item_id && rec.estado===target) ? dir*qty : 0;
-  const applied = +rec.stock_aplicado||0;
-  const diff = desired - applied;
-  if(diff===0) return;
-  if(rec.item_id){
-    const it=state.items.get(rec.item_id);
-    if(it){ const nueva=(+it.quantity||0)+diff; await api('/api/update',{table:'items',values:{quantity:nueva,updated_by:state.userId,updated_at:new Date().toISOString()},filters:[{col:'id',val:rec.item_id}]}); it.quantity=nueva; state.items.set(rec.item_id,it); if(nueva<0) showToast('Atención: el stock quedó negativo','err'); }
-  }
-  await api('/api/update',{table,values:{stock_aplicado:desired},filters:[{col:'id',val:rec.id}]});
-  rec.stock_aplicado=desired;
-}
 // Estado en línea y borrado genéricos
 async function setPpEstado(table,id,estado){
   const d=await api('/api/update',{table,values:{estado},filters:[{col:'id',val:id}]});
   if(d.error){ showToast('Error','err'); return; }
-  if(table==='pp_entregas'||table==='pp_ordenes'){
-    const cache = table==='pp_entregas'?state._ppEnt:state._ppOrd;
-    const rec=(cache||[]).find(x=>x.id===id);
-    if(rec){ rec.estado=estado; await ppReconcileStock(table,rec); }
-  }
   showToast('Actualizado','ok'); renderPaintPro();
 }
 async function delPp(table,id){
   if(!confirm('¿Eliminar este registro?')) return;
-  if(table==='pp_entregas'||table==='pp_ordenes'){
-    const cache=table==='pp_entregas'?state._ppEnt:state._ppOrd;
-    const rec=(cache||[]).find(x=>x.id===id);
-    if(rec && (+rec.stock_aplicado||0)!==0){ rec.estado='__eliminado__'; await ppReconcileStock(table,rec); }   // devuelve/quita el stock que había movido
-  }
   const d=await api('/api/delete',{table,filters:[{col:'id',val:id}]});
   if(d.error){ showToast('Error','err'); return; } showToast('Eliminado','ok'); renderPaintPro();
 }
 
 // ── Paint Pro: Panel (resumen + gráficas clickeables) ─────────
 async function ppLoadAll(){
-  const [ent,ord,dev,evt]=await Promise.all([
-    api('/api/select',{table:'pp_entregas',limit:5000}),
-    api('/api/select',{table:'pp_ordenes',limit:5000}),
-    api('/api/select',{table:'pp_devoluciones',limit:5000}),
+  const [vis,cot,evt]=await Promise.all([
+    api('/api/select',{table:'pp_visitas',limit:5000}),
+    api('/api/select',{table:'pp_cotizaciones',limit:5000}),
     api('/api/select',{table:'pp_eventos',limit:5000})
   ]);
-  return {ent:ent.data||[],ord:ord.data||[],dev:dev.data||[],evt:evt.data||[]};
+  return {vis:vis.data||[],cot:cot.data||[],evt:evt.data||[]};
 }
 async function renderPpPanel(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const {ent,ord,dev,evt}=await ppLoadAll();
+  const {vis,cot,evt}=await ppLoadAll();
   if((state.ppTab||'panel')!=='panel') return;
   const inv=ppPaintItems();   // inventario ligado a Depósito · Pinturas
   const mes=todayStr().slice(0,7);
   const ym=state.ppMonth||todayStr().slice(0,7); const [pY,pM]=ym.split('-').map(Number);
   const valInv=inv.reduce((s,i)=>s+(+i.quantity||0)*(+i.costo||0),0);
   const low=inv.filter(i=>(+i.minStock||0)>0&&(+i.quantity||0)<=(+i.minStock||0)).length;
-  const entAbiertas=ent.filter(e=>e.estado==='pendiente'||e.estado==='en_ruta').length;
-  const ventaMes=ent.filter(e=>e.estado==='entregada'&&(e.fecha||'').slice(0,7)===mes).reduce((s,e)=>s+(+e.monto||0),0);
-  const ordAbiertas=ord.filter(o=>o.estado==='solicitada'||o.estado==='aprobada').length;
-  const devPend=dev.filter(d=>d.estado==='pendiente').length;
-  const go=t=>`onclick="state.ppTab='${t}';renderPaintPro()" style="cursor:pointer`;
+  const GANADAS=['aprobada','pagada','facturada','entregada'];
+  const visProg=vis.filter(v=>v.estado==='programada').length;
+  const cotAbiertas=cot.filter(c=>(c.estado||'enviada')==='enviada').length;
+  const cotMes=cot.filter(c=>(c.fecha||'').slice(0,7)===mes).reduce((s,c)=>s+(+c.monto||0),0);
+  const ganado=cot.filter(c=>GANADAS.includes(c.estado)).reduce((s,c)=>s+(+c.monto||0),0);
+  const go=t=>`onclick="goPp('${t}')" style="cursor:pointer`;
   b.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:16px">
       <div ${go('inventario')}">${kpiTile('Productos',inv.length,'#1D4ED8','#DBEAFE')}</div>
       <div ${go('inventario')}">${kpiTile('Valor inventario',cajaMoney(valInv),'#166534','#DCFCE7')}</div>
-      <div ${go('entregas')}">${kpiTile('Entregas abiertas',entAbiertas,'#D97706','#FEF3C7')}</div>
-      <div ${go('entregas')}">${kpiTile('Vendido (mes)',cajaMoney(ventaMes),'#7C3AED','#EDE9FE')}</div>
-      <div ${go('ordenes')}">${kpiTile('Órdenes por recibir',ordAbiertas,'#2563EB','#DBEAFE')}</div>
-      <div ${go('devoluciones')}">${kpiTile('Devoluciones pend.',devPend,devPend?'#DC2626':'#166534',devPend?'#FEE2E2':'#DCFCE7')}</div>
+      <div ${go('visitas')}">${kpiTile('Visitas programadas',visProg,'#D97706','#FEF3C7')}</div>
+      <div ${go('cotizaciones')}">${kpiTile('Cotizaciones enviadas',cotAbiertas,'#2563EB','#DBEAFE')}</div>
+      <div ${go('cotizaciones')}">${kpiTile('Cotizado (mes)',cajaMoney(cotMes),'#7C3AED','#EDE9FE')}</div>
+      <div ${go('cotizaciones')}">${kpiTile('Ganado',cajaMoney(ganado),'#166534','#DCFCE7')}</div>
     </div>
-    ${low?`<div onclick="state.ppTab='inventario';renderPaintPro()" style="cursor:pointer;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);border-radius:10px;padding:10px 13px;margin-bottom:14px;font-size:13px;font-weight:700;color:#DC2626">⚠ ${low} producto(s) con stock bajo — revisar inventario ›</div>`:''}
+    ${low?`<div onclick="goPp('inventario')" style="cursor:pointer;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.3);border-radius:10px;padding:10px 13px;margin-bottom:14px;font-size:13px;font-weight:700;color:#DC2626">⚠ ${low} producto(s) con stock bajo — revisar inventario ›</div>`:''}
     <div class="section-card" style="padding:14px;margin-bottom:16px">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
         <b style="font-size:14px">📅 Calendario</b>
@@ -5412,79 +5392,57 @@ async function renderPpPanel(){
           <button class="nav-arrow" onclick="shiftPpMonth(1)">›</button>
         </div>
         <div style="margin-left:auto;display:flex;gap:10px;align-items:center;font-size:11px;color:var(--c-muted);flex-wrap:wrap">
-          <span>🚚 Entregas</span><span>🧾 Órdenes</span><span>↩️ Devoluciones</span><span>📌 Eventos</span>
+          <span>👁 Visitas</span><span>🧾 Cotizaciones</span><span>📌 Eventos</span>
           <button class="btn btn-sm btn-primary" onclick="showPpEvtModal(null,'${ym}-15')">+ Evento</button>
         </div>
       </div>
-      ${ppCalendarHtml(ym, ent, ord, dev, evt)}
+      ${ppCalendarHtml(ym, vis, cot, evt)}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
-      <div class="section-card" onclick="state.ppTab='entregas';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Ventas por mes <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChVentas" height="190"></canvas></div>
-      <div class="section-card" onclick="state.ppTab='entregas';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Entregas por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChEnt" height="190"></canvas></div>
-      <div class="section-card" onclick="state.ppTab='inventario';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Stock de pinturas <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChInv" height="190"></canvas></div>
-      <div class="section-card" onclick="state.ppTab='ordenes';renderPaintPro()" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Órdenes por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChOrd" height="190"></canvas></div>
+      <div class="section-card" onclick="goPp('cotizaciones')" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Cotizado por mes <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChVentas" height="190"></canvas></div>
+      <div class="section-card" onclick="goPp('cotizaciones')" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Cotizaciones por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChCot" height="190"></canvas></div>
+      <div class="section-card" onclick="goPp('inventario')" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Stock de pinturas <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChInv" height="190"></canvas></div>
+      <div class="section-card" onclick="goPp('visitas')" style="padding:14px;cursor:pointer"><h3 style="font-size:13px;margin:0 0 10px;display:flex;justify-content:space-between">Visitas por estado <span style="font-size:11px;color:var(--c-muted)">Ver ›</span></h3><canvas id="ppChVis" height="190"></canvas></div>
     </div>`;
   requestAnimationFrame(()=>{
     if((state.ppTab||'panel')!=='panel'||typeof Chart==='undefined') return; if(typeof tuneChartsDark==='function') tuneChartsDark();
     destroyPpCharts();
-    // Ventas por mes
-    const vm={}; ent.filter(e=>e.estado==='entregada').forEach(e=>{ const m=(e.fecha||'').slice(0,7)||'s/f'; vm[m]=(vm[m]||0)+(+e.monto||0); }); const vmk=Object.keys(vm).sort();
-    const e1=document.getElementById('ppChVentas'); if(e1){ if(vmk.length) _ppCharts.push(new Chart(e1,{type:'bar',data:{labels:vmk,datasets:[{label:'Ventas',data:vmk.map(k=>vm[k]),backgroundColor:'#7C3AED'}]},options:(typeof chartOpts==='function'?chartOpts({plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin ventas aún</div>'; }
-    // Entregas por estado
-    const ec={}; ent.forEach(e=>{ const s=e.estado||'pendiente'; ec[s]=(ec[s]||0)+1; }); const eck=Object.keys(ec);
-    const e2=document.getElementById('ppChEnt'); if(e2){ if(eck.length) _ppCharts.push(new Chart(e2,{type:'doughnut',data:{labels:eck.map(s=>ppEst(PP_ENTREGA_EST,s)[1]),datasets:[{data:eck.map(s=>ec[s]),backgroundColor:eck.map(s=>ppEst(PP_ENTREGA_EST,s)[2])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e2.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin entregas</div>'; }
+    // Cotizado por mes
+    const vm={}; cot.forEach(c=>{ const m=(c.fecha||'').slice(0,7)||'s/f'; vm[m]=(vm[m]||0)+(+c.monto||0); }); const vmk=Object.keys(vm).sort();
+    const e1=document.getElementById('ppChVentas'); if(e1){ if(vmk.length) _ppCharts.push(new Chart(e1,{type:'bar',data:{labels:vmk,datasets:[{label:'Cotizado',data:vmk.map(k=>vm[k]),backgroundColor:'#7C3AED'}]},options:(typeof chartOpts==='function'?chartOpts({plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin cotizaciones aún</div>'; }
+    // Cotizaciones por estado
+    const cc={}; cot.forEach(c=>{ const s=c.estado||'enviada'; cc[s]=(cc[s]||0)+1; }); const cck=Object.keys(cc);
+    const e2=document.getElementById('ppChCot'); if(e2){ if(cck.length) _ppCharts.push(new Chart(e2,{type:'doughnut',data:{labels:cck.map(s=>ppEst(PP_COTI_EST,s)[1]),datasets:[{data:cck.map(s=>cc[s]),backgroundColor:cck.map(s=>ppEst(PP_COTI_EST,s)[2])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e2.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin cotizaciones</div>'; }
     // Stock de pinturas (top productos por cantidad)
     const ip=inv.slice().sort((a,b)=>(+b.quantity||0)-(+a.quantity||0)).slice(0,8);
     const e3=document.getElementById('ppChInv'); if(e3){ if(ip.length) _ppCharts.push(new Chart(e3,{type:'bar',data:{labels:ip.map(i=>i.name),datasets:[{label:'Stock',data:ip.map(i=>+i.quantity||0),backgroundColor:'#0891B2'}]},options:(typeof chartOpts==='function'?chartOpts({indexAxis:'y',plugins:{legend:{display:false}}}):{responsive:true,maintainAspectRatio:true})})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin pinturas en Depósito</div>'; }
-    // Órdenes por estado
-    const oc={}; ord.forEach(o=>{ const s=o.estado||'solicitada'; oc[s]=(oc[s]||0)+1; }); const ock=Object.keys(oc);
-    const e4=document.getElementById('ppChOrd'); if(e4){ if(ock.length) _ppCharts.push(new Chart(e4,{type:'doughnut',data:{labels:ock.map(s=>ppEst(PP_ORDEN_EST,s)[1]),datasets:[{data:ock.map(s=>oc[s]),backgroundColor:ock.map(s=>ppEst(PP_ORDEN_EST,s)[2])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e4.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin órdenes</div>'; }
+    // Visitas por estado
+    const vc={}; vis.forEach(v=>{ const s=v.estado||'programada'; vc[s]=(vc[s]||0)+1; }); const vck=Object.keys(vc);
+    const e4=document.getElementById('ppChVis'); if(e4){ if(vck.length) _ppCharts.push(new Chart(e4,{type:'doughnut',data:{labels:vck.map(s=>ppEst(PP_VISITA_EST,s)[1]),datasets:[{data:vck.map(s=>vc[s]),backgroundColor:vck.map(s=>ppEst(PP_VISITA_EST,s)[2])}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e4.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin visitas</div>'; }
   });
 }
 
-// ── Paint Pro: Calendario (entregas + órdenes + devoluciones + eventos) ──
+// ── Paint Pro: Calendario (visitas + cotizaciones + eventos) ──
 async function renderPpCalendario(){
   const b=document.getElementById('ppBody'); if(!b) return;
-  const [ent,ord,dev,evt,vis]=await Promise.all([
-    api('/api/select',{table:'pp_entregas',limit:5000}),
-    api('/api/select',{table:'pp_ordenes',limit:5000}),
-    api('/api/select',{table:'pp_devoluciones',limit:5000}),
-    api('/api/select',{table:'pp_eventos',limit:5000}),
-    api('/api/select',{table:'pp_visitas',limit:5000})
-  ]);
+  const {vis,cot,evt}=await ppLoadAll();
   if((state.ppTab||'panel')!=='calendario') return;
-  state._ppEvt=evt.data||[];
-  const ym=state.ppMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const mm=String(M).padStart(2,'0');
-  const byDay={};
-  const add=(fecha,txt,color,onclick)=>{ if((fecha||'').slice(0,7)!==ym) return; const d=+fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push({txt,color,onclick}); };
-  (ent.data||[]).forEach(e=>add(e.fecha,'🚚 '+(e.cliente||'Entrega'),'#16A34A',`state.ppTab='entregas';renderPaintPro()`));
-  (ord.data||[]).forEach(o=>add(o.fecha,'🧾 '+(o.proveedor||'Orden'),'#2563EB',`state.ppTab='ordenes';renderPaintPro()`));
-  (dev.data||[]).forEach(v=>add(v.fecha,'↩️ '+(v.cliente||'Devolución'),'#DC2626',`state.ppTab='devoluciones';renderPaintPro()`));
-  (evt.data||[]).forEach(v=>add(v.fecha,'📌 '+(v.titulo||'Evento'),v.color||'#7C3AED',`showPpEvtModal('${v.id}')`));
-  (vis.data||[]).forEach(v=>add(v.fecha,'👁 '+(v.titulo||v.cliente||'Visita'),'#D97706',`state.ppTab='visitas';renderPaintPro()`));
-  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7; const days=new Date(Y,M,0).getDate(); const hoy=todayStr();
-  let cells=''; for(let i=0;i<startDow;i++) cells+='<div></div>';
-  for(let d=1;d<=days;d++){ const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
-    cells+=`<div style="min-height:92px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="showPpEvtModal(null,'${ds}')">
-      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
-      ${l.slice(0,4).map(x=>`<div onclick="event.stopPropagation();${x.onclick}" title="${esc(x.txt)}" style="font-size:9px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${x.color};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.txt)}</div>`).join('')}
-      ${l.length>4?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${l.length-4} más</div>`:''}
-    </div>`; }
-  const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  state._ppEvt=evt;
+  const ym=state.ppMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number);
   b.innerHTML=`
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
       <button class="nav-arrow" onclick="shiftPpMonth(-1)">‹</button>
       <div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${(typeof MESES_ES!=='undefined'?MESES_ES[M-1]:'')} ${Y}</div>
       <button class="nav-arrow" onclick="shiftPpMonth(1)">›</button>
       <div style="margin-left:auto;display:flex;gap:10px;font-size:11px;color:var(--c-muted);flex-wrap:wrap;align-items:center">
-        <span>🚚 Entregas</span><span>🧾 Órdenes</span><span>↩️ Devoluciones</span><span>👁 Visitas</span><span>📌 Eventos</span>
+        <span>👁 Visitas</span><span>🧾 Cotizaciones</span><span>📌 Eventos</span>
         <button class="btn btn-sm btn-primary" onclick="showPpEvtModal(null,'${ym}-15')">+ Evento</button>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Entregas, órdenes, devoluciones y visitas aparecen solas por su fecha. Toca un día para agregar un evento.</div>`;
+    ${ppCalendarHtml(ym, vis, cot, evt, {minH:92})}
+    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Las visitas y cotizaciones aparecen solas por su fecha. Toca un día para agregar un evento.</div>`;
 }
+
 function showPpEvtModal(id,defFecha){
   const e=id?(state._ppEvt||[]).find(x=>x.id===id):null;
   openModal(`<div class="modal-head"><h2>${e?'Evento':'Nuevo evento'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>

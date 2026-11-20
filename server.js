@@ -408,6 +408,17 @@ CREATE TABLE IF NOT EXISTS pp_leads (
   contacto TEXT, cargo TEXT, telefono TEXT, email TEXT, estado TEXT DEFAULT 'contactado',
   notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
 );
+-- Cotizaciones enviadas al cliente (reemplazan a las órdenes de compra)
+CREATE TABLE IF NOT EXISTS pp_cotizaciones (
+  id TEXT PRIMARY KEY, fecha TEXT, numero TEXT, cliente TEXT, cliente_id TEXT,
+  descripcion TEXT, monto REAL DEFAULT 0, estado TEXT DEFAULT 'enviada',
+  notas TEXT, created_by TEXT, created_at TEXT, updated_at TEXT
+);
+-- Hilo de notas / comunicación por cliente (seguimiento conversado)
+CREATE TABLE IF NOT EXISTS pp_notas (
+  id TEXT PRIMARY KEY, cliente_id TEXT, texto TEXT, file_id TEXT,
+  created_by TEXT, created_at TEXT, updated_at TEXT
+);
 
 -- Mercadeo: calendario de mensajes push (planificación, por empresa)
 CREATE TABLE IF NOT EXISTS mkt_push (
@@ -591,6 +602,50 @@ ensureColumn('pp_entregas', 'item_id', 'TEXT');
 ensureColumn('pp_entregas', 'stock_aplicado', 'REAL');
 ensureColumn('pp_ordenes', 'item_id', 'TEXT');
 ensureColumn('pp_ordenes', 'stock_aplicado', 'REAL');
+// Paint Pro: Seguimiento quedó unificado dentro de la Base de Clientes.
+ensureColumn('pp_clientes', 'prioridad', "TEXT DEFAULT 'media'");
+ensureColumn('pp_clientes', 'tipo_lead', 'TEXT');
+ensureColumn('pp_clientes', 'proyecto', 'TEXT');
+ensureColumn('pp_clientes', 'contacto', 'TEXT');
+ensureColumn('pp_clientes', 'cargo', 'TEXT');
+ensureColumn('pp_clientes', 'estado', "TEXT DEFAULT 'contactado'");
+// Visitas y cotizaciones se enganchan al cliente por id (el nombre queda como respaldo).
+ensureColumn('pp_visitas', 'cliente_id', 'TEXT');
+
+// Migración única: vuelca los leads de Seguimiento dentro de la Base de Clientes.
+// Si ya existe un cliente con ese nombre, completa sus campos de seguimiento;
+// si no existe, lo crea. Marca la meta para no repetirla en cada arranque.
+if (!db.prepare('SELECT value FROM meta WHERE key = ?').get('pp_leads_merged')) {
+  const leads = db.prepare('SELECT * FROM pp_leads').all();
+  const now = new Date().toISOString();
+  tx(() => {
+    for (const l of leads) {
+      const nom = String(l.cliente || '').trim();
+      if (!nom) continue;
+      const ex = db.prepare('SELECT id FROM pp_clientes WHERE lower(trim(nombre)) = ?').get(nom.toLowerCase());
+      if (ex) {
+        db.prepare(`UPDATE pp_clientes SET
+            prioridad = COALESCE(NULLIF(prioridad,''), ?), tipo_lead = COALESCE(NULLIF(tipo_lead,''), ?),
+            proyecto  = COALESCE(NULLIF(proyecto,''),  ?), contacto  = COALESCE(NULLIF(contacto,''),  ?),
+            cargo     = COALESCE(NULLIF(cargo,''),     ?), estado    = COALESCE(NULLIF(estado,''),    ?),
+            telefono  = COALESCE(NULLIF(telefono,''),  ?), email     = COALESCE(NULLIF(email,''),     ?),
+            updated_at = ?
+          WHERE id = ?`)
+          .run(l.prioridad || 'media', l.tipo || '', l.proyecto || '', l.contacto || '', l.cargo || '',
+               l.estado || 'contactado', l.telefono || '', l.email || '', now, ex.id);
+      } else {
+        db.prepare(`INSERT INTO pp_clientes
+            (id,nombre,empresa,telefono,email,direccion,ruc,tipo,notas,prioridad,tipo_lead,proyecto,contacto,cargo,estado,created_by,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(crypto.randomUUID(), nom, '', l.telefono || '', l.email || '', '', '', '', l.notas || '',
+               l.prioridad || 'media', l.tipo || '', l.proyecto || '', l.contacto || '', l.cargo || '',
+               l.estado || 'contactado', l.created_by || null, l.created_at || now, now);
+      }
+    }
+    db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('pp_leads_merged', new Date().toISOString());
+  });
+  if (leads.length) console.log(`Paint Pro: ${leads.length} registro(s) de Seguimiento unificados en la Base de Clientes.`);
+}
 // Siembra inicial de la flota (solo si no hay vehículos): HINO, JMC, L200 y Ford Figo.
 try {
   if (db.prepare('SELECT COUNT(*) AS c FROM vehiculos').get().c === 0) {
@@ -673,9 +728,11 @@ const SCHEMA = {
   pp_ordenes:      ['id', 'fecha', 'numero', 'proveedor', 'producto', 'cantidad', 'costo_unitario', 'total', 'estado', 'item_id', 'stock_aplicado', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_devoluciones: ['id', 'fecha', 'cliente', 'producto', 'cantidad', 'motivo', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
   pp_eventos:      ['id', 'fecha', 'hora', 'titulo', 'tipo', 'color', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_clientes:     ['id', 'nombre', 'empresa', 'telefono', 'email', 'direccion', 'ruc', 'tipo', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_visitas:      ['id', 'fecha', 'hora', 'titulo', 'cliente', 'responsable', 'motivo', 'estado', 'lugar', 'reporte_file', 'notas', 'created_by', 'created_at', 'updated_at'],
-  pp_leads:        ['id', 'cliente', 'prioridad', 'tipo', 'proyecto', 'contacto', 'cargo', 'telefono', 'email', 'estado', 'notas', 'created_by', 'created_at', 'updated_at']
+  pp_clientes:     ['id', 'nombre', 'empresa', 'telefono', 'email', 'direccion', 'ruc', 'tipo', 'notas', 'prioridad', 'tipo_lead', 'proyecto', 'contacto', 'cargo', 'estado', 'created_by', 'created_at', 'updated_at'],
+  pp_visitas:      ['id', 'fecha', 'hora', 'titulo', 'cliente', 'cliente_id', 'responsable', 'motivo', 'estado', 'lugar', 'reporte_file', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_leads:        ['id', 'cliente', 'prioridad', 'tipo', 'proyecto', 'contacto', 'cargo', 'telefono', 'email', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_cotizaciones: ['id', 'fecha', 'numero', 'cliente', 'cliente_id', 'descripcion', 'monto', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
+  pp_notas:        ['id', 'cliente_id', 'texto', 'file_id', 'created_by', 'created_at', 'updated_at']
 };
 
 // ── Control de acceso por módulo (lectura y escritura) ──
@@ -691,7 +748,7 @@ const TABLE_MODULE = {
   licitaciones: 'licit',
   lic_competidores: 'licit',
   campanas: 'mkt', publicaciones: 'mkt', mercadeo_tareas: 'mkt', mkt_piezas: 'mkt', mkt_push: 'mkt', mkt_efemerides: 'mkt', mkt_biblioteca: 'mkt',
-  pp_inventario: 'paintpro', pp_entregas: 'paintpro', pp_ordenes: 'paintpro', pp_devoluciones: 'paintpro', pp_eventos: 'paintpro', pp_clientes: 'paintpro', pp_visitas: 'paintpro', pp_leads: 'paintpro'
+  pp_inventario: 'paintpro', pp_entregas: 'paintpro', pp_ordenes: 'paintpro', pp_devoluciones: 'paintpro', pp_eventos: 'paintpro', pp_clientes: 'paintpro', pp_visitas: 'paintpro', pp_leads: 'paintpro', pp_cotizaciones: 'paintpro', pp_notas: 'paintpro'
 };
 const SCOPE_MODULE = { asiento: 'conta', licitacion: 'licit', campana: 'mkt', mercadeo: 'mkt', paintpro: 'paintpro' };
 // Salas de chat restringidas (heredan el permiso del módulo). Las demás
@@ -1319,6 +1376,8 @@ function canWrite(table, op, user, values, filters) {
     case 'pp_clientes':
     case 'pp_visitas':
     case 'pp_leads':
+    case 'pp_cotizaciones':
+    case 'pp_notas':
       return roleCan('paintpro', user);
     default:
       return false;
