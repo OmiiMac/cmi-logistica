@@ -1473,8 +1473,8 @@ function renderSidebar(){
   // Empresas de Mercadeo en la columna
   renderSidebarMktEmpresas();
 }
-function goMktEmpresa(e){ mstate.mktEmpresa=e; mstate.mktTab='panel'; state.mktOpen=true; nav('mercadeo'); }
-function goMktHome(){ mstate.mktEmpresa=null; state.mktOpen=true; nav('mercadeo'); }
+function goMktEmpresa(e){ mstate.mktBrand=mstate.mktBrand===e?'all':e; mstate.csTab=mstate.csTab||'calendario'; state.mktOpen=true; nav('mercadeo'); }
+function goMktHome(){ mstate.mktBrand='all'; mstate.csTab='calendario'; state.mktOpen=true; nav('mercadeo'); }
 function mktMenuOpen(){ return state.mktOpen!==undefined ? state.mktOpen : (state.view==='mercadeo'); }
 function toggleMktMenu(){ state.mktOpen = !mktMenuOpen(); renderSidebar(); }
 function renderSidebarMktEmpresas(){
@@ -1486,10 +1486,10 @@ function renderSidebarMktEmpresas(){
   if(!open){ box.style.display='none'; box.innerHTML=''; return; }
   box.style.display='block';
   const inMkt = state.view==='mercadeo';
-  const homeActive = inMkt && !mstate.mktEmpresa;
+  const homeActive = inMkt && (!mstate.mktBrand || mstate.mktBrand==='all');
   box.innerHTML =
-    `<div class="sb-proj ${homeActive?'active':''}" style="padding-left:30px" onclick="goMktHome()"><span class="sb-proj-name">🏠 Inicio Mercadeo</span></div>`+
-    MKT_EMPRESAS.map(e=>`<div class="sb-proj ${inMkt&&mstate.mktEmpresa===e?'active':''}" style="padding-left:30px" onclick="goMktEmpresa('${e.replace(/'/g,"\\'")}')">
+    `<div class="sb-proj ${homeActive?'active':''}" style="padding-left:30px" onclick="goMktHome()"><span class="sb-proj-name">🏠 Todas las marcas</span></div>`+
+    MKT_EMPRESAS.map(e=>`<div class="sb-proj ${inMkt&&mstate.mktBrand===e?'active':''}" style="padding-left:30px" onclick="goMktEmpresa('${e.replace(/'/g,"\\'")}')">
       <span class="sb-proj-dot" style="background:${MKT_EMP_COLOR[e]||'#BE185D'}"></span>
       <span class="sb-proj-name">${esc(e)}</span>
     </div>`).join('');
@@ -5790,7 +5790,7 @@ function money(n){ n=Number(n||0); return (n<0?'-':'')+'$'+Math.abs(n).toLocaleS
 function modRefresh(view){ if(state.view!==view) return; if(!document.getElementById('modalWrap').hidden) return; render(); }
 function proyectoOptions(sel){ return [...state.projects.values()].map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`).join(''); }
 
-const mstate = { cuentas:[], compromisos:[], contaTab:'inicio', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'panel', mktMonth:todayStr().slice(0,7), licTab:'panel', licMonth:todayStr().slice(0,7) };
+const mstate = { cuentas:[], compromisos:[], contaTab:'inicio', contaDesde:todayStr().slice(0,4)+'-01-01', contaHasta:todayStr(), mayorCuenta:'', lics:[], campanas:[], mktTab:'panel', mktMonth:todayStr().slice(0,7), csTab:'calendario', mktBrand:'all', csCalView:'2meses', licTab:'panel', licMonth:todayStr().slice(0,7) };
 const CHART_PALETTE = ['#9B1B30','#1D4ED8','#D97706','#166534','#7C3AED','#0F766E','#BE185D','#C8960C','#4338CA','#DC2626'];
 let _contaCharts = [];
 function destroyContaCharts(){ _contaCharts.forEach(c=>{ try{ c.destroy(); }catch(e){} }); _contaCharts=[]; }
@@ -6885,414 +6885,627 @@ async function setLicEstado(id,estado){ const {error}=await sb.from('licitacione
 async function aprobarLic(id,ok){ const {error}=await sb.from('licitaciones').update({estado:ok?'aprobada':'rechazada',aprobado_por:state.userId,aprobado_at:new Date().toISOString()}).eq('id',id); if(error){ showToast(error.message,'err'); return; } showToast(ok?'Aprobada':'Rechazada','ok'); closeModal(); renderLicitaciones(); }
 async function delLic(id){ if(!confirm('¿Eliminar esta licitación?')) return; const {error}=await sb.from('licitaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminada','ok'); closeModal(); renderLicitaciones(); }
 
-/* ================= MERCADEO ================= */
+/* ================= MERCADEO — Content Studio ================= */
 const MKT_EMPRESAS=['Barbology','PaintPro','Agero','CMI','Cargo Express'];
 const MKT_EMP_COLOR={Barbology:'#0EA5E9',PaintPro:'#F97316',Agero:'#22C55E',CMI:'#E8384A','Cargo Express':'#8B5CF6'};
 const MKT_EMP_EMOJI={Barbology:'💈',PaintPro:'🎨',Agero:'🛠️',CMI:'🏗️','Cargo Express':'🚚'};
-function mktSelectEmpresa(e){ mstate.mktEmpresa=e; mstate.mktTab='panel'; renderMercadeo(); }
+const CS_ESTADOS=[['borrador','Borrador'],['en_produccion','En producción'],['por_aprobar','Por aprobar'],['cambios_solicitados','Cambios solicitados'],['aprobado','Aprobado'],['publicado','Publicado'],['programado','Programado'],['realizado','Realizado'],['cancelado','Cancelado']];
+const CS_EST_LBL=Object.fromEntries(CS_ESTADOS);
+const CS_EST_COLOR={borrador:'#6B6B78',en_produccion:'#1D4ED8',por_aprobar:'#D97706',cambios_solicitados:'#C62040',aprobado:'#166534',publicado:'#22C55E',programado:'#7C3AED',realizado:'#059669',cancelado:'#9CA3AF'};
+const CS_CATEGORIAS=[['alcance','Alcance'],['servicio','Servicio'],['pauta','Pauta'],['sin_clasificar','Sin clasificar']];
+const CS_CAT_LBL=Object.fromEntries(CS_CATEGORIAS);
+const CS_FORMATOS=[['reel','Reel','#2563EB'],['historia','Historia','#EA580C'],['post','Post','#16A34A'],['carrusel','Carrusel','#DB2777'],['video','Video','#7C3AED'],['dia_festivo','Día festivo','#DC2626'],['dia_grabacion','Día de grabación','#EA580C']];
+const PUB_PALETTE=[['#DC2626','Rojo'],['#EA580C','Naranja'],['#EAB308','Amarillo'],['#16A34A','Verde'],['#2563EB','Azul'],['#7C3AED','Morado'],['#DB2777','Rosa']];
+function pubColorOf(p){ return (p&&p.color)?p.color:(CS_EST_COLOR[p&&p.estado]||'#9B1B30'); }
+function fgFor(hex){ try{ const h=hex.replace('#',''); const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return (0.299*r+0.587*g+0.114*b)>150?'#1b1b20':'#fff'; }catch(e){ return '#fff'; } }
+function pickPubColor(hex){ const inp=document.getElementById('puColor'); if(inp) inp.value=hex; document.querySelectorAll('.pub-sw').forEach(s=>{ s.style.outline=(s.dataset.hex===hex)?'3px solid var(--c-text)':'none'; s.style.outlineOffset='2px'; }); }
+function mktEmpChip(e){ const col=MKT_EMP_COLOR[e]||'#BE185D'; return `<span style="font-size:10px;font-weight:700;color:#fff;background:${col};padding:2px 8px;border-radius:20px;white-space:nowrap">${MKT_EMP_EMOJI[e]||''} ${esc(e||'—')}</span>`; }
+function csEstChip(est){ return `<span style="font-size:10px;font-weight:700;color:#fff;background:${CS_EST_COLOR[est]||'#6B6B78'};padding:2px 7px;border-radius:20px;white-space:nowrap">${(CS_EST_LBL[est]||est||'').toUpperCase()}</span>`; }
+function csFmtDot(fmt){ const f=CS_FORMATOS.find(x=>x[0]===(fmt||'').toLowerCase()); return f?`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px"><span style="width:7px;height:7px;border-radius:50%;background:${f[2]}"></span>${f[1]}</span>`:`<span style="font-size:10px">${esc(fmt||'')}</span>`; }
+function goMktEmpresa(e){ mstate.mktBrand=mstate.mktBrand===e?'all':e; state.mktOpen=true; nav('mercadeo'); }
+function goMktHome(){ mstate.mktBrand='all'; state.mktOpen=true; nav('mercadeo'); }
+function mktSelectEmpresa(e){ mstate.mktBrand=e; mstate.csTab='calendario'; renderMercadeo(); }
+function mktGo(emp,tab){ closeModal(); if(emp) mstate.mktBrand=emp; mstate.csTab=tab||'calendario'; renderMercadeo(); }
+function csBrandFilter(arr){ const b=mstate.mktBrand||'all'; return b==='all'?arr:arr.filter(x=>x.empresa===b); }
+
+// ── RENDER PRINCIPAL ──────────────────────────────────────────
 async function renderMercadeo(){
   if(!canModule('mkt')){ nav('dashboard'); return; }
   setTopbar('Mercadeo');
-  // Dashboard de inicio de Mercadeo (consolidado de las 5 empresas)
-  if(!mstate.mktEmpresa){
-    document.getElementById('topbarActions').innerHTML = `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`;
-    document.getElementById('view').innerHTML=`<div id="mktHome" class="dash-fx" style="padding:20px 24px;max-width:1000px"><div class="nodata" style="padding:30px">Cargando…</div></div>`;
-    renderMktHome();
-    return;
-  }
-  const emp=mstate.mktEmpresa;
-  const tab=mstate.mktTab||'panel';
-  let addBtn='';
-  if(tab==='campanas') addBtn=`<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`;
-  else if(tab==='tareas') addBtn=`<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Pendiente</button>`;
-  else if(tab==='preaprobados') addBtn=`<button class="btn btn-sm btn-primary" onclick="showPiezaModal()">+ Nueva pieza</button>`;
-  document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`+addBtn;
-  const tabs=[['panel','Panel'],['calendario','Calendario'],['campanas','Campañas'],['tareas','Pendientes'],['preaprobados','Preaprobados'],['push','Mensajes Push'],['biblioteca','Biblioteca']];
-  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1000px">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-      <span style="font-weight:800;font-size:15px">${MKT_EMP_EMOJI[emp]||''} ${esc(emp)}</span>
-      <button class="btn btn-sm btn-ghost" onclick="mstate.mktEmpresa=null;renderMercadeo()">↔ Cambiar empresa</button>
-    </div>
-    <div class="filter-chips" style="margin-bottom:16px">${tabs.map(([k,l])=>`<span class="chip ${tab===k?'active':''}" style="display:inline-flex;align-items:center;gap:6px" onclick="mstate.mktTab='${k}';renderMercadeo()">${tabIcon(k)}${l}</span>`).join('')}</div>
-    <div id="mktBody"><div class="nodata" style="padding:30px">Cargando…</div></div></div>`;
-  if(tab==='panel') renderMktPanel();
-  else if(tab==='calendario') renderMktCalendario();
-  else if(tab==='campanas') renderCampanas();
-  else if(tab==='preaprobados') renderMktPreaprobados();
-  else if(tab==='push') renderMktPush();
-  else if(tab==='biblioteca') renderMktBiblioteca();
-  else renderTareas();
-}
-
-// ── Dashboard de inicio de Mercadeo (consolidado 5 empresas) ──
-function mktEmpChip(e){ const col=MKT_EMP_COLOR[e]||'#BE185D'; return `<span style="font-size:10px;font-weight:700;color:#fff;background:${col};padding:2px 8px;border-radius:20px;white-space:nowrap">${MKT_EMP_EMOJI[e]||''} ${esc(e||'—')}</span>`; }
-function mktGo(emp,tab){ closeModal(); if(emp) mstate.mktEmpresa=emp; mstate.mktTab=tab||'panel'; renderMercadeo(); }
-function shiftMktHomeMonth(dir){ const ym=mstate.mktHomeMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.mktHomeMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderMktHome(); }
-// Vista consolidada (todas las empresas) al tocar una casilla o panel del inicio de Mercadeo.
-function mktHomeDrill(type){
-  const d=mstate._mktHome||{}; const pubs=d.pubs||[],tareas=d.tareas||[],piezas=d.piezas||[],camps=d.camps||[];
-  const hoy=todayStr(), mesAct=hoy.slice(0,7);
-  const addDays=(s,n)=>{ const dt=new Date(s+'T00:00:00'); dt.setDate(dt.getDate()+n); return dt.toISOString().slice(0,10); };
-  const in7=addDays(hoy,7);
-  const openT=t=>!['completado','cancelado'].includes(t.estado);
-  if(type==='empresas'){
-    const list=MKT_EMPRESAS.map(e=>`<div onclick="mktGo('${e.replace(/'/g,"\\'")}','panel')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid var(--c-border)">${mktEmpChip(e)}<span style="flex:1;font-weight:600">${esc(e)}</span><span style="color:var(--c-muted)">›</span></div>`).join('');
-    openModal(`<div class="modal-head"><h2>Empresas</h2><button class="overlay-close" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:72vh;overflow-y:auto">${list}</div>`); return;
-  }
-  let title='', tab='panel', items=[];
-  if(type==='camp'){ title='Campañas activas'; tab='campanas'; items=camps.filter(c=>c.estado==='activa').map(c=>({emp:c.empresa,txt:c.nombre||'(campaña)',sub:c.objetivo||''})); }
-  else if(type==='pend'){ title='Pendientes'; tab='tareas'; items=tareas.filter(openT).map(t=>({emp:t.empresa,txt:t.titulo||t.descripcion||'(pendiente)',sub:t.fecha_limite?('Vence '+t.fecha_limite):''})); }
-  else if(type==='revisar'){ title='Piezas por revisar'; tab='preaprobados'; items=piezas.filter(p=>['borrador','enviado'].includes(p.estado)).map(p=>({emp:p.empresa,txt:p.titulo||'(pieza)',sub:p.estado||''})); }
-  else if(type==='prox7'){ title='Publican en 7 días'; tab='calendario'; items=pubs.filter(p=>p.fecha&&p.fecha>=hoy&&p.fecha<=in7).map(p=>({emp:p.empresa,txt:p.titulo||p.contenido||'(publicación)',sub:p.fecha||''})); }
-  else if(type==='pubmes'){ title='Publicaciones del mes'; tab='calendario'; items=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).map(p=>({emp:p.empresa,txt:p.titulo||p.contenido||'(publicación)',sub:p.fecha||''})); }
-  items.sort((a,b)=>String(a.emp||'').localeCompare(String(b.emp||'')));
-  const rows=items.length?items.map(it=>`<div onclick="mktGo('${String(it.emp||'').replace(/'/g,"\\'")}','${tab}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 12px;border-bottom:1px solid var(--c-border)">${mktEmpChip(it.emp)}<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(it.txt)}</div>${it.sub?`<div style="font-size:11px;color:var(--c-muted)">${esc(it.sub)}</div>`:''}</div><span style="color:var(--c-muted)">›</span></div>`).join(''):'<div class="nodata" style="padding:24px">Nada por aquí.</div>';
-  openModal(`<div class="modal-head"><h2>${title} <span style="font-size:12px;color:var(--c-muted)">· todas las empresas (${items.length})</span></h2><button class="overlay-close" onclick="closeModal()">×</button></div><div class="modal-body" style="max-height:72vh;overflow-y:auto">${rows}</div>`);
-}
-async function renderMktHome(){
-  const host=document.getElementById('mktHome'); if(!host) return;
-  const [rp,rt,rz,rc]=await Promise.all([
-    sb.from('publicaciones').select('*'),
-    sb.from('mercadeo_tareas').select('*'),
-    sb.from('mkt_piezas').select('*'),
-    sb.from('campanas').select('*')
+  const tab=mstate.csTab||'calendario';
+  const brand=mstate.mktBrand||'all';
+  // Counts for sidebar badges
+  const [rTodo,rPush,rRef]=await Promise.all([
+    sb.from('mercadeo_tareas').select('id').not('estado','in','("completado","cancelado")'),
+    sb.from('mkt_push').select('id'),
+    sb.from('mkt_piezas').select('id')
   ]);
-  const pubs=rp.data||[], tareas=rt.data||[], piezas=rz.data||[], camps=rc.data||[];
-  mstate._mktHome={pubs,tareas,piezas,camps};   // cache para los paneles clickeables
-  const hoy=todayStr(), mesAct=hoy.slice(0,7);
-  const addDays=(s,n)=>{ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
-  const in7=addDays(hoy,7);
-  const openT=t=>!['completado','cancelado'].includes(t.estado);
-  const pubMesTot=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
-  const pendTot=tareas.filter(openT).length;
-  const revisarTot=piezas.filter(p=>['borrador','enviado'].includes(p.estado)).length;
-  const prox7=pubs.filter(p=>p.fecha&&p.fecha>=hoy&&p.fecha<=in7).length;
-  const campTot=camps.filter(c=>c.estado==='activa').length;
-  const hr=new Date().getHours(); const greet=hr<12?'Buenos días':hr<18?'Buenas tardes':'Buenas noches';
-  const perEmp=e=>({
-    pend: tareas.filter(t=>t.empresa===e&&openT(t)).length,
-    pubMes: pubs.filter(p=>p.empresa===e&&(p.fecha||'').slice(0,7)===mesAct).length,
-    revisar: piezas.filter(p=>p.empresa===e&&['borrador','enviado'].includes(p.estado)).length,
-    camp: camps.filter(c=>c.empresa===e&&c.estado==='activa').length
-  });
-  const stats=Object.fromEntries(MKT_EMPRESAS.map(e=>[e,perEmp(e)]));
-  const maxAct=Math.max(1,...MKT_EMPRESAS.map(e=>stats[e].pend+stats[e].pubMes+stats[e].revisar));
-  const bigKpi=(emoji,val,label,c1,c2,onclick)=>`<div ${onclick?`onclick="${onclick}"`:''} style="position:relative;overflow:hidden;border-radius:16px;padding:16px 16px 18px;background:linear-gradient(135deg,${c1},${c2});color:#fff;box-shadow:0 6px 18px -8px ${c1}${onclick?';cursor:pointer':''}">
-    <div style="font-size:26px;line-height:1;opacity:.95">${emoji}</div>
-    <div style="font-size:30px;font-weight:900;margin-top:8px;text-shadow:0 1px 6px rgba(0,0,0,.25)">${val}</div>
-    <div style="font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;opacity:.92;margin-top:2px">${label}${onclick?' ›':''}</div>
+  const nTodo=(rTodo.data||[]).length, nPush=(rPush.data||[]).length, nRef=(rRef.data||[]).length;
+  const addBtn=tab==='calendario'?`<button class="btn btn-sm btn-primary" onclick="openPubModal()">+ Crear contenido</button>`:
+    tab==='todo'?`<button class="btn btn-sm btn-primary" onclick="openTareaModal()">+ Agregar To Do</button>`:
+    tab==='push'?`<button class="btn btn-sm btn-primary" onclick="openPushModal()">+ Nuevo mensaje</button>`:
+    tab==='referencias'?`<button class="btn btn-sm btn-primary" onclick="showPiezaModal()">+ Nueva referencia</button>`:
+    tab==='campanas'?`<button class="btn btn-sm btn-primary" onclick="openCampanaModal()">+ Campaña</button>`:'';
+  const expBtn=(tab==='todo'||tab==='push')?`<button class="btn btn-sm btn-ghost">↓ Exportar ${tab==='todo'?'To Do':'push'}</button>`:'';
+  document.getElementById('topbarActions').innerHTML=`<button class="btn btn-sm btn-ghost" onclick="goChat('mercadeo','mercadeo')">💬 Chat</button>`+expBtn+addBtn;
+  const tabs=[['calendario','📅 Calendario'],['todo','📋 To Do',nTodo],['push','🔔 Mensajes push',nPush],['referencias','🔗 Referencias',nRef],['campanas','🎯 Campañas']];
+  document.getElementById('view').innerHTML=`<div style="padding:20px 24px;max-width:1200px">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:4px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px"><span style="font-size:22px;font-weight:900;letter-spacing:-.02em">Mercadeo</span><span style="font-size:10px;color:var(--c-muted);font-weight:600;background:var(--c-border);padding:2px 8px;border-radius:20px;text-transform:uppercase">Workspace</span></div>
+      <div style="flex:1"></div>
+      <span style="font-size:10px;color:var(--c-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600">Planea. Crea. Publica.</span>
+    </div>
+    <div style="font-size:13px;margin-bottom:14px;color:var(--c-muted)">Hola <b>${esc(state.userName||'')}</b>, chequea esto...</div>
+    <div class="filter-chips" style="margin-bottom:12px">${tabs.map(([k,l,n])=>`<span class="chip ${tab===k?'active':''}" onclick="mstate.csTab='${k}';renderMercadeo()" style="display:inline-flex;align-items:center;gap:5px">${l}${n?` <span style="font-size:9px;font-weight:800;background:${tab===k?'var(--c-primary)':'var(--c-muted)'};color:#fff;border-radius:50%;min-width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center">${n}</span>`:''}</span>`).join('')}</div>
+    <div id="csBody"><div class="nodata" style="padding:30px">Cargando…</div></div>
   </div>`;
-  // Calendario consolidado de las 5 empresas (para no salir del inicio).
-  const ymH=mstate.mktHomeMonth||mesAct;
-  const [HY,HM]=ymH.split('-').map(Number);
-  const startDowH=(new Date(HY,HM-1,1).getDay()+6)%7;
-  const daysH=new Date(HY,HM,0).getDate();
-  const pubByDayH={}; pubs.forEach(p=>{ if((p.fecha||'').slice(0,7)===ymH){ const dd=+p.fecha.slice(8,10); (pubByDayH[dd]=pubByDayH[dd]||[]).push(p); } });
-  let cellsH=''; for(let i=0;i<startDowH;i++) cellsH+='<div></div>';
-  for(let dd=1;dd<=daysH;dd++){
-    const ds=ymH+'-'+String(dd).padStart(2,'0'); const lst=pubByDayH[dd]||[]; const esHoy=ds===hoy;
-    cellsH+=`<div style="min-height:72px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:4px;background:var(--c-card);overflow:hidden">
-      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${dd}</div>
-      ${lst.slice(0,3).map(p=>{ const col=MKT_EMP_COLOR[p.empresa]||'#6B6B78'; return `<div onclick="mktGo('${String(p.empresa||'').replace(/'/g,"\\'")}','calendario')" title="${esc(p.empresa||'')}: ${esc(p.titulo||p.contenido||'')}" style="cursor:pointer;font-size:9px;font-weight:600;margin-top:2px;padding:1px 4px;border-radius:4px;background:${col};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${MKT_EMP_EMOJI[p.empresa]||''} ${esc(p.titulo||p.contenido||'')}</div>`; }).join('')}
-      ${lst.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${lst.length-3} más</div>`:''}
-    </div>`;
-  }
-  const dowH=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-  const calHtml=`<div class="section-card" style="padding:16px;margin-bottom:18px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
-      <h3 style="font-size:13px;margin:0">📅 Calendario de publicaciones · 5 empresas</h3>
-      <div class="date-strip-wrap" style="gap:8px"><button class="nav-arrow" onclick="shiftMktHomeMonth(-1)">‹</button><div style="font-weight:700;text-transform:capitalize;min-width:120px;text-align:center">${MESES_ES[HM-1]} ${HY}</div><button class="nav-arrow" onclick="shiftMktHomeMonth(1)">›</button></div>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${MKT_EMPRESAS.map(e=>`<span style="font-size:10px;display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:50%;background:${MKT_EMP_COLOR[e]||'#6B6B78'}"></span>${esc(e)}</span>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px">${dowH.map(d=>`<div style="text-align:center;font-size:9px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${cellsH}</div>
-  </div>`;
-  host.innerHTML=`
-    <div class="greeting-bar">
-      <div style="display:flex;align-items:center;gap:18px;position:relative;z-index:1">
-        <img src="/cmi-logo-light.svg" alt="CMI" style="height:56px;width:auto;display:block;filter:drop-shadow(0 0 12px rgba(242,74,84,.55))">
-        <div>
-          <div class="greeting-hi">${greet}, ${esc(state.userName)} ✨</div>
-          <div class="greeting-date">${fmtDateLong(hoy)} · Mercadeo CMI</div>
-        </div>
-      </div>
-      <div class="greeting-kpis">
-        <div class="greeting-kpi"><div class="greeting-kpi-val">${pubMesTot}</div><div class="greeting-kpi-label">Publicaciones (mes)</div></div>
-        <div class="greeting-kpi"><div class="greeting-kpi-val">${pendTot}</div><div class="greeting-kpi-label">Pendientes</div></div>
-      </div>
-    </div>
-    <div style="font-size:12px;color:var(--c-muted);margin:14px 0 6px">Toca una casilla o un panel para ver la información consolidada de todas las empresas.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:0 0 16px">
-      ${bigKpi('🏢',MKT_EMPRESAS.length,'Empresas','#3B82F6','#1D4ED8',"mktHomeDrill('empresas')")}
-      ${bigKpi('🚀',campTot,'Campañas activas','#22C55E','#15803D',"mktHomeDrill('camp')")}
-      ${bigKpi('📋',pendTot,'Pendientes','#F59E0B','#D97706',"mktHomeDrill('pend')")}
-      ${bigKpi('🎨',revisarTot,'Por revisar','#A78BFA','#7C3AED',"mktHomeDrill('revisar')")}
-      ${bigKpi('🔥',prox7,'Publican (7 días)','#FB7185','#E8384A',"mktHomeDrill('prox7')")}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:18px">
-      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('empresas')"><h3 style="font-size:13px;margin:0 0 12px">🏢 Actividad por empresa ›</h3><canvas id="chHomeEmp" height="210"></canvas></div>
-      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('pubmes')"><h3 style="font-size:13px;margin:0 0 12px">📣 Publicaciones del mes por empresa ›</h3><canvas id="chHomePubEmp" height="210"></canvas></div>
-      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('pubmes')"><h3 style="font-size:13px;margin:0 0 12px">📈 Publicaciones por mes (todas) ›</h3><canvas id="chHomeMes" height="210"></canvas></div>
-      <div class="section-card" style="padding:16px;cursor:pointer" onclick="mktHomeDrill('revisar')"><h3 style="font-size:13px;margin:0 0 12px">✅ Pipeline de piezas ›</h3><canvas id="chHomePiezas" height="210"></canvas></div>
-    </div>
-    ${calHtml}
-    <h2 style="font-size:15px;margin:4px 0 6px">Empresas</h2>
-    <div style="font-size:12px;color:var(--c-muted);margin-bottom:12px">Toca una para entrar (también están en el menú de la izquierda).</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px">
-      ${MKT_EMPRESAS.map(e=>{ const s=stats[e]; const col=MKT_EMP_COLOR[e]||'#BE185D'; const act=s.pend+s.pubMes+s.revisar; const pct=Math.round(act/maxAct*100);
-        return `<div class="section-card" style="position:relative;padding:0;overflow:hidden;cursor:pointer;border-top:4px solid ${col}" onclick="mktSelectEmpresa('${e.replace(/'/g,"\\'")}')">
-        <div style="padding:16px">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-            <div style="width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;background:${col}22">${MKT_EMP_EMOJI[e]||'🏢'}</div>
-            <span style="font-weight:800;font-size:15px">${esc(e)}</span>
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:12px">
-            <div style="flex:1;text-align:center;background:${col}14;border-radius:10px;padding:8px 4px"><div style="font-size:19px;font-weight:900;color:${col}">${s.pend}</div><div style="font-size:9px;color:var(--c-muted);font-weight:700;text-transform:uppercase">Pend.</div></div>
-            <div style="flex:1;text-align:center;background:${col}14;border-radius:10px;padding:8px 4px"><div style="font-size:19px;font-weight:900;color:${col}">${s.pubMes}</div><div style="font-size:9px;color:var(--c-muted);font-weight:700;text-transform:uppercase">Pub.</div></div>
-            <div style="flex:1;text-align:center;background:${col}14;border-radius:10px;padding:8px 4px"><div style="font-size:19px;font-weight:900;color:${col}">${s.camp}</div><div style="font-size:9px;color:var(--c-muted);font-weight:700;text-transform:uppercase">Camp.</div></div>
-          </div>
-          <div style="font-size:10px;color:var(--c-muted);margin-bottom:4px">Actividad</div>
-          <div style="height:8px;border-radius:20px;background:var(--c-border);overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${col},${col}99);border-radius:20px"></div></div>
-        </div>
-      </div>`; }).join('')}
-    </div>`;
-  // Gráficas
-  destroyMktCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
-  const emps=MKT_EMPRESAS, cols=emps.map(e=>MKT_EMP_COLOR[e]||'#BE185D');
-  const e1=document.getElementById('chHomeEmp');
-  if(e1){ const data=emps.map(e=>stats[e].pend+stats[e].pubMes+stats[e].revisar);
-    if(data.some(v=>v>0)) _mktCharts.push(new Chart(e1,{type:'doughnut',data:{labels:emps,datasets:[{data,backgroundColor:cols,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:true,cutout:'62%',plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12,padding:8}}}}}));
-    else e1.outerHTML='<div class="nodata" style="font-size:12px;padding:30px">Aún sin actividad</div>'; }
-  const e2=document.getElementById('chHomePubEmp');
-  if(e2) _mktCharts.push(new Chart(e2,{type:'bar',data:{labels:emps,datasets:[{label:'Publicaciones',data:emps.map(e=>stats[e].pubMes),backgroundColor:cols,borderRadius:8}]},options:chartOpts({plugins:{legend:{display:false}}})}));
-  const e3=document.getElementById('chHomeMes');
-  if(e3){ const byMes={}; pubs.forEach(p=>{ const m=(p.fecha||'').slice(0,7); if(m) byMes[m]=(byMes[m]||0)+1; });
-    const ml=Object.keys(byMes).sort().slice(-6);
-    if(ml.length) _mktCharts.push(new Chart(e3,{type:'line',data:{labels:ml,datasets:[{label:'Publicaciones',data:ml.map(m=>byMes[m]),borderColor:'#E8384A',backgroundColor:'rgba(232,56,74,.18)',fill:true,tension:.35,pointRadius:4,pointBackgroundColor:'#E8384A'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
-    else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:30px">Sin publicaciones todavía</div>'; }
-  const e4=document.getElementById('chHomePiezas');
-  if(e4){ const estados=(typeof PIEZA_EST!=='undefined')?PIEZA_EST:[['borrador','Borrador']];
-    const dat=estados.map(([k])=>piezas.filter(p=>p.estado===k).length);
-    if(dat.some(v=>v>0)) _mktCharts.push(new Chart(e4,{type:'doughnut',data:{labels:estados.map(x=>x[1]),datasets:[{data:dat,backgroundColor:estados.map(([k])=>(typeof PIEZA_COLOR!=='undefined'&&PIEZA_COLOR[k])||'#C62040'),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:true,cutout:'62%',plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12,padding:8}}}}}));
-    else e4.outerHTML='<div class="nodata" style="font-size:12px;padding:30px">Sin piezas todavía</div>'; }
+  if(tab==='calendario') renderCSCalendario();
+  else if(tab==='todo') renderCSTodo();
+  else if(tab==='push') renderCSPush();
+  else if(tab==='referencias') renderCSReferencias();
+  else if(tab==='campanas') renderCSCampanas();
 }
 
-// ── Panel con gráficas ─────────────────────────────────────────
-async function renderMktPanel(){
-  const b=document.getElementById('mktBody'); if(!b) return;
-  const emp=mstate.mktEmpresa;
-  const [rc,rp,rt,rz,ru,re]=await Promise.all([
-    sb.from('campanas').select('*').eq('empresa',emp),
-    sb.from('publicaciones').select('*').eq('empresa',emp),
-    sb.from('mercadeo_tareas').select('*').eq('empresa',emp),
-    sb.from('mkt_piezas').select('*').eq('empresa',emp),
-    sb.from('mkt_push').select('*').eq('empresa',emp),
-    sb.from('mkt_efemerides').select('*')
-  ]);
-  const camps=rc.data||[], pubs=rp.data||[], tareas=rt.data||[], piezas=rz.data||[], push=ru.data||[], efem=re.data||[];
-  mstate.campanas=camps;
-  const hoy=todayStr(); const mesAct=hoy.slice(0,7);
-  const addDays=(s,n)=>{ const d=new Date(s+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
-  const in7=addDays(hoy,7), in30=addDays(hoy,30);
-  const pubsMes=pubs.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
-  const campActivas=camps.filter(c=>c.estado==='activa').length;
-  const pendAbiertos=tareas.filter(t=>!['completado','cancelado'].includes(t.estado)).length;
-  const vencidas=tareas.filter(t=>!['completado','cancelado'].includes(t.estado)&&t.fecha_limite&&t.fecha_limite<hoy).length;
-  const piezasRev=piezas.filter(p=>['borrador','enviado'].includes(p.estado)).length;
-  const piezasApr=piezas.filter(p=>p.estado==='aprobado').length;
-  const pushMes=push.filter(p=>(p.fecha||'').slice(0,7)===mesAct).length;
-  const pushEnv=push.filter(p=>(p.fecha||'').slice(0,7)===mesAct&&p.estado==='enviado').length;
-  // Próximas publicaciones (de hoy en adelante)
-  const prox=pubs.filter(p=>p.fecha&&p.fecha>=hoy).sort((a,b)=>(a.fecha+(a.hora||'')).localeCompare(b.fecha+(b.hora||''))).slice(0,6);
-  // Efemérides próximas (normaliza recurrentes al año en curso)
-  const yr=+hoy.slice(0,4);
-  const efemProx=efem.filter(e=>!e.empresa||e.empresa===emp).map(e=>{
-    let f=e.fecha||''; if(e.recurrente&&f){ f=yr+f.slice(4); if(f<hoy) f=(yr+1)+f.slice(4); }
-    return {...e,_f:f};
-  }).filter(e=>e._f>=hoy&&e._f<=in30).sort((a,b)=>a._f.localeCompare(b._f)).slice(0,5);
-  const diaCorto=s=>{ const d=new Date(s+'T00:00:00'); return ['dom','lun','mar','mié','jue','vie','sáb'][d.getDay()]+' '+d.getDate()+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][d.getMonth()]; };
-  b.innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">
-      ${kpiTile('Campañas activas',campActivas,'#60A5FA','rgba(29,78,216,.14)')}
-      ${kpiTile('Publicaciones (mes)',pubsMes,'#34D77F','rgba(34,197,94,.14)')}
-      ${kpiTile('Pendientes abiertos',pendAbiertos,'#F59E0B','rgba(217,119,6,.14)')}
-      ${kpiTile('Vencidos',vencidas,'#EF4444','rgba(239,68,68,.14)')}
-      ${kpiTile('Piezas por revisar',piezasRev,'#A78BFA','rgba(124,58,237,.14)')}
-      ${kpiTile('Piezas aprobadas',piezasApr,'#34D77F','rgba(22,101,52,.14)')}
-      ${kpiTile('Push (mes)',pushMes+(pushEnv?' · '+pushEnv+' env.':''),'#38BDF8','rgba(2,132,199,.14)')}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-bottom:16px">
-      <div class="section-card" style="padding:14px">
-        <h3 style="font-size:13px;margin:0 0 10px">📅 Próximas publicaciones</h3>
-        ${prox.length?prox.map(p=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--c-border)">
-          <span style="font-size:10px;font-weight:700;color:var(--c-muted);min-width:78px">${diaCorto(p.fecha)}${p.hora?' · '+esc(p.hora):''}</span>
-          <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.titulo||p.contenido||'(sin título)')}${p.canal?' <span style="color:var(--c-muted)">· '+esc(p.canal)+'</span>':''}</span>
-          <span style="font-size:9px;font-weight:700;color:#fff;background:${(typeof PUB_COLOR!=='undefined'&&PUB_COLOR[p.estado])||'#C62040'};padding:2px 6px;border-radius:20px;white-space:nowrap">${((typeof PUB_LBL!=='undefined'&&PUB_LBL[p.estado])||p.estado||'').toUpperCase()}</span>
-        </div>`).join(''):'<div class="nodata" style="font-size:12px;padding:16px">Nada programado próximamente.</div>'}
-        <div style="margin-top:10px"><button class="btn btn-sm btn-ghost" onclick="mstate.mktTab='calendario';renderMercadeo()">Ver calendario →</button></div>
-      </div>
-      <div class="section-card" style="padding:14px">
-        <h3 style="font-size:13px;margin:0 0 10px">⭐ Fechas especiales próximas</h3>
-        ${efemProx.length?efemProx.map(e=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--c-border)">
-          <span style="width:9px;height:9px;border-radius:50%;background:${e.color||'#7C3AED'};flex:none"></span>
-          <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.titulo||'')}${e.recurrente?' <span style="color:var(--c-muted)">· anual</span>':''}</span>
-          <span style="font-size:10px;font-weight:700;color:var(--c-muted);white-space:nowrap">${diaCorto(e._f)}</span>
-        </div>`).join(''):'<div class="nodata" style="font-size:12px;padding:16px">Sin fechas en los próximos 30 días.</div>'}
-      </div>
-    </div>
-    ${campActivas?`<div class="section-card" style="padding:14px;margin-bottom:16px">
-      <h3 style="font-size:13px;margin:0 0 10px">🎯 Campañas activas</h3>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">
-        ${camps.filter(c=>c.estado==='activa').map(c=>`<div onclick="openCampanaDetail('${c.id}')" style="border:1px solid var(--c-border);border-radius:8px;padding:10px;cursor:pointer">
-          <div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.nombre)}</div>
-          ${c.objetivo?`<div style="font-size:11px;color:var(--c-muted);margin-top:3px">${esc(c.objetivo)}</div>`:''}
-          ${c.drive_link?`<a href="${esc(c.drive_link)}" target="_blank" onclick="event.stopPropagation()" style="font-size:11px;color:var(--c-primary)">📁 Drive</a>`:''}
-        </div>`).join('')}
-      </div></div>`:''}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
-      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por mes</h3><canvas id="chPubMes" height="190"></canvas></div>
-      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Publicaciones por canal</h3><canvas id="chPubCanal" height="190"></canvas></div>
-      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Estado de publicaciones</h3><canvas id="chPubEstado" height="190"></canvas></div>
-      <div class="section-card" style="padding:14px"><h3 style="font-size:13px;margin:0 0 10px">Tablero de pendientes</h3><canvas id="chTareas" height="190"></canvas></div>
-    </div>`;
-  drawMktCharts(pubs,tareas);
-}
-function drawMktCharts(pubs,tareas){
-  destroyMktCharts(); if(typeof Chart==='undefined') return; tuneChartsDark();
-  const byMes={}; pubs.forEach(p=>{ const m=(p.fecha||'').slice(0,7)||'s/f'; byMes[m]=(byMes[m]||0)+1; });
-  const ml=Object.keys(byMes).sort();
-  const e1=document.getElementById('chPubMes');
-  if(e1) _mktCharts.push(new Chart(e1,{type:'bar',data:{labels:ml,datasets:[{label:'Publicaciones',data:ml.map(m=>byMes[m]),backgroundColor:'#C62040'}]},options:chartOpts({plugins:{legend:{display:false}}})}));
-  const byCanal={}; pubs.forEach(p=>{ const c=(p.canal||'').trim()||'Sin canal'; byCanal[c]=(byCanal[c]||0)+1; });
-  const e2=document.getElementById('chPubCanal'), lc=Object.keys(byCanal);
-  if(e2){ if(lc.length) _mktCharts.push(new Chart(e2,{type:'doughnut',data:{labels:lc,datasets:[{data:lc.map(c=>byCanal[c]),backgroundColor:CHART_PALETTE}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e2.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
-  const byEst={}; pubs.forEach(p=>{ const s=p.estado||'programado'; byEst[s]=(byEst[s]||0)+1; });
-  const e3=document.getElementById('chPubEstado'), le=Object.keys(byEst);
-  if(e3){ if(le.length) _mktCharts.push(new Chart(e3,{type:'doughnut',data:{labels:le.map(s=>(typeof PUB_LBL!=='undefined'&&PUB_LBL[s])||s),datasets:[{data:le.map(s=>byEst[s]),backgroundColor:le.map(s=>(typeof PUB_COLOR!=='undefined'&&PUB_COLOR[s])||'#C62040')}]},options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:12}}}}})); else e3.outerHTML='<div class="nodata" style="font-size:12px;padding:20px">Sin publicaciones</div>'; }
-  const cols=(typeof MKT_TAREA_EST!=='undefined')?MKT_TAREA_EST:[['pendiente','Pendiente']];
-  const e4=document.getElementById('chTareas');
-  if(e4) _mktCharts.push(new Chart(e4,{type:'bar',data:{labels:cols.map(c=>c[1]),datasets:[{label:'Pendientes',data:cols.map(c=>tareas.filter(t=>t.estado===c[0]).length),backgroundColor:cols.map(c=>(typeof MKT_TAREA_COLOR!=='undefined'&&MKT_TAREA_COLOR[c[0]])||'#C62040')}]},options:chartOpts({plugins:{legend:{display:false}}})}));
-}
-
-// ── Calendario editorial (Mes / Grilla mensual) ───────────────
-const PUB_EST=[['programado','Programado'],['publicado','Publicado'],['no_publicado','No publicado'],['reprogramado','Reprogramado'],['sustituido','Sustituido']];
-const PUB_LBL=Object.fromEntries(PUB_EST);
-const PUB_COLOR={programado:'#D97706',publicado:'#22C55E',no_publicado:'#9CA3AF',reprogramado:'#1D4ED8',sustituido:'#C62040'};
-// Paleta de colores que el usuario puede elegir por publicación (tipo de publicación)
-const PUB_PALETTE=[['#DC2626','Rojo'],['#EA580C','Naranja'],['#EAB308','Amarillo'],['#16A34A','Verde'],['#2563EB','Azul']];
-// Color efectivo de la publicación: el elegido por el usuario, o el del estado como respaldo
-function pubColorOf(p){ return (p&&p.color) ? p.color : (PUB_COLOR[p&&p.estado]||'#9B1B30'); }
-// Texto legible (negro/blanco) según qué tan claro sea el color de fondo
-function fgFor(hex){ try{ const h=hex.replace('#',''); const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return (0.299*r+0.587*g+0.114*b)>150?'#1b1b20':'#fff'; }catch(e){ return '#fff'; } }
-// Selector de color (swatches) para el modal de publicación
-function pickPubColor(hex){ const inp=document.getElementById('puColor'); if(inp) inp.value=hex; document.querySelectorAll('.pub-sw').forEach(s=>{ s.style.outline = (s.dataset.hex===hex)?'3px solid var(--c-text)':'none'; s.style.outlineOffset='2px'; }); }
-async function renderMktCalendario(){
-  const b=document.getElementById('mktBody'); if(!b) return;
-  const efemOn=mstate.mktEfem!==false;
-  const [rp,re]=await Promise.all([
-    sb.from('publicaciones').select('*').eq('empresa',mstate.mktEmpresa),
-    sb.from('mkt_efemerides').select('*')
-  ]);
-  const pubs=rp.data||[]; mstate._pubs=pubs;
-  const efem=(re.data||[]).filter(e=>!e.empresa||e.empresa===mstate.mktEmpresa); mstate._efem=efem;
-  const ym=mstate.mktMonth||todayStr().slice(0,7);
+// ── CALENDARIO ───────────────────────────────────────────────
+function shiftCSMonth(dir){ const ym=mstate.csMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.csMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderCSCalendario(); }
+async function renderCSCalendario(){
+  const b=document.getElementById('csBody'); if(!b) return;
+  const [rp,re,rl]=await Promise.all([sb.from('publicaciones').select('*'),sb.from('mkt_efemerides').select('*'),sb.from('mkt_biblioteca').select('*')]);
+  if(mstate.csTab!=='calendario') return;
+  const allPubs=rp.data||[]; mstate._csPubs=allPubs;
+  const efem=re.data||[]; mstate._efem=efem;
+  const links=rl.data||[];
+  const brand=mstate.mktBrand||'all';
+  const pubs=brand==='all'?allPubs:allPubs.filter(p=>p.empresa===brand);
+  const view=mstate.csCalView||'2meses';
+  const ym=mstate.csMonth||todayStr().slice(0,7);
   const [Y,M]=ym.split('-').map(Number);
-  const mm=String(M).padStart(2,'0');
-  const efemByDay={};
-  if(efemOn) efem.forEach(e=>{ if(!e.fecha) return; const mo=e.fecha.slice(5,7), d=+e.fecha.slice(8,10); const enMes = e.recurrente ? (mo===mm) : (e.fecha.slice(0,7)===ym); if(enMes) (efemByDay[d]=efemByDay[d]||[]).push(e); });
-  const view=mstate.mktCalView||'mes';
-  const header=`
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-      <div class="filter-chips"><span class="chip ${view==='mes'?'active':''}" onclick="mstate.mktCalView='mes';renderMercadeo()">📅 Mes</span><span class="chip ${view==='grilla'?'active':''}" onclick="mstate.mktCalView='grilla';renderMercadeo()">▦ Grilla mensual</span><span class="chip ${efemOn?'active':''}" onclick="mstate.mktEfem=${efemOn?'false':'true'};renderMercadeo()">⭐ Efemérides</span></div>
-      <div class="date-strip-wrap" style="flex:1;justify-content:center;gap:10px">
-        <button class="nav-arrow" onclick="shiftMktMonth(-1)">‹</button>
-        <div style="font-weight:700;text-transform:capitalize;min-width:130px;text-align:center">${MESES_ES[M-1]} ${Y}</div>
-        <button class="nav-arrow" onclick="shiftMktMonth(1)">›</button>
-      </div>
-      <button class="btn btn-sm btn-ghost" onclick="openEfemModal(null,'${ym}-01')">+ Fecha especial</button>
-      <button class="btn btn-sm btn-primary" onclick="openPubModal(null,'${ym}-15')">+ Agregar publicación</button>
-    </div>`;
-  const chip=e=>`<span style="font-size:10px;font-weight:700;color:#fff;background:${PUB_COLOR[e]||'#6B6B78'};padding:2px 7px;border-radius:20px">${PUB_LBL[e]||e}</span>`;
-  if(view==='grilla'){
-    const list=pubs.filter(p=>(p.fecha||'').slice(0,7)===ym).sort((a,b)=>(a.fecha+(a.hora||'')).localeCompare(b.fecha+(b.hora||'')));
-    b.innerHTML=header+`<div class="item-table"><table>
-      <thead><tr><th>Fecha</th><th>Hora</th><th>Red</th><th>Formato</th><th>Título / Copy</th><th>Responsable</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${list.length===0?`<tr><td colspan="8"><div class="empty-state">Sin publicaciones este mes</div></td></tr>`:list.map(p=>`
-        <tr style="cursor:pointer" onclick="openPubModal('${p.id}')">
-          <td style="white-space:nowrap">${esc(p.fecha||'')}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(p.hora||'')}</td>
-          <td style="font-size:12px">${esc(p.canal||'')}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(p.formato||'')}</td>
-          <td><div style="display:flex;align-items:center;gap:7px"><span style="width:11px;height:11px;border-radius:50%;flex:none;background:${pubColorOf(p)}"></span><b style="font-size:13px">${esc(p.titulo||p.contenido||'')}</b></div></td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(p.responsable||'')}</td>
-          <td>${chip(p.estado||'programado')}</td>
-          <td style="text-align:right"><button class="act-btn del" onclick="event.stopPropagation();delPubCal('${p.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
-        </tr>`).join('')}</tbody></table></div>`;
-    return;
-  }
-  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7;
+  const hoy=todayStr();
+  // Filters
+  const fEst=mstate.csFiltEst||'all';
+  const fCat=mstate.csFiltCat||'all';
+  const fFmt=mstate.csFiltFmt||'all';
+  let filtered=pubs;
+  if(fEst!=='all') filtered=filtered.filter(p=>p.estado===fEst);
+  if(fCat!=='all') filtered=filtered.filter(p=>(p.categoria||'sin_clasificar')===fCat);
+  if(fFmt!=='all') filtered=filtered.filter(p=>(p.formato||'').toLowerCase()===fFmt);
+  // Canva notebooks (collapsible)
+  const canvaHtml=`<details style="margin-bottom:14px"><summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--c-primary)">▸ Cuadernos de Canva por empresa</summary>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:10px">
+      ${MKT_EMPRESAS.filter(e=>brand==='all'||brand===e).map(e=>{
+        const col=MKT_EMP_COLOR[e]||'#BE185D';
+        const empLinks=links.filter(l=>l.empresa===e&&(l.categoria||'').toLowerCase().includes('canva'));
+        const link=empLinks.length?empLinks[0].url:'';
+        return `<div class="section-card" style="padding:12px;border-top:3px solid ${col}">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px"><div style="width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;background:${col}22">${MKT_EMP_EMOJI[e]||'🏢'}</div><span style="font-weight:700;font-size:12px">${esc(e)}</span></div>
+          ${link?`<a href="${esc(link)}" target="_blank" style="font-size:11px;color:var(--c-primary)">Abrir cuaderno →</a>`:`<span style="font-size:10px;color:var(--c-muted)">Sin enlace</span>`}
+          <div style="margin-top:4px"><button class="btn btn-sm btn-ghost" style="font-size:10px" onclick="csAddCanvaLink('${e.replace(/'/g,"\\'")}')">Agregar enlace</button></div>
+        </div>`;
+      }).join('')}
+    </div>
+  </details>`;
+  const header=`<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+    <div style="font-weight:700;min-width:170px">${view==='2meses'?MESES_ES[M-1].charAt(0).toUpperCase()+MESES_ES[M-1].slice(1)+' '+Y+' · '+(M===12?'Ene '+(Y+1):MESES_ES[M]+' '+Y):MESES_ES[M-1].charAt(0).toUpperCase()+MESES_ES[M-1].slice(1)+' De '+Y}</div>
+    <button class="nav-arrow" onclick="shiftCSMonth(-1)">‹</button>
+    <button class="nav-arrow" onclick="shiftCSMonth(1)">›</button>
+    <button class="btn btn-sm btn-ghost" onclick="mstate.csMonth=todayStr().slice(0,7);renderCSCalendario()">Hoy</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-sm btn-ghost" onclick="openEfemModal()">+ Fecha especial</button>
+    <div class="filter-chips" style="margin:0"><span class="chip ${view==='2meses'?'active':''}" onclick="mstate.csCalView='2meses';renderCSCalendario()">2 meses</span><span class="chip ${view==='mes'?'active':''}" onclick="mstate.csCalView='mes';renderCSCalendario()">Mes</span><span class="chip ${view==='lista'?'active':''}" onclick="mstate.csCalView='lista';renderCSCalendario()">Lista</span></div>
+  </div>`;
+  // Brand filter
+  const brandBar=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:center">
+    <input placeholder="Buscar contenido…" oninput="mstate.csSearch=this.value;renderCSCalendario()" value="${esc(mstate.csSearch||'')}" style="font-size:12px;border:1px solid var(--c-border);border-radius:6px;padding:5px 10px;min-width:140px;flex:1;max-width:220px;background:var(--c-card);color:var(--c-text)">
+    <select onchange="mstate.mktBrand=this.value;renderCSCalendario()" style="font-size:11px;border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;background:var(--c-card);color:var(--c-text)">
+      <option value="all" ${brand==='all'?'selected':''}>Todas las marcas</option>
+      ${MKT_EMPRESAS.map(e=>`<option value="${e}" ${brand===e?'selected':''}>${e}</option>`).join('')}
+    </select>
+    <select onchange="mstate.csFiltEst=this.value;renderCSCalendario()" style="font-size:11px;border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;background:var(--c-card);color:var(--c-text)">
+      <option value="all" ${fEst==='all'?'selected':''}>Todos los estados</option>
+      ${CS_ESTADOS.map(([k,l])=>`<option value="${k}" ${fEst===k?'selected':''}>${l}</option>`).join('')}
+    </select>
+    <select onchange="mstate.csFiltCat=this.value;renderCSCalendario()" style="font-size:11px;border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;background:var(--c-card);color:var(--c-text)">
+      <option value="all" ${fCat==='all'?'selected':''}>Todas las categorías</option>
+      ${CS_CATEGORIAS.map(([k,l])=>`<option value="${k}" ${fCat===k?'selected':''}>${l}</option>`).join('')}
+    </select>
+    <span style="font-size:11px;color:var(--c-muted);margin-left:auto">${filtered.length} elementos</span>
+  </div>
+  <div class="filter-chips" style="margin-bottom:10px">${[['all','Todos'],...CS_FORMATOS.map(([k,l,c])=>[k,l])].map(([k,l])=>`<span class="chip ${fFmt===k?'active':''}" onclick="mstate.csFiltFmt='${k}';renderCSCalendario()" style="font-size:10px;display:inline-flex;align-items:center;gap:3px">${k!=='all'?`<span style="width:7px;height:7px;border-radius:50%;background:${(CS_FORMATOS.find(f=>f[0]===k)||[])[2]||'var(--c-muted)'}"></span>`:''} ${l}</span>`).join('')}</div>`;
+  // Search filter
+  let finalPubs=filtered;
+  if(mstate.csSearch){ const q=(mstate.csSearch||'').toLowerCase(); finalPubs=finalPubs.filter(p=>(p.titulo||'').toLowerCase().includes(q)||(p.contenido||'').toLowerCase().includes(q)||(p.empresa||'').toLowerCase().includes(q)); }
+  b.innerHTML=canvaHtml+header+brandBar;
+  if(view==='lista'){ renderCSLista(finalPubs,ym,b); return; }
+  if(view==='2meses'){ renderCS2Meses(finalPubs,efem,ym,hoy,b); return; }
+  renderCSMes(finalPubs,efem,ym,hoy,b);
+}
+function csCalCell(d,ds,lst,ef,hoy){
+  const esHoy=ds===hoy;
+  return `<div style="min-height:80px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:4px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="openPubModal(null,'${ds}')">
+    <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'};${esHoy?'background:var(--c-primary);color:#fff;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center':''}">${d}</div>
+    ${(ef||[]).map(e=>`<div onclick="event.stopPropagation();openEfemModal('${e.id}')" title="${esc(e.titulo)}" style="font-size:8px;margin-top:1px;padding:1px 3px;border-radius:3px;background:${esc(e.color||'#7C3AED')};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">⭐ ${esc(e.titulo)}</div>`).join('')}
+    ${(lst||[]).slice(0,3).map(p=>{const bg=pubColorOf(p);const empCol=MKT_EMP_COLOR[p.empresa]||'#6B6B78';const fmtColor=(CS_FORMATOS.find(f=>f[0]===(p.formato||'').toLowerCase())||[])[2]||'#6B6B78';return `<div onclick="event.stopPropagation();openPubModal('${p.id}')" title="${esc(p.empresa||'')}: ${esc(p.titulo||p.contenido||'')}" style="font-size:8px;margin-top:1px;padding:1px 3px;border-radius:3px;background:${fmtColor}22;border-left:3px solid ${empCol};color:var(--c-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.titulo||p.canal||p.contenido||'').substring(0,12)}${p.estado==='publicado'||p.estado==='realizado'?' ✓':''}</div>`}).join('')}
+    ${(lst||[]).length>3?`<div style="font-size:8px;color:var(--c-muted);margin-top:1px">+${lst.length-3} más</div>`:''}
+  </div>`;
+}
+function csMonthGrid(pubs,efem,ym,hoy){
+  const [Y,M]=ym.split('-').map(Number); const mm=String(M).padStart(2,'0');
+  const startDow=(new Date(Y,M-1,1).getDay()+6)%7;
   const days=new Date(Y,M,0).getDate();
   const byDay={}; pubs.forEach(p=>{ if((p.fecha||'').slice(0,7)===ym){ const d=+p.fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push(p); } });
-  const hoy=todayStr();
-  let cells='';
-  for(let i=0;i<startDow;i++) cells+=`<div></div>`;
+  const efByDay={}; efem.forEach(e=>{ if(!e.fecha) return; const mo=e.fecha.slice(5,7),d=+e.fecha.slice(8,10); const en=e.recurrente?(mo===mm):(e.fecha.slice(0,7)===ym); if(en)(efByDay[d]=efByDay[d]||[]).push(e); });
+  const monthTotal=pubs.filter(p=>(p.fecha||'').slice(0,7)===ym).length;
+  let cells=''; for(let i=0;i<startDow;i++) cells+='<div></div>';
   for(let d=1;d<=days;d++){
-    const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
-    const ef=efemByDay[d]||[];
-    cells+=`<div style="min-height:88px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="openPubModal(null,'${ds}')">
-      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
-      ${ef.map(e=>`<div onclick="event.stopPropagation();openEfemModal('${e.id}')" title="Efeméride: ${esc(e.titulo)}" style="font-size:9px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${esc(e.color||'#7C3AED')};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">⭐ ${esc(e.titulo)}</div>`).join('')}
-      ${l.slice(0,3).map(p=>{const bg=pubColorOf(p);return `<div onclick="event.stopPropagation();openPubModal('${p.id}')" title="${esc((p.canal?p.canal+': ':'')+(p.titulo||p.contenido||''))}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${bg};color:${fgFor(bg)};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.titulo||p.canal||p.contenido||'Publicación')}</div>`}).join('')}
-      ${l.length>3?`<div style="font-size:9px;color:var(--c-muted);margin-top:2px">+${l.length-3} más</div>`:''}
-    </div>`;
+    const ds=ym+'-'+String(d).padStart(2,'0');
+    cells+=csCalCell(d,ds,byDay[d],efByDay[d],hoy);
   }
   const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-  b.innerHTML=header+`
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>
-    <div style="font-size:11px;color:var(--c-muted);margin-top:10px">Toca un día para agregar, o una publicación para editarla. El color de cada publicación se elige en su ficha (o sigue el estado).</div>`;
+  return `<div><div style="display:flex;justify-content:space-between;margin-bottom:6px"><h3 style="font-size:13px;text-transform:capitalize;margin:0">${MESES_ES[M-1]} De ${Y}</h3><span style="font-size:11px;color:var(--c-muted)">${monthTotal} elementos</span></div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin-bottom:3px">${dow.map(d=>`<div style="text-align:center;font-size:9px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">${cells}</div></div>`;
 }
+function renderCSMes(pubs,efem,ym,hoy,b){
+  const legend=`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${MKT_EMPRESAS.map(e=>`<span style="font-size:10px;display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:50%;background:${MKT_EMP_COLOR[e]}"></span>${esc(e)}</span>`).join('')}</div>`;
+  b.innerHTML+=legend+csMonthGrid(pubs,efem,ym,hoy)+`<div style="font-size:11px;color:var(--c-muted);margin-top:8px">Arrastra una publicación a otro día. Su hora y contenido se conservan.</div>`;
+}
+function renderCS2Meses(pubs,efem,ym,hoy,b){
+  const [Y,M]=ym.split('-').map(Number);
+  const ym2=(M===12)?(Y+1)+'-01':Y+'-'+String(M+1).padStart(2,'0');
+  const legend=`<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">${MKT_EMPRESAS.map(e=>`<span style="font-size:10px;display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:50%;background:${MKT_EMP_COLOR[e]}"></span>${esc(e)}</span>`).join('')}</div>`;
+  b.innerHTML+=legend+`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px">${csMonthGrid(pubs,efem,ym,hoy)}${csMonthGrid(pubs,efem,ym2,hoy)}</div>`;
+}
+function renderCSLista(pubs,ym,b){
+  const list=pubs.filter(p=>(p.fecha||'').slice(0,7)===ym).sort((a,bb)=>(a.fecha+(a.hora||'')).localeCompare(bb.fecha+(bb.hora||'')));
+  b.innerHTML+=`<div class="item-table"><table>
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Marca</th><th>Red</th><th>Formato</th><th>Categoría</th><th>Título / Copy</th><th>Responsable</th><th>Estado</th><th></th></tr></thead>
+    <tbody>${list.length===0?`<tr><td colspan="10"><div class="empty-state">Sin contenido este mes</div></td></tr>`:list.map(p=>`
+      <tr style="cursor:pointer" onclick="openPubModal('${p.id}')">
+        <td style="white-space:nowrap;font-size:12px">${esc(p.fecha||'')}</td>
+        <td style="font-size:12px;color:var(--c-muted)">${esc(p.hora||'')}</td>
+        <td>${mktEmpChip(p.empresa)}</td>
+        <td style="font-size:12px">${esc(p.canal||'')}</td>
+        <td>${csFmtDot(p.formato)}</td>
+        <td style="font-size:11px;color:var(--c-muted)">${esc(CS_CAT_LBL[p.categoria]||p.categoria||'')}</td>
+        <td><div style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;flex:none;background:${pubColorOf(p)}"></span><b style="font-size:13px">${esc(p.titulo||p.contenido||'')}</b></div></td>
+        <td style="font-size:12px;color:var(--c-muted)">${esc(p.responsable||'')}</td>
+        <td>${csEstChip(p.estado||'borrador')}</td>
+        <td style="text-align:right"><button class="act-btn del" onclick="event.stopPropagation();delPubCS('${p.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+      </tr>`).join('')}</tbody></table></div>`;
+}
+
+// ── CREAR / EDITAR CONTENIDO ─────────────────────────────────
 async function openPubModal(id,defFecha){
-  const p = id ? (mstate._pubs||[]).find(x=>x.id===id)||{} : {};
-  const {data:camps}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa);
-  const est=p.estado||'programado';
+  const p = id ? (mstate._csPubs||[]).find(x=>x.id===id)||{} : {};
+  const {data:camps}=await sb.from('campanas').select('*');
+  const est=p.estado||'borrador';
+  const emp=p.empresa||(mstate.mktBrand!=='all'?mstate.mktBrand:'')||MKT_EMPRESAS[0];
   openModal(`
-    <div class="modal-head"><h2>${id?'Publicación':'Nueva publicación'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h2>${id?'Editar contenido':'Crear contenido'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <div class="form-row"><div class="form-group"><label>Fecha</label><input id="puFecha" type="date" value="${esc(p.fecha||defFecha||todayStr())}"></div><div class="form-group"><label>Hora (opcional)</label><input id="puHora" type="time" value="${esc(p.hora||'')}"></div></div>
-      <div class="form-row"><div class="form-group"><label>Red social</label><input id="puCanal" value="${esc(p.canal||'')}" placeholder="Instagram, Facebook…"></div><div class="form-group"><label>Formato</label><input id="puFormato" value="${esc(p.formato||'')}" placeholder="Reel, post, historia…"></div></div>
+      <div class="form-row">
+        <div class="form-group"><label>Marca</label><select id="puEmpresa">${MKT_EMPRESAS.map(e=>`<option value="${e}" ${emp===e?'selected':''}>${MKT_EMP_EMOJI[e]||''} ${e}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Fecha</label><input id="puFecha" type="date" value="${esc(p.fecha||defFecha||todayStr())}"></div>
+        <div class="form-group"><label>Hora</label><input id="puHora" type="time" value="${esc(p.hora||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Red social</label><input id="puCanal" value="${esc(p.canal||'')}" placeholder="Instagram, Facebook, TikTok…"></div>
+        <div class="form-group"><label>Formato</label><select id="puFormato"><option value="">— Seleccionar —</option>${CS_FORMATOS.map(([k,l])=>`<option value="${k}" ${(p.formato||'')===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      </div>
       <div class="form-group"><label>Título</label><input id="puTitulo" value="${esc(p.titulo||'')}"></div>
-      <div class="form-group"><label>Copy / contenido</label><textarea id="puCont" rows="2">${esc(p.contenido||'')}</textarea></div>
-      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="puResp" value="${esc(p.responsable||'')}"></div><div class="form-group"><label>Campaña</label><select id="puCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${p.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div></div>
-      <div class="form-group"><label>Estado</label><select id="puEstado" onchange="document.getElementById('puSust').style.display=this.value==='sustituido'?'block':'none'">${PUB_EST.map(([k,l])=>`<option value="${k}" ${est===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Copy / contenido</label><textarea id="puCont" rows="3">${esc(p.contenido||'')}</textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Categoría</label><select id="puCategoria"><option value="">—</option>${CS_CATEGORIAS.map(([k,l])=>`<option value="${k}" ${(p.categoria||'')===k?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Responsable</label><input id="puResp" value="${esc(p.responsable||'')}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Estado</label><select id="puEstado">${CS_ESTADOS.map(([k,l])=>`<option value="${k}" ${est===k?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Campaña</label><select id="puCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${p.campana_id===c.id?'selected':''}>${esc(c.nombre)} (${esc(c.empresa||'')})</option>`).join('')}</select></div>
+      </div>
       <div class="form-group"><label>Color en el calendario</label>
         <input type="hidden" id="puColor" value="${esc(p.color||'')}">
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <span class="pub-sw" data-hex="" onclick="pickPubColor('')" title="Por estado (automático)" style="width:30px;height:30px;border-radius:50%;cursor:pointer;background:conic-gradient(#D97706,#22C55E,#1D4ED8,#C62040,#D97706);border:2px solid var(--c-border);outline:${!p.color?'3px solid var(--c-text)':'none'};outline-offset:2px" ></span>
-          ${PUB_PALETTE.map(([hex,name])=>`<span class="pub-sw" data-hex="${hex}" onclick="pickPubColor('${hex}')" title="${name}" style="width:30px;height:30px;border-radius:50%;cursor:pointer;background:${hex};border:2px solid #fff;box-shadow:0 0 0 1px var(--c-border);outline:${p.color===hex?'3px solid var(--c-text)':'none'};outline-offset:2px"></span>`).join('')}
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="pub-sw" data-hex="" onclick="pickPubColor('')" title="Por estado (auto)" style="width:26px;height:26px;border-radius:50%;cursor:pointer;background:conic-gradient(#D97706,#22C55E,#1D4ED8,#C62040,#D97706);border:2px solid var(--c-border);outline:${!p.color?'3px solid var(--c-text)':'none'};outline-offset:2px"></span>
+          ${PUB_PALETTE.map(([hex,name])=>`<span class="pub-sw" data-hex="${hex}" onclick="pickPubColor('${hex}')" title="${name}" style="width:26px;height:26px;border-radius:50%;cursor:pointer;background:${hex};border:2px solid #fff;box-shadow:0 0 0 1px var(--c-border);outline:${p.color===hex?'3px solid var(--c-text)':'none'};outline-offset:2px"></span>`).join('')}
         </div>
-        <div style="font-size:11px;color:var(--c-muted);margin-top:5px">El primer círculo usa el color del estado. Los demás fijan un color para esta publicación.</div>
-      </div>
-      <div id="puSust" style="display:${est==='sustituido'?'block':'none'}">
-        <div class="form-group"><label>Sustituida por (nombre o enlace de la pieza que la reemplaza)</label><input id="puReemplazo" value="${esc(p.reemplazo||'')}"></div>
-        <div class="form-group"><label>Motivo</label><input id="puMotivo" value="${esc(p.motivo||'')}"></div>
       </div>
     </div>
-    <div class="modal-foot" style="justify-content:space-between"><div>${id?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="delPubCal('${id}')">Eliminar</button>`:''}</div><div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button> <button class="btn btn-primary" onclick="saveCalPub('${id||''}')">Guardar</button></div></div>`);
+    <div class="modal-foot" style="justify-content:space-between"><div>${id?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="delPubCS('${id}')">Eliminar</button>`:''}</div><div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button> <button class="btn btn-primary" onclick="savePubCS('${id||''}')">Guardar</button></div></div>`);
 }
-async function saveCalPub(id){
-  const fecha=document.getElementById('puFecha').value||todayStr();
-  const row={fecha,hora:document.getElementById('puHora').value||'',canal:document.getElementById('puCanal').value.trim(),formato:document.getElementById('puFormato').value.trim(),titulo:document.getElementById('puTitulo').value.trim(),contenido:document.getElementById('puCont').value.trim(),responsable:document.getElementById('puResp').value.trim(),campana_id:document.getElementById('puCampana').value||null,estado:document.getElementById('puEstado').value,color:(document.getElementById('puColor')?document.getElementById('puColor').value:'')||'',reemplazo:document.getElementById('puReemplazo')?document.getElementById('puReemplazo').value.trim():'',motivo:document.getElementById('puMotivo')?document.getElementById('puMotivo').value.trim():''};
-  if(row.estado==='sustituido' && !row.reemplazo){ showToast('Indica qué publicación la reemplaza','err'); return; }
-  let error; if(id){ ({error}=await sb.from('publicaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('publicaciones').insert({...row,empresa:mstate.mktEmpresa})); }
+async function savePubCS(id){
+  const emp=document.getElementById('puEmpresa').value;
+  const row={empresa:emp,fecha:document.getElementById('puFecha').value||todayStr(),hora:document.getElementById('puHora').value||'',canal:document.getElementById('puCanal').value.trim(),formato:document.getElementById('puFormato').value,titulo:document.getElementById('puTitulo').value.trim(),contenido:document.getElementById('puCont').value.trim(),categoria:document.getElementById('puCategoria').value||'',responsable:document.getElementById('puResp').value.trim(),campana_id:document.getElementById('puCampana').value||null,estado:document.getElementById('puEstado').value,color:(document.getElementById('puColor')?document.getElementById('puColor').value:'')||''};
+  if(!row.titulo&&!row.contenido){ showToast('Pon al menos un título o copy','err'); return; }
+  let error; if(id){ ({error}=await sb.from('publicaciones').update(row).eq('id',id)); } else { ({error}=await sb.from('publicaciones').insert(row)); }
   if(error){ showToast(error.message,'err'); return; }
-  closeModal(); showToast('Publicación guardada','ok'); renderMercadeo();
+  closeModal(); showToast('Contenido guardado','ok'); renderMercadeo();
 }
-async function delPubCal(id){ if(!confirm('¿Eliminar esta publicación?')) return; const {error}=await sb.from('publicaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
-function shiftMktMonth(dir){ const ym=mstate.mktMonth||todayStr().slice(0,7); const [Y,M]=ym.split('-').map(Number); const d=new Date(Y,M-1+dir,1); mstate.mktMonth=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); renderMktCalendario(); }
+async function delPubCS(id){ if(!confirm('¿Eliminar este contenido?')) return; const {error}=await sb.from('publicaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminado','ok'); renderMercadeo(); }
+async function delPubCal(id){ return delPubCS(id); }
+async function saveCalPub(id){ return savePubCS(id); }
 
-// ── Biblioteca de medios (fotos / archivos / videos) ───────────
+// ── TO DO ────────────────────────────────────────────────────
+const MKT_TAREA_EST=[['pendiente','Pendiente'],['en_proceso','En proceso'],['en_preaprobacion','En preaprobación'],['correcciones','Correcciones solicitadas'],['aprobado','Aprobado'],['completado','Completado'],['cancelado','Cancelado']];
+const MKT_TAREA_LBL=Object.fromEntries(MKT_TAREA_EST);
+const MKT_TAREA_COLOR={pendiente:'#6B6B78',en_proceso:'#1D4ED8',en_preaprobacion:'#D97706',correcciones:'#C62040',aprobado:'#166534',completado:'#22C55E',cancelado:'#9CA3AF'};
+async function renderCSTodo(){
+  const b=document.getElementById('csBody'); if(!b) return;
+  const [rt,rc]=await Promise.all([sb.from('mercadeo_tareas').select('*').order('created_at',{ascending:false}),sb.from('campanas').select('*')]);
+  if(mstate.csTab!=='todo') return;
+  let all=rt.data||[]; mstate._tareas=all;
+  all=csBrandFilter(all);
+  const campName={}; (rc.data||[]).forEach(c=>campName[c.id]=c.nombre);
+  const hoy=todayStr();
+  const esVencida=t=>t.fecha_limite&&t.fecha_limite<hoy&&!['completado','cancelado','aprobado'].includes(t.estado);
+  const abierta=t=>!['completado','cancelado'].includes(t.estado);
+  const hecha=t=>t.estado==='completado';
+  const fTab=mstate.csTodoTab||'por_hacer';
+  let rows=all;
+  if(fTab==='por_hacer') rows=rows.filter(abierta);
+  else if(fTab==='hechas') rows=rows.filter(hecha);
+  else if(fTab==='papelera') rows=rows.filter(t=>t.estado==='cancelado');
+  const fResp=mstate.csTodoResp||'all';
+  if(fResp!=='all') rows=rows.filter(t=>(t.responsable||'').toLowerCase().includes(fResp.toLowerCase()));
+  const porHacer=all.filter(abierta).length, hechas=all.filter(hecha).length;
+  // Search
+  const q=(mstate.csTodoSearch||'').toLowerCase();
+  if(q) rows=rows.filter(t=>(t.titulo||'').toLowerCase().includes(q)||(t.descripcion||'').toLowerCase().includes(q));
+  const resps=[...new Set(all.map(t=>t.responsable).filter(Boolean))];
+  b.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+      <div><span style="font-size:22px">📋</span><span style="font-weight:700;font-size:16px;margin-left:8px">To Do</span></div>
+      <div style="font-size:12px;color:var(--c-muted)">Todas las tareas del equipo, compartidas en un solo lugar.</div>
+    </div>
+    <div style="display:flex;gap:16px;margin:12px 0 14px">
+      <div style="text-align:center"><div style="font-size:28px;font-weight:900">${porHacer}</div><div style="font-size:11px;color:var(--c-muted)">por hacer</div></div>
+      <div style="text-align:center"><div style="font-size:28px;font-weight:900">${hechas}</div><div style="font-size:11px;color:var(--c-muted)">hechas</div></div>
+      <div style="text-align:center"><div style="font-size:28px;font-weight:900">${all.length}</div><div style="font-size:11px;color:var(--c-muted)">en total</div></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <div class="filter-chips" style="margin:0">
+        <span class="chip ${fTab==='por_hacer'?'active':''}" onclick="mstate.csTodoTab='por_hacer';renderMercadeo()">Por hacer</span>
+        <span class="chip ${fTab==='hechas'?'active':''}" onclick="mstate.csTodoTab='hechas';renderMercadeo()">Hechas</span>
+        <span class="chip ${fTab==='todas'?'active':''}" onclick="mstate.csTodoTab='todas';renderMercadeo()">Todas</span>
+        <span class="chip ${fTab==='papelera'?'active':''}" onclick="mstate.csTodoTab='papelera';renderMercadeo()">Papelera</span>
+      </div>
+      <select onchange="mstate.csTodoResp=this.value;renderMercadeo()" style="font-size:11px;border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;background:var(--c-card);color:var(--c-text)">
+        <option value="all">Todos los responsables</option>
+        ${resps.map(r=>`<option value="${esc(r)}" ${fResp===r?'selected':''}>${esc(r)}</option>`).join('')}
+      </select>
+      <input placeholder="Buscar tarea…" oninput="mstate.csTodoSearch=this.value;renderMercadeo()" value="${esc(mstate.csTodoSearch||'')}" style="font-size:12px;border:1px solid var(--c-border);border-radius:6px;padding:5px 10px;background:var(--c-card);color:var(--c-text);min-width:120px">
+    </div>
+    ${rows.length===0?'<div class="nodata" style="padding:30px">Sin tareas aquí.</div>':rows.map(t=>{
+      const isAlta=t.prioridad==='alta';
+      const bg=isAlta?'rgba(220,38,38,.08)':'var(--c-card)';
+      const border=isAlta?'1px solid rgba(220,38,38,.25)':'1px solid var(--c-border)';
+      return `<div style="background:${bg};border:${border};border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px">
+        <input type="checkbox" ${t.estado==='completado'?'checked':''} onchange="setTareaEstado('${t.id}',this.checked?'completado':'pendiente')" style="width:18px;height:18px;margin-top:2px;cursor:pointer;accent-color:var(--c-primary)">
+        <div style="flex:1;min-width:0" onclick="openTareaModal('${t.id}')" style="cursor:pointer">
+          <div style="font-weight:700;font-size:14px;${t.estado==='completado'?'text-decoration:line-through;opacity:.5':''};text-transform:uppercase">${esc(t.titulo)}</div>
+          ${t.descripcion?`<div style="font-size:12px;color:var(--c-muted);margin-top:3px">${esc(t.descripcion)}</div>`:''}
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+            <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${isAlta?'#DC2626':'#6B6B78'};color:#fff">Prioridad ${t.prioridad?t.prioridad.charAt(0).toUpperCase()+t.prioridad.slice(1):'Media'}</span>
+            ${mktEmpChip(t.empresa)}
+            ${t.responsable?`<span style="font-size:10px;color:var(--c-muted);padding:2px 8px;border-radius:20px;background:var(--c-border)">Responsable: ${esc(t.responsable)}</span>`:''}
+            ${t.campana_id&&campName[t.campana_id]?`<span style="font-size:10px;color:var(--c-muted);padding:2px 8px;border-radius:20px;background:var(--c-border)">Categoría: ${esc(campName[t.campana_id]||'')}</span>`:''}
+            ${t.fecha_limite?`<span style="font-size:10px;color:${esVencida(t)?'#DC2626':'var(--c-muted)'};font-weight:${esVencida(t)?'700':'400'};padding:2px 8px;border-radius:20px;background:var(--c-border)">Fecha límite: ${esc(t.fecha_limite)}${esVencida(t)?' ⚠':''}</span>`:''}
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex:none">
+          ${t.estado!=='completado'?`<button class="btn btn-sm btn-ghost" style="font-size:10px;white-space:nowrap" onclick="setTareaEstado('${t.id}','completado')">✓ Marcar hecha</button>`:''}
+          <button class="act-btn" onclick="openTareaModal('${t.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="act-btn del" onclick="delTarea('${t.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+        </div>
+      </div>`; }).join('')}`;
+}
+async function openTareaModal(id){
+  const t = id ? (mstate._tareas||[]).find(x=>x.id===id)||{} : {};
+  const {data:camps}=await sb.from('campanas').select('*');
+  const pr=t.prioridad||'media';
+  const emp=t.empresa||(mstate.mktBrand!=='all'?mstate.mktBrand:'')||MKT_EMPRESAS[0];
+  openModal(`
+    <div class="modal-head"><h2>${id?'Editar':'Nuevo'} pendiente</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-group"><label>Marca</label><select id="tEmpresa">${MKT_EMPRESAS.map(e=>`<option value="${e}" ${emp===e?'selected':''}>${e}</option>`).join('')}</select></div><div class="form-group"><label>Prioridad</label><select id="tPrio"><option value="baja" ${pr==='baja'?'selected':''}>Baja</option><option value="media" ${pr==='media'?'selected':''}>Media</option><option value="alta" ${pr==='alta'?'selected':''}>Alta</option></select></div></div>
+      <div class="form-group"><label>Título</label><input id="tTitulo" value="${esc(t.titulo||'')}"></div>
+      <div class="form-group"><label>Descripción</label><textarea id="tDesc" rows="2">${esc(t.descripcion||'')}</textarea></div>
+      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="tResp" value="${esc(t.responsable||'')}"></div><div class="form-group"><label>Estado</label><select id="tEstado">${MKT_TAREA_EST.map(([k,l])=>`<option value="${k}" ${(t.estado||'pendiente')===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+      <div class="form-row"><div class="form-group"><label>Fecha inicio</label><input id="tIni" type="date" value="${esc(t.fecha_inicio||'')}"></div><div class="form-group"><label>Fecha límite</label><input id="tLim" type="date" value="${esc(t.fecha_limite||'')}"></div></div>
+      <div class="form-row"><div class="form-group"><label>Campaña</label><select id="tCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${t.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div><div class="form-group"><label>Enlace</label><input id="tEnlace" value="${esc(t.enlace||'')}" placeholder="https://…"></div></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarea('${id||''}')">Guardar</button></div>`);
+}
+async function saveTarea(id){
+  const titulo=document.getElementById('tTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
+  const row={titulo,descripcion:document.getElementById('tDesc').value.trim(),responsable:document.getElementById('tResp').value.trim(),prioridad:document.getElementById('tPrio').value,estado:document.getElementById('tEstado').value,fecha_inicio:document.getElementById('tIni').value||null,fecha_limite:document.getElementById('tLim').value||null,campana_id:document.getElementById('tCampana').value||null,enlace:document.getElementById('tEnlace').value.trim(),empresa:document.getElementById('tEmpresa').value};
+  let error; if(id){ ({error}=await sb.from('mercadeo_tareas').update(row).eq('id',id)); } else { ({error}=await sb.from('mercadeo_tareas').insert(row)); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Pendiente guardado','ok'); renderMercadeo();
+}
+async function setTareaEstado(id,estado){ const {error}=await sb.from('mercadeo_tareas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado: '+(MKT_TAREA_LBL[estado]||estado),'ok'); renderMercadeo(); } }
+async function moveTarea(id,estado){ return setTareaEstado(id,estado); }
+async function delTarea(id){ if(!confirm('¿Eliminar este pendiente?')) return; const {error}=await sb.from('mercadeo_tareas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminado','ok'); renderMercadeo(); } }
+
+// ── MENSAJES PUSH (vista lista cronológica) ──────────────────
+const PUSH_EST=[['borrador','Borrador'],['revision','En revisión'],['aprobado','Aprobado'],['enviado','Enviado'],['no_enviado','No enviado']];
+const PUSH_LBL=Object.fromEntries(PUSH_EST);
+const PUSH_COLOR={borrador:'#6B6B78',revision:'#D97706',aprobado:'#166534',enviado:'#1D4ED8',no_enviado:'#C62040'};
+function shiftCSPushMonth(n){ const ym=mstate.csPushMonth||todayStr().slice(0,7); let [Y,M]=ym.split('-').map(Number); M+=n; if(M<1){M=12;Y--;} if(M>12){M=1;Y++;} mstate.csPushMonth=Y+'-'+String(M).padStart(2,'0'); renderMercadeo(); }
+function shiftMktPushMonth(n){ shiftCSPushMonth(n); }
+async function renderCSPush(){
+  const b=document.getElementById('csBody'); if(!b) return;
+  const {data}=await sb.from('mkt_push').select('*').order('fecha');
+  if(mstate.csTab!=='push') return;
+  let items=data||[]; mstate._push=items;
+  items=csBrandFilter(items);
+  const ym=mstate.csPushMonth||todayStr().slice(0,7);
+  const [Y,M]=ym.split('-').map(Number);
+  const list=items.filter(p=>(p.fecha||'').slice(0,7)===ym).sort((a,bb)=>(a.fecha+(a.hora||'')).localeCompare(bb.fecha+(bb.hora||'')));
+  const fTab=mstate.csPushTab||'todos';
+  let filtered=list;
+  if(fTab==='por_enviar') filtered=list.filter(p=>!['enviado','no_enviado'].includes(p.estado));
+  else if(fTab==='enviados') filtered=list.filter(p=>p.estado==='enviado');
+  else if(fTab==='papelera') filtered=list.filter(p=>p.estado==='no_enviado');
+  const programados=list.length, porEnviar=list.filter(p=>!['enviado','no_enviado'].includes(p.estado)).length, enviados=list.filter(p=>p.estado==='enviado').length;
+  const diaSem=s=>{ const d=new Date(s+'T00:00:00'); return ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][d.getDay()]; };
+  const diaNum=s=>+s.slice(8,10)+' '+['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'][+(s.slice(5,7))-1];
+  // Group by date
+  const byDate={}; filtered.forEach(p=>{ const d=p.fecha||''; (byDate[d]=byDate[d]||[]).push(p); });
+  const dates=Object.keys(byDate).sort();
+  b.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+      <div><span style="font-size:22px">🔔</span><span style="font-weight:700;font-size:16px;margin-left:8px">Mensajes push</span></div>
+      <div style="font-size:12px;color:var(--c-muted)">Organiza el mensaje, revisa el copy y marca cada envío.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap">
+      <div class="date-strip-wrap" style="gap:6px">
+        <span style="font-weight:700;text-transform:capitalize">${MESES_ES[M-1]} De ${Y}</span>
+        <button class="nav-arrow" onclick="shiftCSPushMonth(-1)">‹</button>
+        <button class="nav-arrow" onclick="shiftCSPushMonth(1)">›</button>
+      </div>
+      <div style="flex:1"></div>
+      <span style="font-size:14px;font-weight:900">${programados}</span><span style="font-size:11px;color:var(--c-muted)">programados</span>
+      <span style="font-size:14px;font-weight:900;margin-left:10px">${porEnviar}</span><span style="font-size:11px;color:var(--c-muted)">por enviar</span>
+      <span style="font-size:14px;font-weight:900;margin-left:10px">${enviados}</span><span style="font-size:11px;color:var(--c-muted)">enviados</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <div class="filter-chips" style="margin:0">
+        <span class="chip ${fTab==='todos'?'active':''}" onclick="mstate.csPushTab='todos';renderMercadeo()">Todos</span>
+        <span class="chip ${fTab==='por_enviar'?'active':''}" onclick="mstate.csPushTab='por_enviar';renderMercadeo()">Por enviar</span>
+        <span class="chip ${fTab==='enviados'?'active':''}" onclick="mstate.csPushTab='enviados';renderMercadeo()">Enviados</span>
+        <span class="chip ${fTab==='papelera'?'active':''}" onclick="mstate.csPushTab='papelera';renderMercadeo()">Papelera</span>
+      </div>
+      <input placeholder="Buscar un mensaje…" oninput="mstate.csPushSearch=this.value;renderMercadeo()" value="${esc(mstate.csPushSearch||'')}" style="font-size:12px;border:1px solid var(--c-border);border-radius:6px;padding:5px 10px;background:var(--c-card);color:var(--c-text);min-width:140px">
+    </div>
+    ${dates.length===0?'<div class="nodata" style="padding:30px">Sin mensajes push este mes.</div>':dates.map(d=>`
+      <div style="margin-bottom:16px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px">${diaSem(d)}<span style="font-size:12px;color:var(--c-muted);font-weight:400;margin-left:6px">${diaNum(d)}</span></div>
+        ${byDate[d].map(p=>`
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid var(--c-border);border-radius:10px;margin-bottom:6px;background:var(--c-card)">
+            <div style="min-width:50px;text-align:center"><div style="font-size:14px;font-weight:800">${esc(p.hora||'')}</div></div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">
+                ${p.titulo?`<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:#D97706;color:#fff">${esc(p.titulo.split(' ')[0]||'')}</span>`:''}
+                ${mktEmpChip(p.empresa)}
+                <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${PUSH_COLOR[p.estado]||'#6B6B78'};color:#fff">${esc(PUSH_LBL[p.estado]||p.estado||'')}</span>
+              </div>
+              <div style="font-weight:700;font-size:14px;margin-bottom:2px">${esc(p.titulo||'Push')}</div>
+              <div style="font-size:13px;color:var(--c-muted)">${esc(p.mensaje||'')}</div>
+              ${p.observaciones?`<details style="margin-top:4px"><summary style="font-size:11px;color:var(--c-muted);cursor:pointer">▸ Notas</summary><div style="font-size:11px;color:var(--c-muted);padding:4px 0">${esc(p.observaciones)}</div></details>`:''}
+            </div>
+            <div style="display:flex;gap:4px;align-items:center;flex:none">
+              <label style="font-size:10px;display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap"><input type="checkbox" ${p.estado==='enviado'?'checked':''} onchange="setPushEstado('${p.id}',this.checked?'enviado':'borrador')" style="width:14px;height:14px"> ${p.estado==='enviado'?'Enviado':'Por enviar'}</label>
+              <button class="act-btn" onclick="openPushModal('${p.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+              <button class="act-btn del" onclick="delPush('${p.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+            </div>
+          </div>`).join('')}
+      </div>`).join('')}`;
+}
+async function setPushEstado(id,est){ const {error}=await sb.from('mkt_push').update({estado:est}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast(est==='enviado'?'Marcado como enviado':'Desmarcado','ok'); renderMercadeo(); } }
+function openPushModal(id,defFecha){
+  const p = id ? (mstate._push||[]).find(x=>x.id===id)||{} : {};
+  const est=p.estado||'borrador';
+  const emp=p.empresa||(mstate.mktBrand!=='all'?mstate.mktBrand:'')||MKT_EMPRESAS[0];
+  openModal(`
+    <div class="modal-head"><h2>${id?'Mensaje push':'Nuevo mensaje push'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-group"><label>Marca</label><select id="phEmpresa">${MKT_EMPRESAS.map(e=>`<option value="${e}" ${emp===e?'selected':''}>${e}</option>`).join('')}</select></div><div class="form-group"><label>Fecha</label><input id="phFecha" type="date" value="${esc(p.fecha||defFecha||todayStr())}"></div><div class="form-group"><label>Hora</label><input id="phHora" type="time" value="${esc(p.hora||'')}"></div></div>
+      <div class="form-group"><label>Título</label><input id="phTitulo" value="${esc(p.titulo||'')}"></div>
+      <div class="form-group"><label>Mensaje</label><textarea id="phMsg" rows="3">${esc(p.mensaje||'')}</textarea></div>
+      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="phResp" value="${esc(p.responsable||'')}"></div><div class="form-group"><label>Estado</label><select id="phEstado">${PUSH_EST.map(([k,l])=>`<option value="${k}" ${est===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+      <div class="form-group"><label>Observaciones</label><textarea id="phObs" rows="2">${esc(p.observaciones||'')}</textarea></div>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between"><div>${id?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="delPush('${id}')">Eliminar</button> <button class="btn btn-sm btn-ghost" onclick="duplicarPush('${id}')">Duplicar</button>`:''}</div><div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button> <button class="btn btn-primary" onclick="savePush('${id||''}')">Guardar</button></div></div>`);
+}
+async function savePush(id){
+  const titulo=document.getElementById('phTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
+  const emp=document.getElementById('phEmpresa').value;
+  const row={empresa:emp,fecha:document.getElementById('phFecha').value||todayStr(),hora:document.getElementById('phHora').value||'',titulo,mensaje:document.getElementById('phMsg').value.trim(),responsable:document.getElementById('phResp').value.trim(),estado:document.getElementById('phEstado').value,observaciones:document.getElementById('phObs').value.trim()};
+  let error; if(id){ ({error}=await sb.from('mkt_push').update(row).eq('id',id)); } else { ({error}=await sb.from('mkt_push').insert(row)); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Mensaje push guardado','ok'); renderMercadeo();
+}
+async function duplicarPush(id){ const p=(mstate._push||[]).find(x=>x.id===id); if(!p) return; const {error}=await sb.from('mkt_push').insert({empresa:p.empresa,fecha:p.fecha,hora:p.hora,titulo:(p.titulo||'')+' (copia)',mensaje:p.mensaje,responsable:p.responsable,estado:'borrador',observaciones:p.observaciones}); if(error){ showToast(error.message,'err'); return; } closeModal(); showToast('Duplicado','ok'); renderMercadeo(); }
+async function delPush(id){ if(!confirm('¿Eliminar este mensaje push?')) return; const {error}=await sb.from('mkt_push').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminado','ok'); renderMercadeo(); }
+
+// ── REFERENCIAS (tabla de aprobación de piezas) ──────────────
+const PIEZA_EST=[['borrador','Borrador'],['enviado','Enviado'],['correcciones','Correcciones'],['aprobado','Aprobado'],['programado','Programado']];
+const PIEZA_LBL=Object.fromEntries(PIEZA_EST);
+const PIEZA_COLOR={borrador:'#6B6B78',enviado:'#1D4ED8',correcciones:'#C62040',aprobado:'#166534',programado:'#7C3AED'};
+const PIEZA_TIPOS=['grilla','arte','reel','historia','copy','propuesta'];
+async function renderCSReferencias(){
+  const b=document.getElementById('csBody'); if(!b) return;
+  const {data}=await sb.from('mkt_piezas').select('*').order('created_at',{ascending:false});
+  if(mstate.csTab!=='referencias') return;
+  let all=data||[]; mstate._piezas=all;
+  all=csBrandFilter(all);
+  const brand=mstate.mktBrand||'all';
+  const fRef=mstate.csRefFiltro||'all';
+  const fEd=mstate.csRefEdicion||'all';
+  let rows=all;
+  if(fRef!=='all') rows=rows.filter(p=>p.estado===fRef);
+  const q=(mstate.csRefSearch||'').toLowerCase();
+  if(q) rows=rows.filter(p=>(p.titulo||'').toLowerCase().includes(q)||(p.copy||'').toLowerCase().includes(q));
+  b.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">🔗</span><span style="font-weight:700;font-size:16px">Referencias para aprobación</span><span style="font-size:11px;color:var(--c-muted)">Edición directa · guardado automático</span></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <input placeholder="Buscar contenido…" oninput="mstate.csRefSearch=this.value;renderMercadeo()" value="${esc(mstate.csRefSearch||'')}" style="font-size:12px;border:1px solid var(--c-border);border-radius:6px;padding:5px 10px;background:var(--c-card);color:var(--c-text);min-width:140px">
+      <select onchange="mstate.mktBrand=this.value;renderMercadeo()" style="font-size:11px;border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;background:var(--c-card);color:var(--c-text)">
+        <option value="all" ${brand==='all'?'selected':''}>Todas las marcas</option>
+        ${MKT_EMPRESAS.map(e=>`<option value="${e}" ${brand===e?'selected':''}>${e}</option>`).join('')}
+      </select>
+      <select onchange="mstate.csRefFiltro=this.value;renderMercadeo()" style="font-size:11px;border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;background:var(--c-card);color:var(--c-text)">
+        <option value="all" ${fRef==='all'?'selected':''}>Todos los estados</option>
+        ${PIEZA_EST.map(([k,l])=>`<option value="${k}" ${fRef===k?'selected':''}>${l}</option>`).join('')}
+      </select>
+      <span style="font-size:11px;color:var(--c-muted);margin-left:auto">${rows.length} elementos</span>
+    </div>
+    <div style="font-size:11px;color:var(--c-muted);margin-bottom:10px">Referencia y edición: aprobaciones y comentarios independientes</div>
+    <div class="item-table"><table>
+      <thead><tr><th>Referencia / marca</th><th>Tipo</th><th>Categoría</th><th>Enlace referencia</th><th>Aprob. referencia</th><th>Comentarios referencia</th><th>Archivo de edición</th></tr></thead>
+      <tbody>${rows.length===0?`<tr><td colspan="7"><div class="empty-state">Sin referencias. Creá la primera con "+ Nueva referencia".</div></td></tr>`:rows.map(p=>`
+        <tr>
+          <td style="max-width:200px"><div style="font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.titulo||'')}</div><div style="font-size:10px;color:var(--c-muted)">${mktEmpChip(p.empresa)} · ${esc(p.fecha||'')}</div></td>
+          <td><select onchange="setPiezaField('${p.id}','tipo',this.value)" style="font-size:11px;border:1px solid var(--c-border);border-radius:4px;padding:2px 4px;background:var(--c-card);color:var(--c-text)"><option value="">—</option>${PIEZA_TIPOS.map(t=>`<option value="${t}" ${p.tipo===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}</select></td>
+          <td style="font-size:12px;color:var(--c-muted)">${esc(p.formato||p.red_social||'Alcance')}</td>
+          <td>${p.enlace||p.archivo_file?`<a href="${esc(p.enlace||fileUrl(p.archivo_file))}" target="_blank" style="font-size:11px;color:var(--c-primary)">Ver referencia ↗</a> <button class="act-btn" onclick="showPiezaModal('${p.id}')" title="Editar"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>`:'<span style="font-size:11px;color:var(--c-muted)">—</span>'}</td>
+          <td><select onchange="setPiezaEstado('${p.id}',this.value)" style="font-size:11px;font-weight:700;border:none;border-radius:20px;padding:3px 8px;color:#fff;background:${PIEZA_COLOR[p.estado]||'#6B6B78'};cursor:pointer">${PIEZA_EST.map(([k,l])=>`<option value="${k}" ${p.estado===k?'selected':''} style="background:var(--c-card);color:var(--c-text)">${l}</option>`).join('')}</select></td>
+          <td><input value="${esc(p.comentarios||'')}" placeholder="Escribe un comentario…" onchange="setPiezaField('${p.id}','comentarios',this.value)" style="font-size:11px;border:1px solid var(--c-border);border-radius:4px;padding:3px 6px;width:100%;min-width:120px;background:var(--c-card);color:var(--c-text)"></td>
+          <td style="text-align:center">${p.archivo_file?`<a href="${fileUrl(p.archivo_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">📄</a>`:''}<button class="act-btn del" onclick="delPieza('${p.id}')" title="Eliminar"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
+        </tr>`).join('')}</tbody></table></div>
+    <div style="font-size:11px;color:var(--c-muted);margin-top:8px">Edita una celda para guardar</div>`;
+}
+async function showPiezaModal(id){
+  const p = id ? (mstate._piezas||[]).find(x=>x.id===id)||{} : {};
+  const {data:camps}=await sb.from('campanas').select('*');
+  const emp=p.empresa||(mstate.mktBrand!=='all'?mstate.mktBrand:'')||MKT_EMPRESAS[0];
+  openModal(`
+    <div class="modal-head"><h2>${id?'Editar':'Nueva'} referencia</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-group"><label>Marca</label><select id="pzEmpresa">${MKT_EMPRESAS.map(e=>`<option value="${e}" ${emp===e?'selected':''}>${e}</option>`).join('')}</select></div><div class="form-group"><label>Tipo</label><select id="pzTipo"><option value="">—</option>${PIEZA_TIPOS.map(t=>`<option value="${t}" ${p.tipo===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}</select></div></div>
+      <div class="form-group"><label>Título</label><input id="pzTitulo" value="${esc(p.titulo||'')}"></div>
+      <div class="form-row"><div class="form-group"><label>Formato / Red social</label><input id="pzFormato" value="${esc(p.formato||p.red_social||'')}" placeholder="Reel, Post, Historia…"></div><div class="form-group"><label>Fecha sugerida</label><input id="pzFecha" type="date" value="${esc(p.fecha||'')}"></div></div>
+      <div class="form-group"><label>Copy</label><textarea id="pzCopy" rows="2">${esc(p.copy||'')}</textarea></div>
+      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="pzResp" value="${esc(p.responsable||'')}"></div><div class="form-group"><label>Versión</label><input id="pzVer" type="number" min="1" value="${p.version||1}"></div></div>
+      <div class="form-group"><label>Enlace de referencia</label><input id="pzEnlace" value="${esc(p.enlace||'')}" placeholder="https://canva.com/…"></div>
+      <div class="form-group"><label>Campaña (opcional)</label><select id="pzCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${p.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Archivo / arte</label><input type="file" id="pzFile" accept="image/*,video/*,.pdf"></div>
+      <div class="form-group"><label>Comentarios</label><textarea id="pzComent" rows="2">${esc(p.comentarios||'')}</textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePieza('${id||''}')">Guardar</button></div>`);
+}
+async function savePieza(id){
+  const titulo=document.getElementById('pzTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
+  const emp=document.getElementById('pzEmpresa').value;
+  const row={titulo,tipo:document.getElementById('pzTipo').value,formato:document.getElementById('pzFormato').value.trim(),red_social:document.getElementById('pzFormato').value.trim(),fecha:document.getElementById('pzFecha').value||null,copy:document.getElementById('pzCopy').value.trim(),responsable:document.getElementById('pzResp').value.trim(),version:Number(document.getElementById('pzVer').value)||1,campana_id:document.getElementById('pzCampana').value||null,comentarios:document.getElementById('pzComent').value.trim(),enlace:document.getElementById('pzEnlace').value.trim()};
+  let piezaId=id, error, data;
+  if(id){ ({error}=await sb.from('mkt_piezas').update(row).eq('id',id)); }
+  else { ({data,error}=await sb.from('mkt_piezas').insert({...row,empresa:emp,estado:'borrador'})); piezaId=data&&data[0]&&data[0].id; }
+  if(error){ showToast(error.message,'err'); return; }
+  const fin=document.getElementById('pzFile');
+  if(fin&&fin.files&&fin.files[0]&&piezaId){ const up=await apiUpload('pieza',piezaId,fin.files[0]); if(!up.error) await sb.from('mkt_piezas').update({archivo_file:up.data.id}).eq('id',piezaId); }
+  closeModal(); showToast('Referencia guardada','ok'); renderMercadeo();
+}
+async function setPiezaEstado(id,estado){ const {error}=await sb.from('mkt_piezas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado: '+(PIEZA_LBL[estado]||estado),'ok'); renderMercadeo(); } }
+async function setPiezaField(id,field,val){ const up={}; up[field]=val; const {error}=await sb.from('mkt_piezas').update(up).eq('id',id); if(error) showToast(error.message,'err'); }
+async function enviarAlCalendario(id){
+  const p=(mstate._piezas||[]).find(x=>x.id===id); if(!p) return;
+  if(!p.fecha){ showToast('La pieza no tiene fecha','err'); return; }
+  const {data,error}=await sb.from('publicaciones').insert({empresa:p.empresa,fecha:p.fecha,canal:p.red_social||'',contenido:p.titulo+(p.copy?(' · '+p.copy):''),estado:'programado',campana_id:p.campana_id||null});
+  if(error){ showToast('Error al enviar al calendario','err'); return; }
+  const pubId=data&&data[0]&&data[0].id;
+  await sb.from('mkt_piezas').update({estado:'programado',publicacion_id:pubId}).eq('id',id);
+  showToast('Enviada al calendario','ok'); renderMercadeo();
+}
+async function delPieza(id){ if(!confirm('¿Eliminar esta referencia?')) return; const {error}=await sb.from('mkt_piezas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminada','ok'); renderMercadeo(); } }
+
+// ── CAMPAÑAS ─────────────────────────────────────────────────
+async function renderCSCampanas(){
+  const b=document.getElementById('csBody'); if(!b) return;
+  const {data}=await sb.from('campanas').select('*').order('created_at',{ascending:false});
+  if(mstate.csTab!=='campanas') return;
+  let camps=data||[]; mstate.campanas=camps;
+  camps=csBrandFilter(camps);
+  b.innerHTML=`
+    <div style="margin-bottom:12px"><h3 style="font-size:14px;margin:0">🎯 Campañas</h3></div>
+    ${camps.length===0?'<div class="nodata" style="padding:30px">Sin campañas aún.</div>':camps.map(c=>`<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openCampanaDetail('${c.id}')">
+    <div style="display:flex;justify-content:space-between;align-items:center"><div style="display:flex;align-items:center;gap:8px">${mktEmpChip(c.empresa)}<b>${esc(c.nombre)}</b></div><span style="font-size:11px;font-weight:600;color:${c.estado==='activa'?'#166534':c.estado==='pausada'?'#D97706':'var(--c-muted)'}">${esc(c.estado)}</span></div>
+    ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-top:4px">${esc(c.descripcion)}</div>`:''}
+    <div style="font-size:12px;color:var(--c-muted);margin-top:6px">${c.fecha_inicio?'📅 '+esc(c.fecha_inicio):''} ${c.fecha_fin?'→ '+esc(c.fecha_fin):''} ${c.responsable?'· 👤 '+esc(c.responsable):''}</div>
+  </div>`).join('')}`;
+}
+function openCampanaModal(c){
+  c=c||{};
+  const emp=c.empresa||(mstate.mktBrand!=='all'?mstate.mktBrand:'')||MKT_EMPRESAS[0];
+  openModal(`
+    <div class="modal-head"><h2>${c.id?'Editar':'Nueva'} campaña</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div class="form-row"><div class="form-group"><label>Marca</label><select id="cmEmpresa">${MKT_EMPRESAS.map(e=>`<option value="${e}" ${emp===e?'selected':''}>${e}</option>`).join('')}</select></div><div class="form-group"><label>Nombre</label><input id="cmNombre" value="${esc(c.nombre||'')}"></div></div>
+      <div class="form-group"><label>Objetivo</label><input id="cmObjetivo" value="${esc(c.objetivo||'')}" placeholder="Ej: aumentar seguidores…"></div>
+      <div class="form-group"><label>Descripción</label><textarea id="cmDesc" rows="2">${esc(c.descripcion||'')}</textarea></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Inicio</label><input id="cmIni" type="date" value="${esc(c.fecha_inicio||'')}"></div><div class="form-group" style="flex:1"><label>Fin</label><input id="cmFin" type="date" value="${esc(c.fecha_fin||'')}"></div></div>
+      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="cmResp" value="${esc(c.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Estado</label><select id="cmEstado"><option value="activa" ${c.estado==='activa'?'selected':''}>Activa</option><option value="pausada" ${c.estado==='pausada'?'selected':''}>Pausada</option><option value="finalizada" ${c.estado==='finalizada'?'selected':''}>Finalizada</option></select></div></div>
+      <div class="form-group"><label>Carpeta Drive</label><input id="cmDrive" value="${esc(c.drive_link||'')}" placeholder="https://drive.google.com/…"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCampana('${c.id||''}')">Guardar</button></div>`);
+}
+async function saveCampana(id){
+  const emp=document.getElementById('cmEmpresa').value;
+  const row={empresa:emp,nombre:document.getElementById('cmNombre').value.trim(),objetivo:document.getElementById('cmObjetivo').value.trim(),descripcion:document.getElementById('cmDesc').value.trim(),fecha_inicio:document.getElementById('cmIni').value||null,fecha_fin:document.getElementById('cmFin').value||null,responsable:document.getElementById('cmResp').value.trim(),estado:document.getElementById('cmEstado').value,drive_link:document.getElementById('cmDrive').value.trim()};
+  if(!row.nombre){ showToast('Falta el nombre','err'); return; }
+  let error; if(id){ ({error}=await sb.from('campanas').update(row).eq('id',id)); } else { ({error}=await sb.from('campanas').insert(row)); }
+  if(error){ showToast(error.message,'err'); return; }
+  closeModal(); showToast('Guardado','ok'); renderMercadeo();
+}
+async function openCampanaDetail(id){
+  const c=(mstate.campanas||[]).find(x=>x.id===id); if(!c) return;
+  const {data:mats}=await sb.from('files').select('*').eq('scope','campana').eq('ref_id',id);
+  const {data:pubs}=await sb.from('publicaciones').select('*').eq('campana_id',id).order('fecha');
+  openModal(`
+    <div class="modal-head"><h2>${esc(c.nombre)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:8px">${mktEmpChip(c.empresa)}</div>
+      ${c.objetivo?`<div style="font-size:12px;margin-bottom:6px"><b>Objetivo:</b> ${esc(c.objetivo)}</div>`:''}
+      ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-bottom:8px">${esc(c.descripcion)}</div>`:''}
+      ${c.drive_link?`<div style="margin-bottom:10px"><a href="${esc(c.drive_link)}" target="_blank" class="btn btn-sm btn-ghost">📁 Carpeta de Drive</a></div>`:''}
+      <h3 style="font-size:13px;margin:10px 0 6px">Materiales</h3>
+      <div>${docsHtml(mats,'campana',id)}</div>
+      <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input type="file" id="cmFile"><button class="btn btn-sm btn-ghost" onclick="uploadDoc('campana','${id}','cmFile',()=>openCampanaDetail('${id}'))">Subir material</button></div>
+      <h3 style="font-size:13px;margin:16px 0 6px">Publicaciones vinculadas</h3>
+      ${(pubs&&pubs.length)?pubs.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--c-border);font-size:13px">
+        <span><b>${esc(p.fecha||'')}</b> ${p.canal?'· '+esc(p.canal):''} — ${esc(p.titulo||p.contenido||'')}</span>
+        ${csEstChip(p.estado||'borrador')}
+      </div>`).join(''):'<div class="nodata" style="padding:6px;font-size:12px">Sin publicaciones.</div>'}
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <input id="pbFecha" type="date" style="flex:0 0 140px"><input id="pbCanal" placeholder="Canal" style="flex:0 0 110px"><input id="pbCont" placeholder="Contenido" style="flex:1;min-width:120px"><button class="btn btn-sm btn-ghost" onclick="savePub('${id}')">Agregar</button>
+      </div>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between">
+      <div><button class="btn btn-ghost" style="color:#DC2626" onclick="delCampana('${id}')">Eliminar</button></div>
+      <div><button class="btn btn-ghost" onclick="openCampanaModal(mstate.campanas.find(x=>x.id==='${id}'))">Editar</button> <button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
+    </div>`);
+}
+function pubsHtml(pubs,campanaId){
+  if(!pubs||!pubs.length) return '<div class="nodata" style="padding:6px;font-size:12px">Sin publicaciones.</div>';
+  return pubs.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--c-border);font-size:13px">
+    <span><b>${esc(p.fecha||'')}</b> ${p.canal?'· '+esc(p.canal):''} — ${esc(p.contenido||'')}</span>
+    <span style="white-space:nowrap"><button onclick="togglePub('${p.id}','${p.estado==='publicado'?'borrador':'publicado'}','${campanaId}')" style="border:none;background:none;cursor:pointer;font-size:11px;color:${p.estado==='publicado'?'#166534':'var(--c-muted)'}">${p.estado==='publicado'?'✓ publicado':'marcar'}</button> <button onclick="delPub('${p.id}','${campanaId}')" style="border:none;background:none;color:#DC2626;cursor:pointer">×</button></span>
+  </div>`).join('');
+}
+async function savePub(campanaId){
+  const contenido=document.getElementById('pbCont').value.trim(); if(!contenido){ showToast('Falta el contenido','err'); return; }
+  const emp=(mstate.mktBrand!=='all'?mstate.mktBrand:'')||MKT_EMPRESAS[0];
+  const {error}=await sb.from('publicaciones').insert({campana_id:campanaId,fecha:document.getElementById('pbFecha').value||null,canal:document.getElementById('pbCanal').value.trim(),contenido,empresa:emp});
+  if(error){ showToast(error.message,'err'); return; }
+  openCampanaDetail(campanaId);
+}
+async function togglePub(id,estado,campanaId){ const {error}=await sb.from('publicaciones').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
+async function delPub(id,campanaId){ const {error}=await sb.from('publicaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
+async function delCampana(id){ if(!confirm('¿Eliminar campaña?')) return; const {error}=await sb.from('campanas').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
+
+// ── Biblioteca de medios / archivos ─────────────────────────
 function mediaGridHtml(files, delFn){
   delFn=delFn||'delMktFile';
   if(!files||!files.length) return '<div class="nodata" style="padding:20px">Sin archivos todavía. Subí el primero.</div>';
@@ -7311,338 +7524,33 @@ function mediaGridHtml(files, delFn){
       </div></div>`;
   }).join('')}</div>`;
 }
-async function renderMktBiblioteca(){
-  const b=document.getElementById('mktBody'); if(!b) return;
-  const [rf,rl]=await Promise.all([
-    sb.from('files').select('*').eq('scope','mercadeo').eq('ref_id',mstate.mktEmpresa),
-    sb.from('mkt_biblioteca').select('*').eq('empresa',mstate.mktEmpresa)
-  ]);
-  const files=(rf.data||[]).sort((a,b)=>(b.uploaded_at||'').localeCompare(a.uploaded_at||''));
-  const links=(rl.data||[]).sort((a,b)=>(a.categoria||'').localeCompare(b.categoria||''));
-  b.innerHTML=`
-    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Enlaces (Google Drive y otros)</h3>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-      <input id="blTit" placeholder="Nombre (ej: Grilla octubre)" style="flex:1;min-width:120px">
-      <input id="blCat" placeholder="Categoría (Planes, Grillas, Artes…)" style="flex:1;min-width:120px">
-      <input id="blUrl" placeholder="https://drive.google.com/…" style="flex:2;min-width:150px">
-      <button class="btn btn-sm btn-primary" onclick="addMktLink()">+ Enlace</button>
-    </div>
-    ${links.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:18px">${links.map(l=>`
-      <div class="section-card" style="padding:10px"><div style="font-size:10px;color:var(--c-muted);text-transform:uppercase">${esc(l.categoria||'Enlace')}</div><a href="${esc(l.url)}" target="_blank" style="font-weight:700;font-size:13px;color:var(--c-primary);word-break:break-word">${esc(l.titulo)}</a><div style="text-align:right"><button class="act-btn del" onclick="delMktLink('${l.id}')" title="Eliminar"><svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></div></div>`).join('')}</div>`:'<div class="nodata" style="padding:12px;margin-bottom:16px;font-size:12px">Sin enlaces aún.</div>'}
-    <h3 style="font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--c-muted);margin:0 0 8px">Archivos subidos</h3>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:12px;border:1px dashed var(--c-border);border-radius:10px">
-      <input type="file" id="mktFile" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx" style="flex:1;min-width:160px">
-      <button class="btn btn-sm btn-primary" onclick="uploadMktFile()">Subir foto / archivo / video</button>
-      <span style="font-size:11px;color:var(--c-muted)">Hasta 100 MB</span>
-    </div>
-    ${mediaGridHtml(files)}`;
-}
 async function addMktLink(){
   const titulo=document.getElementById('blTit').value.trim(), url=document.getElementById('blUrl').value.trim();
   if(!titulo||!url){ showToast('Pon nombre y enlace','err'); return; }
-  const {error}=await sb.from('mkt_biblioteca').insert({empresa:mstate.mktEmpresa,titulo,categoria:document.getElementById('blCat').value.trim(),url});
+  const emp=document.getElementById('blEmp')?document.getElementById('blEmp').value:MKT_EMPRESAS[0];
+  const {error}=await sb.from('mkt_biblioteca').insert({empresa:emp,titulo,categoria:document.getElementById('blCat').value.trim(),url});
   if(error){ showToast(error.message,'err'); return; }
-  showToast('Enlace agregado','ok'); renderMktBiblioteca();
+  showToast('Enlace agregado','ok'); renderMercadeo();
 }
-async function delMktLink(id){ if(!confirm('¿Eliminar este enlace?')) return; const {error}=await sb.from('mkt_biblioteca').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } renderMktBiblioteca(); }
+async function delMktLink(id){ if(!confirm('¿Eliminar este enlace?')) return; const {error}=await sb.from('mkt_biblioteca').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } renderMercadeo(); }
 async function uploadMktFile(){
   const inp=document.getElementById('mktFile'); if(!inp||!inp.files||!inp.files[0]){ showToast('Elegí un archivo','err'); return; }
+  const emp=document.getElementById('mktFileEmp')?document.getElementById('mktFileEmp').value:MKT_EMPRESAS[0];
   showToast('Subiendo…','ok');
-  const {error}=await apiUpload('mercadeo',mstate.mktEmpresa,inp.files[0]);
+  const {error}=await apiUpload('mercadeo',emp,inp.files[0]);
   if(error){ showToast(error.message||'Error al subir','err'); return; }
-  showToast('Archivo subido','ok'); renderMktBiblioteca();
+  showToast('Archivo subido','ok'); renderMercadeo();
 }
-async function delMktFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderMktBiblioteca(); }
-async function renderCampanas(){
-  const {data}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false});
-  const b=document.getElementById('mktBody'); if(!b) return;
-  mstate.campanas=data||[];
-  if(!data||!data.length){ b.innerHTML='<div class="nodata" style="padding:30px">Sin campañas aún.</div>'; return; }
-  b.innerHTML=data.map(c=>`<div class="section-card" style="margin-bottom:10px;cursor:pointer" onclick="openCampanaDetail('${c.id}')">
-    <div style="display:flex;justify-content:space-between"><div style="font-weight:700">${esc(c.nombre)}</div><span style="font-size:11px;color:var(--c-muted)">${esc(c.estado)}</span></div>
-    ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-top:4px">${esc(c.descripcion)}</div>`:''}
-    <div style="font-size:12px;color:var(--c-muted);margin-top:6px">${c.fecha_inicio?'📅 '+esc(c.fecha_inicio):''} ${c.fecha_fin?'→ '+esc(c.fecha_fin):''} ${c.responsable?'· 👤 '+esc(c.responsable):''}</div>
-  </div>`).join('');
+async function delMktFile(id){ if(!confirm('¿Eliminar este archivo?')) return; const {error}=await apiDelete('/api/files/'+id); if(error){ showToast(error.message,'err'); return; } showToast('Eliminado','ok'); renderMercadeo(); }
+function csAddCanvaLink(emp){
+  const url=prompt('Pega el enlace de Canva para '+emp+':');
+  if(!url) return;
+  sb.from('mkt_biblioteca').insert({empresa:emp,titulo:'Cuaderno de Canva',categoria:'Canva',url}).then(({error})=>{
+    if(error) showToast(error.message,'err'); else { showToast('Enlace de Canva guardado','ok'); renderMercadeo(); }
+  });
 }
-function openCampanaModal(c){
-  c=c||{};
-  openModal(`
-    <div class="modal-head"><h2>${c.id?'Editar':'Nueva'} campaña</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div class="form-group"><label>Nombre</label><input id="cmNombre" value="${esc(c.nombre||'')}"></div>
-      <div class="form-group"><label>Objetivo</label><input id="cmObjetivo" value="${esc(c.objetivo||'')}" placeholder="Ej: aumentar seguidores, promocionar servicio…"></div>
-      <div class="form-group"><label>Descripción</label><textarea id="cmDesc" rows="2">${esc(c.descripcion||'')}</textarea></div>
-      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Inicio</label><input id="cmIni" type="date" value="${esc(c.fecha_inicio||'')}"></div><div class="form-group" style="flex:1"><label>Fin</label><input id="cmFin" type="date" value="${esc(c.fecha_fin||'')}"></div></div>
-      <div style="display:flex;gap:10px"><div class="form-group" style="flex:1"><label>Responsable</label><input id="cmResp" value="${esc(c.responsable||'')}"></div><div class="form-group" style="flex:1"><label>Estado</label><select id="cmEstado"><option value="activa" ${c.estado==='activa'?'selected':''}>Activa</option><option value="pausada" ${c.estado==='pausada'?'selected':''}>Pausada</option><option value="finalizada" ${c.estado==='finalizada'?'selected':''}>Finalizada</option></select></div></div>
-      <div class="form-group"><label>Carpeta de Google Drive (enlace)</label><input id="cmDrive" value="${esc(c.drive_link||'')}" placeholder="https://drive.google.com/…"></div>
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCampana('${c.id||''}')">Guardar</button></div>`);
-}
-async function saveCampana(id){
-  const row={nombre:document.getElementById('cmNombre').value.trim(),objetivo:document.getElementById('cmObjetivo').value.trim(),descripcion:document.getElementById('cmDesc').value.trim(),fecha_inicio:document.getElementById('cmIni').value||null,fecha_fin:document.getElementById('cmFin').value||null,responsable:document.getElementById('cmResp').value.trim(),estado:document.getElementById('cmEstado').value,drive_link:document.getElementById('cmDrive').value.trim()};
-  if(!row.nombre){ showToast('Falta el nombre','err'); return; }
-  let error; if(id){ ({error}=await sb.from('campanas').update(row).eq('id',id)); } else { ({error}=await sb.from('campanas').insert({...row,empresa:mstate.mktEmpresa})); }
-  if(error){ showToast(error.message,'err'); return; }
-  closeModal(); showToast('Guardado','ok'); renderMercadeo();
-}
-async function openCampanaDetail(id){
-  const c=(mstate.campanas||[]).find(x=>x.id===id); if(!c) return;
-  const {data:mats}=await sb.from('files').select('*').eq('scope','campana').eq('ref_id',id);
-  const {data:pubs}=await sb.from('publicaciones').select('*').eq('campana_id',id).order('fecha');
-  openModal(`
-    <div class="modal-head"><h2>${esc(c.nombre)}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      ${c.objetivo?`<div style="font-size:12px;margin-bottom:6px"><b>Objetivo:</b> ${esc(c.objetivo)}</div>`:''}
-      ${c.descripcion?`<div style="font-size:13px;color:var(--c-muted);margin-bottom:8px">${esc(c.descripcion)}</div>`:''}
-      ${c.drive_link?`<div style="margin-bottom:10px"><a href="${esc(c.drive_link)}" target="_blank" class="btn btn-sm btn-ghost">📁 Carpeta de Drive</a></div>`:''}
-      <h3 style="font-size:13px;margin:10px 0 6px">Materiales</h3>
-      <div>${docsHtml(mats,'campana',id)}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><input type="file" id="cmFile"><button class="btn btn-sm btn-ghost" onclick="uploadDoc('campana','${id}','cmFile',()=>openCampanaDetail('${id}'))">Subir material</button></div>
-      <h3 style="font-size:13px;margin:16px 0 6px">Calendario de publicaciones</h3>
-      <div>${pubsHtml(pubs,id)}</div>
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
-        <input id="pbFecha" type="date" style="flex:0 0 140px"><input id="pbCanal" placeholder="Canal" style="flex:0 0 110px"><input id="pbCont" placeholder="Contenido" style="flex:1;min-width:120px"><button class="btn btn-sm btn-ghost" onclick="savePub('${id}')">Agregar</button>
-      </div>
-    </div>
-    <div class="modal-foot" style="justify-content:space-between">
-      <div><button class="btn btn-ghost" style="color:#DC2626" onclick="delCampana('${id}')">Eliminar</button></div>
-      <div><button class="btn btn-ghost" onclick="openCampanaModal(mstate.campanas.find(x=>x.id==='${id}'))">Editar</button> <button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>
-    </div>`);
-}
-function pubsHtml(pubs,campanaId){
-  if(!pubs||!pubs.length) return '<div class="nodata" style="padding:6px;font-size:12px">Sin publicaciones.</div>';
-  return pubs.map(p=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--c-border);font-size:13px">
-    <span><b>${esc(p.fecha||'')}</b> ${p.canal?'· '+esc(p.canal):''} — ${esc(p.contenido||'')}</span>
-    <span style="white-space:nowrap"><button onclick="togglePub('${p.id}','${p.estado==='publicada'?'planificada':'publicada'}','${campanaId}')" style="border:none;background:none;cursor:pointer;font-size:11px;color:${p.estado==='publicada'?'#166534':'var(--c-muted)'}">${p.estado==='publicada'?'✓ publicada':'marcar'}</button> <button onclick="delPub('${p.id}','${campanaId}')" style="border:none;background:none;color:#DC2626;cursor:pointer">×</button></span>
-  </div>`).join('');
-}
-async function savePub(campanaId){
-  const contenido=document.getElementById('pbCont').value.trim(); if(!contenido){ showToast('Falta el contenido','err'); return; }
-  const {error}=await sb.from('publicaciones').insert({campana_id:campanaId,fecha:document.getElementById('pbFecha').value||null,canal:document.getElementById('pbCanal').value.trim(),contenido,empresa:mstate.mktEmpresa});
-  if(error){ showToast(error.message,'err'); return; }
-  openCampanaDetail(campanaId);
-}
-async function togglePub(id,estado,campanaId){ const {error}=await sb.from('publicaciones').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
-async function delPub(id,campanaId){ const {error}=await sb.from('publicaciones').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } openCampanaDetail(campanaId); }
-async function delCampana(id){ if(!confirm('¿Eliminar campaña?')) return; const {error}=await sb.from('campanas').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
-// Estados tipo Monday para los pendientes de mercadeo
-const MKT_TAREA_EST=[['pendiente','Pendiente'],['en_proceso','En proceso'],['en_preaprobacion','En preaprobación'],['correcciones','Correcciones solicitadas'],['aprobado','Aprobado'],['completado','Completado'],['cancelado','Cancelado']];
-const MKT_TAREA_LBL=Object.fromEntries(MKT_TAREA_EST);
-const MKT_TAREA_COLOR={pendiente:'#6B6B78',en_proceso:'#1D4ED8',en_preaprobacion:'#D97706',correcciones:'#C62040',aprobado:'#166534',completado:'#22C55E',cancelado:'#9CA3AF'};
-async function openTareaModal(id){
-  const t = id ? (mstate._tareas||[]).find(x=>x.id===id)||{} : {};
-  const {data:camps}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa);
-  const pr=t.prioridad||'media';
-  openModal(`
-    <div class="modal-head"><h2>${id?'Editar':'Nuevo'} pendiente</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div class="form-group"><label>Título</label><input id="tTitulo" value="${esc(t.titulo||'')}"></div>
-      <div class="form-group"><label>Descripción</label><textarea id="tDesc" rows="2">${esc(t.descripcion||'')}</textarea></div>
-      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="tResp" value="${esc(t.responsable||'')}"></div><div class="form-group"><label>Prioridad</label><select id="tPrio"><option value="baja" ${pr==='baja'?'selected':''}>Baja</option><option value="media" ${pr==='media'?'selected':''}>Media</option><option value="alta" ${pr==='alta'?'selected':''}>Alta</option></select></div></div>
-      <div class="form-row"><div class="form-group"><label>Fecha inicio</label><input id="tIni" type="date" value="${esc(t.fecha_inicio||'')}"></div><div class="form-group"><label>Fecha límite</label><input id="tLim" type="date" value="${esc(t.fecha_limite||'')}"></div></div>
-      <div class="form-row"><div class="form-group"><label>Fecha de publicación (si aplica)</label><input id="tPub" type="date" value="${esc(t.fecha_publicacion||'')}"></div><div class="form-group"><label>Estado</label><select id="tEstado">${MKT_TAREA_EST.map(([k,l])=>`<option value="${k}" ${(t.estado||'pendiente')===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
-      <div class="form-group"><label>Campaña asociada (opcional)</label><select id="tCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${t.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Enlace / adjunto (opcional)</label><input id="tEnlace" value="${esc(t.enlace||'')}" placeholder="https://…"></div>
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTarea('${id||''}')">Guardar</button></div>`);
-}
-async function saveTarea(id){
-  const titulo=document.getElementById('tTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
-  const row={titulo,descripcion:document.getElementById('tDesc').value.trim(),responsable:document.getElementById('tResp').value.trim(),prioridad:document.getElementById('tPrio').value,estado:document.getElementById('tEstado').value,fecha_inicio:document.getElementById('tIni').value||null,fecha_limite:document.getElementById('tLim').value||null,fecha_publicacion:document.getElementById('tPub').value||null,campana_id:document.getElementById('tCampana').value||null,enlace:document.getElementById('tEnlace').value.trim()};
-  let error; if(id){ ({error}=await sb.from('mercadeo_tareas').update(row).eq('id',id)); } else { ({error}=await sb.from('mercadeo_tareas').insert({...row,empresa:mstate.mktEmpresa})); }
-  if(error){ showToast(error.message,'err'); return; }
-  closeModal(); showToast('Pendiente guardado','ok'); renderMercadeo();
-}
-async function renderTareas(){
-  const b=document.getElementById('mktBody'); if(!b) return;
-  const [rt,rc]=await Promise.all([
-    sb.from('mercadeo_tareas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false}),
-    sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa)
-  ]);
-  const all=rt.data||[]; mstate._tareas=all;
-  const campName={}; (rc.data||[]).forEach(c=>campName[c.id]=c.nombre);
-  const hoy=todayStr();
-  const esVencida=t=>t.fecha_limite && t.fecha_limite<hoy && !['completado','cancelado','aprobado'].includes(t.estado);
-  const fEst=mstate.mktTareaEst||'all', fVenc=!!mstate.mktTareaVenc;
-  let rows=all;
-  if(fEst!=='all') rows=rows.filter(t=>t.estado===fEst);
-  if(fVenc) rows=rows.filter(esVencida);
-  const vencidasN=all.filter(esVencida).length;
-  const estSel=t=>`<select onchange="setTareaEstado('${t.id}',this.value)" style="font-size:11px;font-weight:700;border:none;border-radius:20px;padding:3px 8px;color:#fff;background:${MKT_TAREA_COLOR[t.estado]||'#6B6B78'};cursor:pointer">${MKT_TAREA_EST.map(([k,l])=>`<option value="${k}" ${t.estado===k?'selected':''} style="background:var(--c-card);color:var(--c-text)">${l}</option>`).join('')}</select>`;
-  b.innerHTML=`
-    <div class="filter-chips" style="margin-bottom:12px;overflow-x:auto;flex-wrap:nowrap">
-      <span class="chip ${fEst==='all'&&!fVenc?'active':''}" onclick="mstate.mktTareaEst='all';mstate.mktTareaVenc=false;renderMercadeo()">Todos (${all.length})</span>
-      <span class="chip ${fVenc?'active':''}" style="white-space:nowrap" onclick="mstate.mktTareaVenc=true;mstate.mktTareaEst='all';renderMercadeo()">⚠ Vencidas (${vencidasN})</span>
-      ${MKT_TAREA_EST.map(([k,l])=>`<span class="chip ${fEst===k&&!fVenc?'active':''}" style="white-space:nowrap" onclick="mstate.mktTareaEst='${k}';mstate.mktTareaVenc=false;renderMercadeo()">${l}</span>`).join('')}
-    </div>
-    <div class="item-table"><table>
-      <thead><tr><th>Pendiente</th><th>Responsable</th><th>Límite</th><th>Publicación</th><th>Campaña</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${rows.length===0?`<tr><td colspan="7"><div class="empty-state">Sin pendientes${fEst!=='all'||fVenc?' (ajusta el filtro)':''}</div></td></tr>`:rows.map(t=>`
-        <tr>
-          <td><b style="font-size:13px">${esc(t.titulo)}</b>${t.descripcion?`<div style="font-size:11px;color:var(--c-muted)">${esc(t.descripcion)}</div>`:''}${t.enlace?` <a href="${esc(t.enlace)}" target="_blank" style="font-size:11px;color:var(--c-primary)">enlace</a>`:''}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(t.responsable||'—')}</td>
-          <td style="font-size:12px;white-space:nowrap;${esVencida(t)?'color:var(--c-err);font-weight:700':''}">${esc(t.fecha_limite||'—')}${esVencida(t)?' ⚠':''}</td>
-          <td style="font-size:12px;color:var(--c-muted);white-space:nowrap">${esc(t.fecha_publicacion||'—')}</td>
-          <td style="font-size:12px;color:var(--c-muted)">${esc(campName[t.campana_id]||'—')}</td>
-          <td>${estSel(t)}</td>
-          <td style="white-space:nowrap;text-align:right"><button class="act-btn" onclick="openTareaModal('${t.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button><button class="act-btn del" onclick="delTarea('${t.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button></td>
-        </tr>`).join('')}</tbody>
-    </table></div>`;
-}
-async function setTareaEstado(id,estado){ const {error}=await sb.from('mercadeo_tareas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado: '+(MKT_TAREA_LBL[estado]||estado),'ok'); renderMercadeo(); } }
-async function moveTarea(id,estado){ return setTareaEstado(id,estado); }
-async function delTarea(id){ if(!confirm('¿Eliminar este pendiente?')) return; const {error}=await sb.from('mercadeo_tareas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminado','ok'); renderMercadeo(); } }
 
-// ── Preaprobados (piezas: grillas, artes, reels, copys) ───────
-const PIEZA_EST=[['borrador','Borrador'],['enviado','Enviado a preaprobación'],['correcciones','Correcciones solicitadas'],['aprobado','Aprobado'],['programado','Programado']];
-const PIEZA_LBL=Object.fromEntries(PIEZA_EST);
-const PIEZA_COLOR={borrador:'#6B6B78',enviado:'#1D4ED8',correcciones:'#C62040',aprobado:'#166534',programado:'#7C3AED'};
-const PIEZA_TIPOS=['grilla','arte','reel','historia','copy','propuesta'];
-async function renderMktPreaprobados(){
-  const b=document.getElementById('mktBody'); if(!b) return;
-  const {data}=await sb.from('mkt_piezas').select('*').eq('empresa',mstate.mktEmpresa).order('created_at',{ascending:false});
-  const all=data||[]; mstate._piezas=all;
-  const f=mstate.mktPiezaFiltro||'all';
-  const grupos={revision:['borrador','enviado'],correcciones:['correcciones'],aprobado:['aprobado'],programado:['programado']};
-  let rows=all;
-  if(f!=='all') rows=all.filter(p=>(grupos[f]||[f]).includes(p.estado));
-  const cnt=g=>all.filter(p=>grupos[g].includes(p.estado)).length;
-  b.innerHTML=`
-    <div class="filter-chips" style="margin-bottom:12px;overflow-x:auto;flex-wrap:nowrap">
-      <span class="chip ${f==='all'?'active':''}" onclick="mstate.mktPiezaFiltro='all';renderMercadeo()">Todas (${all.length})</span>
-      <span class="chip ${f==='revision'?'active':''}" style="white-space:nowrap" onclick="mstate.mktPiezaFiltro='revision';renderMercadeo()">En revisión (${cnt('revision')})</span>
-      <span class="chip ${f==='correcciones'?'active':''}" style="white-space:nowrap" onclick="mstate.mktPiezaFiltro='correcciones';renderMercadeo()">Correcciones (${cnt('correcciones')})</span>
-      <span class="chip ${f==='aprobado'?'active':''}" onclick="mstate.mktPiezaFiltro='aprobado';renderMercadeo()">Aprobados (${cnt('aprobado')})</span>
-      <span class="chip ${f==='programado'?'active':''}" onclick="mstate.mktPiezaFiltro='programado';renderMercadeo()">Programados (${cnt('programado')})</span>
-    </div>
-    <div style="font-size:11px;color:var(--c-muted);margin-bottom:12px">Flujo: Borrador → Enviado a preaprobación → Correcciones (si aplica) → Aprobado → (Enviar al calendario) → Programado.</div>
-    ${rows.length===0?'<div class="nodata" style="padding:24px">Sin piezas. Crea una con "+ Nueva pieza".</div>':
-    `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px">${rows.map(p=>`
-      <div class="section-card" style="padding:12px">
-        <div style="display:flex;justify-content:space-between;align-items:start;gap:6px">
-          <b style="font-size:13px">${esc(p.titulo)}</b>
-          <span style="font-size:9px;font-weight:700;color:#fff;background:${PIEZA_COLOR[p.estado]||'#6B6B78'};padding:2px 7px;border-radius:20px;white-space:nowrap">${(PIEZA_LBL[p.estado]||p.estado).toUpperCase()}</span>
-        </div>
-        <div style="font-size:11px;color:var(--c-muted);margin-top:3px">${esc(p.tipo||'')}${p.formato?' · '+esc(p.formato):''}${p.red_social?' · '+esc(p.red_social):''}${p.version?' · v'+p.version:''}</div>
-        ${p.fecha?`<div style="font-size:11px;color:var(--c-muted)">📅 ${esc(p.fecha)}</div>`:''}
-        ${p.copy?`<div style="font-size:11px;margin-top:5px;color:var(--c-text);max-height:40px;overflow:hidden">${esc(p.copy)}</div>`:''}
-        ${p.archivo_file?`<a href="${fileUrl(p.archivo_file)}" target="_blank" style="font-size:11px;color:var(--c-primary)">ver archivo</a>`:''}
-        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;align-items:center">
-          <select onchange="setPiezaEstado('${p.id}',this.value)" style="font-size:10px;border:1px solid var(--c-border);border-radius:6px;padding:2px 5px;background:var(--c-bg);color:var(--c-text)">${PIEZA_EST.map(([k,l])=>`<option value="${k}" ${p.estado===k?'selected':''}>${l}</option>`).join('')}</select>
-          ${p.estado==='aprobado'?`<button class="btn btn-sm btn-primary" style="font-size:10px;padding:3px 7px" onclick="enviarAlCalendario('${p.id}')">→ Calendario</button>`:''}
-          <button class="act-btn" onclick="showPiezaModal('${p.id}')" title="Editar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="act-btn del" onclick="delPieza('${p.id}')" title="Eliminar"><svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
-        </div>
-      </div>`).join('')}</div>`}`;
-}
-async function showPiezaModal(id){
-  const p = id ? (mstate._piezas||[]).find(x=>x.id===id)||{} : {};
-  const {data:camps}=await sb.from('campanas').select('*').eq('empresa',mstate.mktEmpresa);
-  openModal(`
-    <div class="modal-head"><h2>${id?'Editar':'Nueva'} pieza</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div class="form-group"><label>Título</label><input id="pzTitulo" value="${esc(p.titulo||'')}"></div>
-      <div class="form-row">
-        <div class="form-group"><label>Tipo</label><select id="pzTipo">${PIEZA_TIPOS.map(t=>`<option value="${t}" ${p.tipo===t?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('')}</select></div>
-        <div class="form-group"><label>Formato</label><input id="pzFormato" value="${esc(p.formato||'')}" placeholder="Ej: 1080x1080, vertical…"></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label>Red social</label><input id="pzRed" value="${esc(p.red_social||'')}" placeholder="Instagram, Facebook…"></div>
-        <div class="form-group"><label>Fecha sugerida</label><input id="pzFecha" type="date" value="${esc(p.fecha||'')}"></div>
-      </div>
-      <div class="form-group"><label>Copy</label><textarea id="pzCopy" rows="2">${esc(p.copy||'')}</textarea></div>
-      <div class="form-row">
-        <div class="form-group"><label>Responsable</label><input id="pzResp" value="${esc(p.responsable||'')}"></div>
-        <div class="form-group"><label>Versión</label><input id="pzVer" type="number" min="1" value="${p.version||1}"></div>
-      </div>
-      <div class="form-group"><label>Campaña (opcional)</label><select id="pzCampana"><option value="">— ninguna —</option>${(camps||[]).map(c=>`<option value="${c.id}" ${p.campana_id===c.id?'selected':''}>${esc(c.nombre)}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Archivo / arte (opcional)</label><input type="file" id="pzFile" accept="image/*,video/*,.pdf"></div>
-      <div class="form-group"><label>Comentarios</label><textarea id="pzComent" rows="2">${esc(p.comentarios||'')}</textarea></div>
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePieza('${id||''}')">Guardar</button></div>`);
-}
-async function savePieza(id){
-  const titulo=document.getElementById('pzTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
-  const row={titulo,tipo:document.getElementById('pzTipo').value,formato:document.getElementById('pzFormato').value.trim(),red_social:document.getElementById('pzRed').value.trim(),fecha:document.getElementById('pzFecha').value||null,copy:document.getElementById('pzCopy').value.trim(),responsable:document.getElementById('pzResp').value.trim(),version:Number(document.getElementById('pzVer').value)||1,campana_id:document.getElementById('pzCampana').value||null,comentarios:document.getElementById('pzComent').value.trim()};
-  let piezaId=id, error, data;
-  if(id){ ({error}=await sb.from('mkt_piezas').update(row).eq('id',id)); }
-  else { ({data,error}=await sb.from('mkt_piezas').insert({...row,empresa:mstate.mktEmpresa,estado:'borrador'})); piezaId=data&&data[0]&&data[0].id; }
-  if(error){ showToast(error.message,'err'); return; }
-  const fin=document.getElementById('pzFile');
-  if(fin&&fin.files&&fin.files[0]&&piezaId){ const up=await apiUpload('pieza',piezaId,fin.files[0]); if(!up.error) await sb.from('mkt_piezas').update({archivo_file:up.data.id}).eq('id',piezaId); }
-  closeModal(); showToast('Pieza guardada','ok'); renderMercadeo();
-}
-async function setPiezaEstado(id,estado){ const {error}=await sb.from('mkt_piezas').update({estado}).eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Estado: '+(PIEZA_LBL[estado]||estado),'ok'); renderMercadeo(); } }
-async function enviarAlCalendario(id){
-  const p=(mstate._piezas||[]).find(x=>x.id===id); if(!p) return;
-  if(!p.fecha){ showToast('La pieza no tiene fecha. Edítala y asígnale una fecha.','err'); return; }
-  const {data,error}=await sb.from('publicaciones').insert({empresa:mstate.mktEmpresa,fecha:p.fecha,canal:p.red_social||'',contenido:p.titulo+(p.copy?(' · '+p.copy):''),estado:'programado',campana_id:p.campana_id||null});
-  if(error){ showToast('Error al enviar al calendario','err'); return; }
-  const pubId=data&&data[0]&&data[0].id;
-  await sb.from('mkt_piezas').update({estado:'programado',publicacion_id:pubId}).eq('id',id);
-  showToast('Enviada al calendario (Programada)','ok'); renderMercadeo();
-}
-async function delPieza(id){ if(!confirm('¿Eliminar esta pieza?')) return; const {error}=await sb.from('mkt_piezas').delete().eq('id',id); if(error){ showToast(error.message,'err'); } else { showToast('Eliminada','ok'); renderMercadeo(); } }
-
-// ── Mensajes Push (calendario de planificación) ───────────────
-const PUSH_EST=[['borrador','Borrador'],['revision','En revisión'],['aprobado','Aprobado'],['enviado','Enviado'],['no_enviado','No enviado']];
-const PUSH_LBL=Object.fromEntries(PUSH_EST);
-const PUSH_COLOR={borrador:'#6B6B78',revision:'#D97706',aprobado:'#166534',enviado:'#1D4ED8',no_enviado:'#C62040'};
-function shiftMktPushMonth(n){ const ym=mstate.mktPushMonth||todayStr().slice(0,7); let [Y,M]=ym.split('-').map(Number); M+=n; if(M<1){M=12;Y--;} if(M>12){M=1;Y++;} mstate.mktPushMonth=Y+'-'+String(M).padStart(2,'0'); renderMercadeo(); }
-async function renderMktPush(){
-  const b=document.getElementById('mktBody'); if(!b) return;
-  const {data}=await sb.from('mkt_push').select('*').eq('empresa',mstate.mktEmpresa);
-  const items=data||[]; mstate._push=items;
-  const ym=mstate.mktPushMonth||todayStr().slice(0,7);
-  const [Y,M]=ym.split('-').map(Number);
-  const first=new Date(Y,M-1,1); const startDow=(first.getDay()+6)%7;
-  const days=new Date(Y,M,0).getDate();
-  const byDay={}; items.forEach(p=>{ if((p.fecha||'').slice(0,7)===ym){ const d=+p.fecha.slice(8,10); (byDay[d]=byDay[d]||[]).push(p); } });
-  const hoy=todayStr(); const dow=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-  let cells='';
-  for(let i=0;i<startDow;i++) cells+='<div></div>';
-  for(let d=1;d<=days;d++){
-    const ds=ym+'-'+String(d).padStart(2,'0'); const l=byDay[d]||[]; const esHoy=ds===hoy;
-    cells+=`<div style="min-height:80px;border:1px solid ${esHoy?'var(--c-primary)':'var(--c-border)'};border-radius:8px;padding:5px;background:var(--c-card);overflow:hidden;cursor:pointer" onclick="openPushModal(null,'${ds}')">
-      <div style="font-size:11px;font-weight:700;color:${esHoy?'var(--c-primary)':'var(--c-muted)'}">${d}</div>
-      ${l.slice(0,3).map(p=>`<div onclick="event.stopPropagation();openPushModal('${p.id}')" title="${esc(p.titulo||p.mensaje||'')}" style="font-size:10px;margin-top:2px;padding:1px 4px;border-radius:4px;background:${PUSH_COLOR[p.estado]||'#6B6B78'};color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.hora?p.hora+' ':'')}${esc(p.titulo||'Push')}</div>`).join('')}
-    </div>`;
-  }
-  b.innerHTML=`
-    <div class="date-strip-wrap" style="justify-content:space-between;margin-bottom:12px">
-      <button class="nav-arrow" onclick="shiftMktPushMonth(-1)">‹ Mes anterior</button>
-      <div style="font-weight:700;text-transform:capitalize">${MESES_ES[M-1]} ${Y}</div>
-      <button class="nav-arrow" onclick="shiftMktPushMonth(1)">Mes siguiente ›</button>
-    </div>
-    <div style="font-size:11px;color:var(--c-muted);margin-bottom:8px">Planificación de notificaciones push. Toca un día (ocupado o vacío) para programar un mensaje. <b>El envío automático se confirma aparte</b> — por ahora es planificación.</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px">${dow.map(d=>`<div style="text-align:center;font-size:10px;font-weight:700;color:var(--c-muted)">${d}</div>`).join('')}</div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">${cells}</div>`;
-}
-function openPushModal(id,defFecha){
-  const p = id ? (mstate._push||[]).find(x=>x.id===id)||{} : {};
-  const est=p.estado||'borrador';
-  openModal(`
-    <div class="modal-head"><h2>${id?'Mensaje push':'Nuevo mensaje push'}</h2><button class="overlay-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div class="form-row"><div class="form-group"><label>Fecha</label><input id="phFecha" type="date" value="${esc(p.fecha||defFecha||todayStr())}"></div><div class="form-group"><label>Hora estimada</label><input id="phHora" type="time" value="${esc(p.hora||'')}"></div></div>
-      <div class="form-group"><label>Título</label><input id="phTitulo" value="${esc(p.titulo||'')}"></div>
-      <div class="form-group"><label>Mensaje</label><textarea id="phMsg" rows="3">${esc(p.mensaje||'')}</textarea></div>
-      <div class="form-row"><div class="form-group"><label>Responsable</label><input id="phResp" value="${esc(p.responsable||'')}"></div><div class="form-group"><label>Estado</label><select id="phEstado">${PUSH_EST.map(([k,l])=>`<option value="${k}" ${est===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
-      <div class="form-group"><label>Observaciones</label><textarea id="phObs" rows="2">${esc(p.observaciones||'')}</textarea></div>
-    </div>
-    <div class="modal-foot" style="justify-content:space-between"><div>${id?`<button class="btn btn-sm btn-ghost" style="color:var(--c-err)" onclick="delPush('${id}')">Eliminar</button> <button class="btn btn-sm btn-ghost" onclick="duplicarPush('${id}')">Duplicar</button>`:''}</div><div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button> <button class="btn btn-primary" onclick="savePush('${id||''}')">Guardar</button></div></div>`);
-}
-async function savePush(id){
-  const titulo=document.getElementById('phTitulo').value.trim(); if(!titulo){ showToast('Falta el título','err'); return; }
-  const row={fecha:document.getElementById('phFecha').value||todayStr(),hora:document.getElementById('phHora').value||'',titulo,mensaje:document.getElementById('phMsg').value.trim(),responsable:document.getElementById('phResp').value.trim(),estado:document.getElementById('phEstado').value,observaciones:document.getElementById('phObs').value.trim()};
-  let error; if(id){ ({error}=await sb.from('mkt_push').update(row).eq('id',id)); } else { ({error}=await sb.from('mkt_push').insert({...row,empresa:mstate.mktEmpresa})); }
-  if(error){ showToast(error.message,'err'); return; }
-  closeModal(); showToast('Mensaje push guardado','ok'); renderMercadeo();
-}
-async function duplicarPush(id){ const p=(mstate._push||[]).find(x=>x.id===id); if(!p) return; const {error}=await sb.from('mkt_push').insert({empresa:mstate.mktEmpresa,fecha:p.fecha,hora:p.hora,titulo:(p.titulo||'')+' (copia)',mensaje:p.mensaje,responsable:p.responsable,estado:'borrador',observaciones:p.observaciones}); if(error){ showToast(error.message,'err'); return; } closeModal(); showToast('Duplicado','ok'); renderMercadeo(); }
-async function delPush(id){ if(!confirm('¿Eliminar este mensaje push?')) return; const {error}=await sb.from('mkt_push').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminado','ok'); renderMercadeo(); }
-
-// ── Efemérides / fechas comerciales ───────────────────────────
+// ── Efemérides / fechas comerciales ─────────────────────────
 const EFEM_COLORS=['#7C3AED','#D97706','#166534','#1D4ED8','#C62040','#DB2777'];
 function openEfemModal(id,defFecha){
   const e = id ? (mstate._efem||[]).find(x=>x.id===id)||{} : {};
@@ -7658,7 +7566,8 @@ function openEfemModal(id,defFecha){
 }
 async function saveEfem(id){
   const titulo=document.getElementById('efTitulo').value.trim(); if(!titulo){ showToast('Falta el nombre','err'); return; }
-  const row={titulo,fecha:document.getElementById('efFecha').value||todayStr(),color:document.getElementById('efColor').value,recurrente:document.getElementById('efRec').checked?1:0,empresa:document.getElementById('efAll').checked?'':mstate.mktEmpresa};
+  const emp=(mstate.mktBrand!=='all'?mstate.mktBrand:'');
+  const row={titulo,fecha:document.getElementById('efFecha').value||todayStr(),color:document.getElementById('efColor').value,recurrente:document.getElementById('efRec').checked?1:0,empresa:document.getElementById('efAll').checked?'':emp};
   let error; if(id){ ({error}=await sb.from('mkt_efemerides').update(row).eq('id',id)); } else { ({error}=await sb.from('mkt_efemerides').insert(row)); }
   if(error){ showToast(error.message,'err'); return; }
   closeModal(); showToast('Fecha especial guardada','ok'); renderMercadeo();
@@ -7666,10 +7575,12 @@ async function saveEfem(id){
 async function delEfem(id){ if(!confirm('¿Eliminar esta fecha especial?')) return; const {error}=await sb.from('mkt_efemerides').delete().eq('id',id); if(error){ showToast(error.message,'err'); return; } closeModal&&closeModal(); showToast('Eliminada','ok'); renderMercadeo(); }
 async function efemConvertir(id){
   const e=(mstate._efem||[]).find(x=>x.id===id); if(!e) return;
-  const {error}=await sb.from('publicaciones').insert({empresa:mstate.mktEmpresa,fecha:e.fecha,titulo:e.titulo,contenido:'',estado:'programado'});
+  const emp=(mstate.mktBrand!=='all'?mstate.mktBrand:'')||MKT_EMPRESAS[0];
+  const {error}=await sb.from('publicaciones').insert({empresa:emp,fecha:e.fecha,titulo:e.titulo,contenido:'',estado:'programado'});
   if(error){ showToast(error.message,'err'); return; }
-  closeModal(); mstate.mktTab='calendario'; showToast('Publicación creada para '+e.titulo,'ok'); renderMercadeo();
+  closeModal(); mstate.csTab='calendario'; showToast('Publicación creada para '+e.titulo,'ok'); renderMercadeo();
 }
+
 </script>
 <style>
 /* ===== Dashboard futurista — paleta rojo/negro ===== */

@@ -659,7 +659,8 @@ ensureColumn('publicaciones', 'formato', 'TEXT');
 ensureColumn('publicaciones', 'responsable', 'TEXT');
 ensureColumn('publicaciones', 'reemplazo', 'TEXT');   // sustituida por (nombre/enlace)
 ensureColumn('publicaciones', 'motivo', 'TEXT');      // motivo de sustitución/reprogramación
-ensureColumn('publicaciones', 'color', 'TEXT');       // color elegido por el usuario (tipo de publicación)
+ensureColumn('publicaciones', 'color', 'TEXT');
+ensureColumn('publicaciones', 'categoria', 'TEXT');       // color elegido por el usuario (tipo de publicación)
 db.exec("UPDATE publicaciones SET estado='publicado' WHERE estado='publicada'");
 db.exec("UPDATE publicaciones SET estado='programado' WHERE estado IN ('planificada','planificado') OR estado IS NULL");
 ensureColumn('mercadeo_tareas', 'empresa', 'TEXT');
