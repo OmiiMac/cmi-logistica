@@ -7178,12 +7178,12 @@ async function renderCSTodo(){
     </div>
     ${rows.length===0?'<div class="nodata" style="padding:30px">Sin tareas aquí.</div>':rows.map(t=>{
       const isAlta=t.prioridad==='alta';
-      const bg=isAlta?'#DC2626':'var(--c-card)';
-      const txtColor=isAlta?'#fff':'var(--c-text)';
-      const mutedColor=isAlta?'rgba(255,255,255,.7)':'var(--c-muted)';
-      const chipBg=isAlta?'rgba(255,255,255,.18)':'var(--c-border)';
-      const chipTxt=isAlta?'#fff':'var(--c-muted)';
-      const border=isAlta?'none':'1px solid var(--c-border)';
+      const bg=isAlta?'#DC2626':'#FEE2E2';
+      const txtColor=isAlta?'#fff':'#1b1b20';
+      const mutedColor=isAlta?'rgba(255,255,255,.7)':'#6B6B78';
+      const chipBg=isAlta?'rgba(255,255,255,.18)':'rgba(0,0,0,.08)';
+      const chipTxt=isAlta?'#fff':'#6B6B78';
+      const border=isAlta?'none':'1px solid #FECACA';
       return `<div style="background:${bg};border:${border};border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px;color:${txtColor}">
         <input type="checkbox" class="cs-todo-chk" ${t.estado==='completado'?'checked':''} onchange="setTareaEstado('${t.id}',this.checked?'completado':'pendiente')" style="width:18px;height:18px;margin-top:2px;cursor:pointer;accent-color:${isAlta?'#fff':'var(--c-primary)'}">
         <div style="flex:1;min-width:0;cursor:pointer" onclick="openTareaModal('${t.id}')">
