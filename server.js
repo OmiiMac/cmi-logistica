@@ -702,7 +702,7 @@ const SCHEMA = {
   mkt_push:     ['id', 'empresa', 'fecha', 'hora', 'titulo', 'mensaje', 'estado', 'responsable', 'observaciones', 'created_by', 'created_at', 'updated_at'],
   mkt_efemerides:['id', 'empresa', 'fecha', 'titulo', 'color', 'recurrente', 'created_by', 'created_at', 'updated_at'],
   mkt_biblioteca:['id', 'empresa', 'titulo', 'categoria', 'url', 'created_by', 'created_at', 'updated_at'],
-  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'hora', 'titulo', 'formato', 'responsable', 'reemplazo', 'motivo', 'color', 'created_by', 'created_at', 'updated_at'],
+  publicaciones:['id', 'campana_id', 'fecha', 'canal', 'contenido', 'estado', 'empresa', 'hora', 'titulo', 'formato', 'responsable', 'reemplazo', 'motivo', 'color', 'categoria', 'created_by', 'created_at', 'updated_at'],
   mercadeo_tareas:['id', 'titulo', 'descripcion', 'responsable', 'prioridad', 'estado', 'empresa', 'fecha_inicio', 'fecha_limite', 'fecha_publicacion', 'campana_id', 'enlace', 'created_by', 'created_at', 'updated_at'],
   mkt_piezas:   ['id', 'empresa', 'titulo', 'tipo', 'formato', 'red_social', 'copy', 'fecha', 'responsable', 'version', 'comentarios', 'estado', 'archivo_file', 'campana_id', 'publicacion_id', 'created_by', 'created_at', 'updated_at'],
   compromisos:  ['id', 'concepto', 'tipo', 'monto', 'categoria', 'proyecto_id', 'vencimiento', 'estado', 'notas', 'created_by', 'created_at', 'updated_at'],
@@ -1385,7 +1385,16 @@ function runSelect(table, { columns, filters, order, limit, single }) {
   const where = [], params = [];
   (filters || []).forEach(f => {
     if (!allowed.includes(f.col)) return;
-    if (f.val === null) { where.push(`"${f.col}" IS NULL`); }       // chat general: project_id nulo
+    const op = f.op || 'eq';
+    if (op === 'not.in') {
+      const vals = typeof f.val === 'string' ? f.val.replace(/^\(|\)$/g,'').split(',').map(s=>s.trim().replace(/^["']|["']$/g,'')) : (Array.isArray(f.val) ? f.val : []);
+      if (vals.length) { where.push(`"${f.col}" NOT IN (${vals.map(()=>'?').join(',')})`); params.push(...vals); }
+    } else if (op === 'in') {
+      const vals = Array.isArray(f.val) ? f.val : [];
+      if (vals.length) { where.push(`"${f.col}" IN (${vals.map(()=>'?').join(',')})`); params.push(...vals); }
+    } else if (op === 'neq') {
+      where.push(`"${f.col}" != ?`); params.push(f.val);
+    } else if (f.val === null) { where.push(`"${f.col}" IS NULL`); }
     else { where.push(`"${f.col}" = ?`); params.push(f.val); }
   });
   let sql = `SELECT ${cols} FROM "${table}"`;

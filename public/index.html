@@ -6902,8 +6902,6 @@ function pickPubColor(hex){ const inp=document.getElementById('puColor'); if(inp
 function mktEmpChip(e){ const col=MKT_EMP_COLOR[e]||'#BE185D'; return `<span style="font-size:10px;font-weight:700;color:#fff;background:${col};padding:2px 8px;border-radius:20px;white-space:nowrap">${MKT_EMP_EMOJI[e]||''} ${esc(e||'—')}</span>`; }
 function csEstChip(est){ return `<span style="font-size:10px;font-weight:700;color:#fff;background:${CS_EST_COLOR[est]||'#6B6B78'};padding:2px 7px;border-radius:20px;white-space:nowrap">${(CS_EST_LBL[est]||est||'').toUpperCase()}</span>`; }
 function csFmtDot(fmt){ const f=CS_FORMATOS.find(x=>x[0]===(fmt||'').toLowerCase()); return f?`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px"><span style="width:7px;height:7px;border-radius:50%;background:${f[2]}"></span>${f[1]}</span>`:`<span style="font-size:10px">${esc(fmt||'')}</span>`; }
-function goMktEmpresa(e){ mstate.mktBrand=mstate.mktBrand===e?'all':e; state.mktOpen=true; nav('mercadeo'); }
-function goMktHome(){ mstate.mktBrand='all'; state.mktOpen=true; nav('mercadeo'); }
 function mktSelectEmpresa(e){ mstate.mktBrand=e; mstate.csTab='calendario'; renderMercadeo(); }
 function mktGo(emp,tab){ closeModal(); if(emp) mstate.mktBrand=emp; mstate.csTab=tab||'calendario'; renderMercadeo(); }
 function csBrandFilter(arr){ const b=mstate.mktBrand||'all'; return b==='all'?arr:arr.filter(x=>x.empresa===b); }

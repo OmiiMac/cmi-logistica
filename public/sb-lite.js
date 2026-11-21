@@ -41,6 +41,9 @@
     update(values) { this._op = 'update'; this._values = values; return this; }
     delete() { this._op = 'delete'; return this; }
     eq(col, val) { this._filters.push({ col, val }); return this; }
+    neq(col, val) { this._filters.push({ col, val, op: 'neq' }); return this; }
+    not(col, op, val) { this._filters.push({ col, val, op: 'not.' + op }); return this; }
+    in(col, vals) { this._filters.push({ col, val: vals, op: 'in' }); return this; }
     order(col, opts) { this._order.push({ col, asc: !(opts && opts.ascending === false) }); return this; }
     limit(n) { this._limit = n; return this; }
     single() { this._single = true; return this; }
