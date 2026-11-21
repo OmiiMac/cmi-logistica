@@ -7178,7 +7178,7 @@ async function renderCSTodo(){
     </div>
     ${rows.length===0?'<div class="nodata" style="padding:30px">Sin tareas aquí.</div>':rows.map(t=>{
       const isAlta=t.prioridad==='alta';
-      const bg=isAlta?'#C62040':'var(--c-card)';
+      const bg=isAlta?'#DC2626':'var(--c-card)';
       const txtColor=isAlta?'#fff':'var(--c-text)';
       const mutedColor=isAlta?'rgba(255,255,255,.7)':'var(--c-muted)';
       const chipBg=isAlta?'rgba(255,255,255,.18)':'var(--c-border)';
