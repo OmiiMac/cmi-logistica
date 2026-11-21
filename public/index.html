@@ -7172,27 +7172,36 @@ async function renderCSTodo(){
       </select>
       <input placeholder="Buscar tarea…" oninput="mstate.csTodoSearch=this.value;renderMercadeo()" value="${esc(mstate.csTodoSearch||'')}" style="font-size:12px;border:1px solid var(--c-border);border-radius:6px;padding:5px 10px;background:var(--c-card);color:var(--c-text);min-width:120px">
     </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:4px 0;border-bottom:1px solid var(--c-border)">
+      <input type="checkbox" id="csSelAll" onchange="document.querySelectorAll('.cs-todo-chk').forEach(c=>{c.checked=this.checked})" style="width:16px;height:16px;cursor:pointer;accent-color:var(--c-primary)">
+      <label for="csSelAll" style="font-size:12px;color:var(--c-muted);cursor:pointer">Seleccionar tareas</label>
+    </div>
     ${rows.length===0?'<div class="nodata" style="padding:30px">Sin tareas aquí.</div>':rows.map(t=>{
       const isAlta=t.prioridad==='alta';
-      const bg=isAlta?'rgba(220,38,38,.08)':'var(--c-card)';
-      const border=isAlta?'1px solid rgba(220,38,38,.25)':'1px solid var(--c-border)';
-      return `<div style="background:${bg};border:${border};border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px">
-        <input type="checkbox" ${t.estado==='completado'?'checked':''} onchange="setTareaEstado('${t.id}',this.checked?'completado':'pendiente')" style="width:18px;height:18px;margin-top:2px;cursor:pointer;accent-color:var(--c-primary)">
-        <div style="flex:1;min-width:0" onclick="openTareaModal('${t.id}')" style="cursor:pointer">
+      const bg=isAlta?'#C62040':'var(--c-card)';
+      const txtColor=isAlta?'#fff':'var(--c-text)';
+      const mutedColor=isAlta?'rgba(255,255,255,.7)':'var(--c-muted)';
+      const chipBg=isAlta?'rgba(255,255,255,.18)':'var(--c-border)';
+      const chipTxt=isAlta?'#fff':'var(--c-muted)';
+      const border=isAlta?'none':'1px solid var(--c-border)';
+      return `<div style="background:${bg};border:${border};border-radius:10px;padding:14px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px;color:${txtColor}">
+        <input type="checkbox" class="cs-todo-chk" ${t.estado==='completado'?'checked':''} onchange="setTareaEstado('${t.id}',this.checked?'completado':'pendiente')" style="width:18px;height:18px;margin-top:2px;cursor:pointer;accent-color:${isAlta?'#fff':'var(--c-primary)'}">
+        <div style="flex:1;min-width:0;cursor:pointer" onclick="openTareaModal('${t.id}')">
           <div style="font-weight:700;font-size:14px;${t.estado==='completado'?'text-decoration:line-through;opacity:.5':''};text-transform:uppercase">${esc(t.titulo)}</div>
-          ${t.descripcion?`<div style="font-size:12px;color:var(--c-muted);margin-top:3px">${esc(t.descripcion)}</div>`:''}
+          ${t.descripcion?`<div style="font-size:12px;color:${mutedColor};margin-top:3px">${esc(t.descripcion)}</div>`:''}
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
-            <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${isAlta?'#DC2626':'#6B6B78'};color:#fff">Prioridad ${t.prioridad?t.prioridad.charAt(0).toUpperCase()+t.prioridad.slice(1):'Media'}</span>
+            <span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:${isAlta?'rgba(0,0,0,.2)':'#6B6B78'};color:#fff">Prioridad ${t.prioridad?t.prioridad.charAt(0).toUpperCase()+t.prioridad.slice(1):'Media'}</span>
             ${mktEmpChip(t.empresa)}
-            ${t.responsable?`<span style="font-size:10px;color:var(--c-muted);padding:2px 8px;border-radius:20px;background:var(--c-border)">Responsable: ${esc(t.responsable)}</span>`:''}
-            ${t.campana_id&&campName[t.campana_id]?`<span style="font-size:10px;color:var(--c-muted);padding:2px 8px;border-radius:20px;background:var(--c-border)">Categoría: ${esc(campName[t.campana_id]||'')}</span>`:''}
-            ${t.fecha_limite?`<span style="font-size:10px;color:${esVencida(t)?'#DC2626':'var(--c-muted)'};font-weight:${esVencida(t)?'700':'400'};padding:2px 8px;border-radius:20px;background:var(--c-border)">Fecha límite: ${esc(t.fecha_limite)}${esVencida(t)?' ⚠':''}</span>`:''}
+            ${t.responsable?`<span style="font-size:10px;color:${chipTxt};padding:2px 8px;border-radius:20px;background:${chipBg}">Responsable: ${esc(t.responsable)}</span>`:''}
+            ${t.campana_id&&campName[t.campana_id]?`<span style="font-size:10px;color:${chipTxt};padding:2px 8px;border-radius:20px;background:${chipBg}">Categoría: ${esc(campName[t.campana_id]||'').toUpperCase()}</span>`:''}
+            ${t.fecha_limite?`<span style="font-size:10px;color:${isAlta?'#fff':esVencida(t)?'#DC2626':'var(--c-muted)'};font-weight:${esVencida(t)?'700':'400'};padding:2px 8px;border-radius:20px;background:${chipBg}">Fecha límite: ${esc(t.fecha_limite)}${esVencida(t)?' ⚠':''}</span>`:''}
+            ${t.created_by?`<span style="font-size:10px;color:${chipTxt};padding:2px 8px;border-radius:20px;background:${chipBg}">De ${esc(t.created_by)}</span>`:''}
           </div>
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex:none">
-          ${t.estado!=='completado'?`<button class="btn btn-sm btn-ghost" style="font-size:10px;white-space:nowrap" onclick="setTareaEstado('${t.id}','completado')">✓ Marcar hecha</button>`:''}
-          <button class="act-btn" onclick="openTareaModal('${t.id}')" title="Editar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-          <button class="act-btn del" onclick="delTarea('${t.id}')" title="Eliminar"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+          ${t.estado!=='completado'?`<button class="btn btn-sm" style="font-size:10px;white-space:nowrap;background:${isAlta?'rgba(255,255,255,.2)':'var(--c-card)'};color:${isAlta?'#fff':'var(--c-text)'};border:1px solid ${isAlta?'rgba(255,255,255,.3)':'var(--c-border)'};border-radius:6px;padding:4px 10px" onclick="setTareaEstado('${t.id}','completado')">✓ Marcar hecha</button>`:''}
+          <button class="act-btn" onclick="openTareaModal('${t.id}')" title="Editar" style="${isAlta?'color:#fff':''}"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+          <button class="act-btn del" onclick="delTarea('${t.id}')" title="Eliminar" style="${isAlta?'color:#fff':''}"><svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
         </div>
       </div>`; }).join('')}`;
 }
